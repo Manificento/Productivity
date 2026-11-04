@@ -18,7 +18,7 @@ type NumberField = 'taskCapacityMin' | 'sleepHours' | 'focusPomodoros' | 'medita
 
 const NUMBER_FIELDS: { key: NumberField; label: string; hint: string; step?: string }[] = [
   { key: 'taskCapacityMin', label: 'Ёмкость дня, мин', hint: 'Сколько минут задач в обычный день, до 960' },
-  { key: 'sleepHours', label: 'Сон, ч', hint: 'От 4 до 12 часов', step: '0.5' },
+  { key: 'sleepHours', label: 'Сон, ч', hint: 'От 4 до 12 часов, шаг полчаса', step: '0.5' },
   { key: 'focusPomodoros', label: 'Фокус-сессии', hint: 'Помидоров в день' },
   { key: 'meditationMin', label: 'Медитация, мин', hint: 'От 0 до 120' },
 ];
@@ -32,10 +32,13 @@ function BaselineForm({
   initial,
   feedback,
   onFeedback,
+  onReset,
 }: {
   initial: Baseline;
   feedback: Feedback;
   onFeedback: (f: Feedback) => void;
+  /** Called after a successful reset; re-mounts the form so unsaved edits and errors are dropped. */
+  onReset: () => void;
 }) {
   const [values, setValues] = useState<BaselineFormValues>(() => baselineToForm(initial));
   const [errors, setErrors] = useState<BaselineFormErrors>({});
@@ -45,10 +48,11 @@ function BaselineForm({
     onFeedback({});
   };
 
-  async function run(action: () => Promise<void>, done: string) {
+  async function run(action: () => Promise<void>, done: string, after?: () => void) {
     onFeedback({});
     try {
       await action();
+      after?.();
       onFeedback({ status: done });
     } catch {
       onFeedback({ error: 'Не удалось сохранить. Попробуйте ещё раз.' });
@@ -76,7 +80,7 @@ function BaselineForm({
               <Input
                 id={id}
                 type="number"
-                inputMode="decimal"
+                inputMode={f.step ? 'decimal' : 'numeric'}
                 step={f.step}
                 value={values[f.key]}
                 onChange={(e) => set(f.key, e.target.value)}
@@ -126,7 +130,7 @@ function BaselineForm({
         {feedback.status}
       </p>
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="secondary" onClick={() => run(resetBaseline, 'Сброшено к стандартному режиму.')}>
+        <Button variant="secondary" onClick={() => run(resetBaseline, 'Сброшено к стандартному режиму.', onReset)}>
           Сбросить
         </Button>
         <Button type="submit">Сохранить</Button>
@@ -140,6 +144,7 @@ export function BaselineEditor() {
   const baseline = useBaseline();
   // Lives here so it survives the form re-mounting after a save.
   const [feedback, setFeedback] = useState<Feedback>({});
+  const [resets, setResets] = useState(0);
   return (
     <Page title="Базовый режим">
       <Link to="/" className="mb-3 inline-flex min-h-11 items-center text-sm text-indigo-600 dark:text-indigo-400">
@@ -149,8 +154,14 @@ export function BaselineEditor() {
         Ваш обычный день. Перед событиями и после плохой ночи приложение меняет цели относительно него.
       </p>
       {baseline ? (
-        // Re-mount the form when the stored baseline changes (e.g. after «Сбросить»).
-        <BaselineForm key={JSON.stringify(baseline)} initial={baseline} feedback={feedback} onFeedback={setFeedback} />
+        // Re-mount the form when the stored baseline changes or after «Сбросить» (even if nothing was stored).
+        <BaselineForm
+          key={`${resets}:${JSON.stringify(baseline)}`}
+          initial={baseline}
+          feedback={feedback}
+          onFeedback={setFeedback}
+          onReset={() => setResets((n) => n + 1)}
+        />
       ) : (
         <Card>Загрузка…</Card>
       )}

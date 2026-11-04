@@ -45,7 +45,9 @@ const schema = z.object({
   taskCapacityMin: num('От 1 до 960 минут').pipe(
     z.number().int('От 1 до 960 минут').min(1, 'От 1 до 960 минут').max(960, 'От 1 до 960 минут'),
   ),
-  sleepHours: num('От 4 до 12 часов').pipe(z.number().min(4, 'От 4 до 12 часов').max(12, 'От 4 до 12 часов')),
+  sleepHours: num('От 4 до 12 часов').pipe(
+    z.number().min(4, 'От 4 до 12 часов').max(12, 'От 4 до 12 часов').multipleOf(0.5, 'Шаг — полчаса'),
+  ),
   bedtime: time,
   maxWorkoutIntensity: z.enum(['rest', 'light', 'moderate', 'hard']),
   focusPomodoros: num('Целое число от 0 до 16').pipe(

@@ -51,4 +51,8 @@ describe('parseBaseline', () => {
     const r = parseBaseline(form({ sleepHours: '7,5' }));
     expect(r.ok && r.data.sleepHours).toBe(7.5);
   });
+
+  it('allows sleep only in half-hour steps', () => {
+    expect(parseBaseline(form({ sleepHours: '7.3' }))).toEqual({ ok: false, errors: { sleepHours: 'Шаг — полчаса' } });
+  });
 });

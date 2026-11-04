@@ -75,6 +75,18 @@ describe('Базовый режим', () => {
     expect(await db.settings.get(BASELINE_SETTING_KEY)).toBeUndefined();
   });
 
+  it('Given несохранённые правки при стандартном режиме When «Сбросить» Then поля = DEFAULT_BASELINE', async () => {
+    const user = userEvent.setup();
+    renderAt('/today/baseline');
+    await fill('Ёмкость дня, мин', '0');
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('От 1 до 960 минут');
+
+    await user.click(screen.getByRole('button', { name: 'Сбросить' }));
+    await waitFor(() => expect(screen.getByLabelText('Ёмкость дня, мин')).toHaveValue(360));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('shows an error when saving fails', async () => {
     const user = userEvent.setup();
     vi.spyOn(db.settings, 'put').mockRejectedValueOnce(new Error('quota'));
