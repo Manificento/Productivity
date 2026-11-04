@@ -1,10 +1,16 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BASELINE_SETTING_KEY, DEFAULT_BASELINE } from '../../../core/adaptation/rules';
 import { db } from '../../../core/db';
 import { todayModule } from '../index';
+import { ONBOARDING_DONE_KEY } from '../data/onboarding';
+
+// These tests open «Сегодня»: the first-run onboarding (#41) is already done.
+beforeEach(async () => {
+  await db.settings.put({ key: ONBOARDING_DONE_KEY, value: true });
+});
 
 function renderAt(path: string) {
   return render(

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test('daily check-in lowers the load and stays one record per day', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-04T08:00:00+05:00'));
-  await page.goto('/');
+  await skipOnboarding(page);
   const card = page.getByRole('region', { name: 'Самочувствие' });
   await card.getByRole('radio', { name: 'Энергия: 2' }).click();
   await card.getByRole('radio', { name: 'Фокус: 3' }).click();

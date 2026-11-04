@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test.describe('important events', () => {
   test.beforeEach(async ({ page }) => {
@@ -6,7 +7,7 @@ test.describe('important events', () => {
   });
 
   test('create an exam, see its timeline, edit and delete it', async ({ page }) => {
-    await page.goto('/');
+    await skipOnboarding(page);
     await page.getByRole('link', { name: /События/ }).click();
     await expect(page.getByRole('heading', { name: 'События' })).toBeVisible();
     await expect(page.getByText(/Пока нет событий/)).toBeVisible();

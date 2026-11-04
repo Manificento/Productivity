@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test('edit the baseline, see normal-day targets change, then reset', async ({ page }) => {
-  await page.goto('/');
+  await skipOnboarding(page);
   await page.getByRole('link', { name: /Базовый режим/ }).click();
   await expect(page.getByRole('heading', { name: 'Базовый режим' })).toBeVisible();
 

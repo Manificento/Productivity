@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import type { LifeEvent } from '../../../core/types';
 import { todayModule } from '../index';
+import { ONBOARDING_DONE_KEY } from '../data/onboarding';
+
+// These tests open «Сегодня»: the first-run onboarding (#41) is already done.
+beforeEach(async () => {
+  await db.settings.put({ key: ONBOARDING_DONE_KEY, value: true });
+});
 
 function renderAt(path: string) {
   return render(

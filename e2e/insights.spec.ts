@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test('insights explain how much data is still needed', async ({ page }) => {
-  await page.goto('/');
+  await skipOnboarding(page);
   await page.getByRole('link', { name: /Инсайты/ }).click();
   await expect(page.getByRole('heading', { name: 'Инсайты' })).toBeVisible();
   for (const name of [

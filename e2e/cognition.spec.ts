@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 /**
  * PVT end to end on Playwright's fake clock, so the run does not depend on the runner's speed.
@@ -30,6 +31,7 @@ test.describe('cognition: PVT', () => {
     page,
   }) => {
     await page.clock.install({ time: START });
+    await skipOnboarding(page);
 
     for (let run = 1; run <= 2; run++) {
       await page.goto('/#/cognition/pvt?return=/&duration=12');
