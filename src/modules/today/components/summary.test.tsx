@@ -190,8 +190,10 @@ describe('Сводка на «Сегодня»', () => {
       ...base,
     });
     await db.settings.delete('time.pomodoro.running');
-    await waitFor(() => expect(screen.getByRole('region', { name: 'Фокус' })).toHaveTextContent('Фокус: 1 из 6'));
-    expect(screen.queryByText(/Идёт Pomodoro/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Фокус' })).toHaveTextContent('Фокус: 1 из 6');
+      expect(screen.queryByText(/Идёт Pomodoro/)).not.toBeInTheDocument();
+    });
   });
 
   it('Given сон прошлой ночи и тренировки сегодня When экран открыт Then факт против цели', async () => {
