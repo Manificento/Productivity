@@ -195,6 +195,43 @@ describe('parseQuickAdd', () => {
       expect(parse(input)).toEqual({ title: input, tags: [] });
     });
 
+    it.each([
+      ['Пт созвон', 'созвон', '2026-11-06', undefined],
+      ['Сб в 10 рынок', 'рынок', '2026-11-07', '10:00'],
+      ['в 5 ноября отчёт', 'отчёт', '2026-11-05', undefined],
+      ['сдать в 12 ноября', 'сдать', '2026-11-12', undefined],
+      ['7:00-8:00 спортзал', 'спортзал', TODAY, '07:00'],
+      ['уложиться в 3 дня', 'уложиться', TODAY, '15:00'],
+      ['созвон в 3 вечера', 'созвон', TODAY, '15:00'],
+      ['через 2 дня в 3 вечера кино', 'кино', '2026-11-06', '15:00'],
+      ['обед в 13 дня', 'обед', TODAY, '13:00'],
+      ['праздник в 31.12', 'праздник', '2026-12-31', undefined],
+      ['спать в 00:30 ночи', 'спать', TODAY, '00:30'],
+    ])('%s → %s on %s at %s', (input, title, dueDate, dueTime) => {
+      expect(parse(input)).toEqual({ title, dueDate, ...(dueTime ? { dueTime } : {}), tags: [] });
+    });
+
+    it.each([
+      'распечатать в 2 экземплярах',
+      'играть в 4 руки',
+      'разделить в 3 группы',
+      'сложить в 4 стопки',
+      'в 2 этапа сделать',
+      'перевести в 5 тысяч',
+    ])('«%s» is a quantity, not a time', (input) => {
+      expect(parse(input)).toEqual({ title: input, tags: [] });
+    });
+
+    it('repeats with weekday abbreviations', () => {
+      expect(parse('каждый пн и чт зарядка')).toMatchObject({
+        title: 'зарядка',
+        recurrence: { kind: 'weekly', weekdays: [1, 4] },
+        dueDate: '2026-11-05',
+      });
+      expect(parse('по пн отчёт')).toMatchObject({ title: 'отчёт', recurrence: { kind: 'weekly', weekdays: [1] } });
+      expect(parse('every mon отчёт')).toMatchObject({ title: 'отчёт', recurrence: { kind: 'weekly', weekdays: [1] } });
+    });
+
     it('two-digit years and leap days', () => {
       expect(parse('сдать 12.11.26')).toMatchObject({ title: 'сдать', dueDate: '2026-11-12' });
       expect(parse('праздник 29.02')).toMatchObject({ title: 'праздник', dueDate: '2028-02-29' });

@@ -17,8 +17,8 @@ export interface ParsedTask {
 }
 
 // JS `\b` does not understand Cyrillic, so word edges are spelled out. A fragment must not end
-// right before «.5», «:30» or «-2» either — otherwise «18.30» would match as «18» and leave «.30».
-const START = '(?<![\\p{L}\\p{N}@#])';
+// right before (or start right after) «.5», «:30» or «-2» — otherwise «18.30» would match as «18» and leave «.30».
+const START = '(?<![\\p{L}\\p{N}@#]|\\d[.:,\\-])';
 const END = '(?![\\p{L}\\p{N}]|[.:,\\-]\\d)';
 const re = (body: string) => new RegExp(`${START}(?:${body})${END}`, 'iu');
 
@@ -38,9 +38,10 @@ const DATE_WEEKDAY =
   'пн|вт|ср|чт|пт|сб|вс|понедельник|вторник|среда|среду|четверг|пятница|пятницу|суббота|субботу|воскресенье|' +
   'mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday';
 const PLURAL_WEEKDAY = 'понедельникам|вторникам|средам|четвергам|пятницам|субботам|воскресеньям';
+const SHORT_WEEKDAY = 'пн|вт|ср|чт|пт|сб|вс|mon|tue|wed|thu|fri|sat|sun';
 const EACH_WEEKDAY =
   'понедельник|вторник|среду|среда|четверг|пятницу|пятница|субботу|суббота|воскресенье|' +
-  'monday|tuesday|wednesday|thursday|friday|saturday|sunday';
+  `monday|tuesday|wednesday|thursday|friday|saturday|sunday|${SHORT_WEEKDAY}`;
 /** «вторник», «вторник и четверг», «пн, ср и пт». */
 const listOf = (word: string) => `(?:${word})(?:\\s*(?:,|\\sи\\s|\\sand\\s)\\s*(?:${word}))*`;
 
@@ -64,8 +65,16 @@ const MONTH_WORD =
 const monthOf = (word: string) => MONTHS.find(([r]) => r.test(word))?.[1] ?? 0;
 
 /** Nouns that turn «в 2 …» into a quantity («в 2 раза»), not a time. */
+const QUANTITY_NOUN =
+  'раз|процент|%|лет|год|класс|этаж|ряд|клик|шаг|минут|секунд|кабинет|корпус|аудитори|очеред|колон|строк|' +
+  'экземпляр|рук|групп|стопк|этап|тысяч|слой|подход|смен|приём|раунд|кругов|штук|человек';
+/**
+ * Stops «в N …» from being a time when a quantity, a month («в 5 ноября» is a date) or a plural noun
+ * in -ах/-ях/-ов/-ей («в 2 экземплярах») follows.
+ */
 const NOT_AN_HOUR =
-  '(?!\\s*(?:раз|процент|%|лет|год|класс|этаж|ряд|клик|шаг|минут|секунд|кабинет|корпус|аудитори|очеред|колон|строк))';
+  `(?!\\s*(?:${QUANTITY_NOUN}))(?!\\s+(?:${MONTH_WORD})(?![\\p{L}]))` +
+  '(?!\\s+(?!час)\\p{L}+(?:ах|ях|ов|ей)(?![\\p{L}]))';
 const PART_OF_DAY = 'утра|дня|вечера|ночи';
 const HOUR_WORD = '(?:\\s*(?:часа|часов|час|ч))?';
 
@@ -122,7 +131,9 @@ function parseRecurrence(s: State): void {
     take(s, re('каждый\\s+месяц|ежемесячно|every\\s+month|monthly'), () => set({ kind: 'monthly' })) ||
     take(s, re('по\\s+будням'), () => set({ kind: 'weekly', weekdays: [1, 2, 3, 4, 5] })) ||
     take(s, re('по\\s+выходным'), () => set({ kind: 'weekly', weekdays: [0, 6] })) ||
-    take(s, re(`по\\s+(${listOf(PLURAL_WEEKDAY)})`), (m) => set({ kind: 'weekly', weekdays: weekdays(m[1]) })) ||
+    take(s, re(`по\\s+(${listOf(`${PLURAL_WEEKDAY}|${SHORT_WEEKDAY}`)})`), (m) =>
+      set({ kind: 'weekly', weekdays: weekdays(m[1]) }),
+    ) ||
     take(s, re(`(?:кажд(?:ый|ую|ое|ая)|every)\\s+(${listOf(EACH_WEEKDAY)})`), (m) =>
       set({ kind: 'weekly', weekdays: weekdays(m[1]) }),
     ) ||
@@ -154,13 +165,13 @@ function parseDate(s: State): void {
       re(`((?:в|во|on)\\s+)?(?:(?:следующ(?:ий|ую|ее|ая)|next)\\s+)?(${DATE_WEEKDAY})`),
       // A bare upper-case abbreviation («СБ», «ЧТ») is more likely an acronym than a weekday.
       (m) =>
-        (m[1] !== undefined || m[2].length > 2 || m[2] === m[2].toLowerCase()) &&
+        (m[1] !== undefined || m[2].length > 2 || m[2] !== m[2].toUpperCase()) &&
         set(nextWeekday(today, weekdayOf(m[2]) ?? 0, false)),
     ) ||
-    take(s, re('(\\d{1,2})\\.(\\d{2})(?:\\.(\\d{4}|\\d{2}))?'), (m) =>
+    take(s, re('(?:(?:в|на)\\s+)?(\\d{1,2})\\.(\\d{2})(?:\\.(\\d{4}|\\d{2}))?'), (m) =>
       set(calendarDate(today, Number(m[1]), Number(m[2]), m[3])),
     ) ||
-    take(s, re(`(\\d{1,2})\\s+(${MONTH_WORD})\\.?(?:\\s+(\\d{4}))?`), (m) =>
+    take(s, re(`(?:(?:в|на)\\s+)?(\\d{1,2})\\s+(${MONTH_WORD})\\.?(?:\\s+(\\d{4}))?`), (m) =>
       set(calendarDate(today, Number(m[1]), monthOf(m[2]), m[3])),
     );
 }
@@ -176,11 +187,11 @@ function toTime(hour: number, minute: number, part?: string): string | undefined
       case 'утра':
         return hour >= 1 && hour <= 11 ? hour : undefined;
       case 'дня':
-        return hour === 12 ? 12 : hour >= 1 && hour <= 5 ? hour + 12 : undefined;
+        return hour >= 12 && hour <= 17 ? hour : hour >= 1 && hour <= 5 ? hour + 12 : undefined;
       case 'вечера':
-        return hour >= 4 && hour <= 11 ? hour + 12 : undefined;
+        return hour >= 3 && hour <= 11 ? hour + 12 : hour >= 15 && hour <= 23 ? hour : undefined;
       default: // ночи
-        return hour === 12 ? 0 : hour >= 1 && hour <= 5 ? hour : hour >= 9 && hour <= 11 ? hour + 12 : undefined;
+        return hour === 12 ? 0 : hour <= 5 ? hour : hour >= 9 && hour <= 11 ? hour + 12 : undefined;
     }
   })();
   return h === undefined ? undefined : `${pad(h)}:${pad(minute)}`;
@@ -196,6 +207,8 @@ function parseTime(s: State): void {
   take(s, re(`(?:в|at)\\s+(\\d{1,2})(?:[:.](\\d{2}))?${NOT_AN_HOUR}${HOUR_WORD}(?:\\s+(${PART_OF_DAY}))?`), (m) =>
     set(toTime(Number(m[1]), Number(m[2] ?? 0), m[3])),
   ) ||
+    // «7:00-8:00»: a range keeps its start time.
+    take(s, re('(\\d{1,2}):(\\d{2})\\s?[-–]\\s?\\d{1,2}:\\d{2}'), (m) => set(toTime(Number(m[1]), Number(m[2])))) ||
     // «9:00», «18:30 вечера» (a colon is needed — «12.11» without «в» is a date).
     take(s, re(`(\\d{1,2}):(\\d{2})(?:\\s+(${PART_OF_DAY}))?`), (m) => set(toTime(Number(m[1]), Number(m[2]), m[3])));
 }
