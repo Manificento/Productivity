@@ -36,6 +36,8 @@ test.describe('tasks', () => {
 
 test.describe('quick add', () => {
   test('a quick add line lands in «Предстоящие» with its project', async ({ page }) => {
+    // Fixed noon, so «завтра» cannot drift across midnight during the run.
+    await page.clock.setFixedTime(new Date(2026, 10, 4, 12, 0));
     await page.goto('/#/tasks/inbox');
     const field = page.getByLabel('Новая задача');
     await field.fill('завтра 9:00 позвонить научнику #учёба !1');

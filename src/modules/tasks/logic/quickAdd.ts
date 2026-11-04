@@ -254,10 +254,27 @@ function parseMarkers(s: State): void {
   );
 }
 
-/** Where a recurring task without an explicit date starts: today, or the first matching weekday from today. */
-function firstOccurrence(r: Recurrence, today: DateKey): DateKey {
-  if (r.kind !== 'weekly' || !r.weekdays?.length) return today;
-  return r.weekdays.map((d) => nextWeekday(today, d, true)).sort()[0];
+/** Where a recurring task without an explicit date starts: `from`, or the first matching weekday from it. */
+function firstOccurrence(r: Recurrence, from: DateKey): DateKey {
+  if (r.kind !== 'weekly' || !r.weekdays?.length) return from;
+  return r.weekdays.map((d) => nextWeekday(from, d, true)).sort()[0];
+}
+
+/**
+ * Fills the dates a line implies but does not name. A time or a repeat without a date starts on
+ * `baseDate` (a list's default day, or today); a weekly repeat without weekdays repeats on that day's weekday.
+ */
+export function withImpliedDates(p: ParsedTask, baseDate: DateKey): ParsedTask {
+  if (p.dueDate === undefined && p.dueTime === undefined && p.recurrence === undefined) return p;
+  const out = { ...p };
+  if (out.recurrence) {
+    out.dueDate ??= firstOccurrence(out.recurrence, baseDate);
+    if (out.recurrence.kind === 'weekly' && !out.recurrence.weekdays) {
+      out.recurrence = { kind: 'weekly', weekdays: [getDay(fromDateKey(out.dueDate))] };
+    }
+  }
+  out.dueDate ??= baseDate;
+  return out;
 }
 
 const QUOTED = /"[^"]*"|«[^»]*»|“[^”]*”|„[^“”]*[“”]|'[^']*'/g;
@@ -265,8 +282,14 @@ const QUOTED = /"[^"]*"|«[^»]*»|“[^”]*”|„[^“”]*[“”]|'[^']*'/g
 /**
  * Parses one line of quick add, e.g. «завтра 9:00 позвонить научнику #учёба !1».
  * Recognised fragments are removed from the title; text in quotes is never interpreted.
+ * A time or a repeat without a date gets today (see `withImpliedDates`).
  */
 export function parseQuickAdd(input: string, today: DateKey): ParsedTask {
+  return withImpliedDates(parseQuickAddExplicit(input, today), today);
+}
+
+/** Like `parseQuickAdd`, but leaves `dueDate` empty unless the line names a date. */
+export function parseQuickAddExplicit(input: string, today: DateKey): ParsedTask {
   const quotes: string[] = [];
   // Quoted text is swapped for placeholders made of control characters (never matched by any pattern).
   const masked = input
@@ -281,13 +304,6 @@ export function parseQuickAdd(input: string, today: DateKey): ParsedTask {
   parseDate(s);
 
   const { out } = s;
-  if (out.dueTime && !out.dueDate) out.dueDate = today;
-  if (out.recurrence) {
-    if (!out.dueDate) out.dueDate = firstOccurrence(out.recurrence, today);
-    if (out.recurrence.kind === 'weekly' && !out.recurrence.weekdays) {
-      out.recurrence = { kind: 'weekly', weekdays: [getDay(fromDateKey(out.dueDate))] };
-    }
-  }
   out.title = s.text
     // oxlint-disable-next-line no-control-regex -- restores the quote placeholders
     .replace(/\u0000(\u0001+)\u0000/g, (_, n: string) => quotes[n.length - 1])

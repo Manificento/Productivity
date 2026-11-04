@@ -60,7 +60,7 @@ export function previewChips(p: ParsedTask, today: DateKey): string[] {
   return [
     p.dueDate && dueLabel(p.dueDate, today, p.dueTime),
     p.projectName && `#${p.projectName}`,
-    p.priority && `P${p.priority}`,
+    p.priority && p.priority !== 4 && `P${p.priority}`, // P4 is the default, not news
     ...p.tags.map((t) => `@${t}`),
     p.estimateMin && estimateLabel(p.estimateMin),
     p.recurrence && `↻ ${recurrenceLabel(p.recurrence)}`,

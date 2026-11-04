@@ -104,4 +104,17 @@ describe('quick add field', () => {
     const byTitle = Object.fromEntries((await db.tasks.toArray()).map((t) => [t.title, t.dueDate]));
     expect(byTitle).toEqual({ отчёт: '2026-11-06', звонок: '2026-11-04' });
   });
+
+  it('the preview shows the list day and the existing project under its own name', async () => {
+    const user = userEvent.setup();
+    await seedProject('Учёба');
+    renderTasks('/tasks/upcoming');
+
+    await user.type(screen.getByLabelText('Новая задача'), '9:00 конспект #учёба');
+    expect(chips()).toEqual(['Завтра 09:00', '#Учёба']);
+    await user.keyboard('{Enter}');
+
+    expect(await within(await findSection(/^Завтра/)).findByText('конспект')).toBeInTheDocument();
+    expect((await db.tasks.toArray())[0]).toMatchObject({ dueDate: '2026-11-05', dueTime: '09:00' });
+  });
 });

@@ -50,8 +50,9 @@ describe('quick add preview', () => {
     ).toEqual(['Сегодня', '@утро', '~1 ч 30 мин', '↻ по пн, ср']);
   });
 
-  it('shows nothing for a plain title', () => {
+  it('shows nothing for a plain title (the default P4 included)', () => {
     expect(previewChips({ title: 'купить молоко', tags: [] }, TODAY)).toEqual([]);
+    expect(previewChips({ title: 'купить молоко', priority: 4, tags: [] }, TODAY)).toEqual([]);
   });
 
   it.each([

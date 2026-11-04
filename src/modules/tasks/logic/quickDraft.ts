@@ -1,5 +1,5 @@
 import type { DateKey, Id, Priority, Recurrence } from '../../../core/types';
-import type { ParsedTask } from './quickAdd';
+import { withImpliedDates, type ParsedTask } from './quickAdd';
 
 /** List defaults for a new task: due day of «Сегодня»/«Предстоящие», the open project. */
 export interface ListDefaults {
@@ -21,19 +21,26 @@ export interface QuickDraft {
   recurrence?: Recurrence;
 }
 
-/** Merges a parsed line with the list's defaults: what was typed wins, priority defaults to 4. */
-export function draftFromQuickAdd(parsed: ParsedTask, defaults: ListDefaults = {}): QuickDraft {
-  const draft: QuickDraft = {
+/** Copy of `o` without the keys whose value is undefined, so stored records stay minimal. */
+function compact<T extends object>(o: T): T {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
+}
+
+/**
+ * Merges a line parsed with `parseQuickAddExplicit` with the list's defaults: what was typed wins,
+ * priority defaults to 4. A time or a repeat without a date starts on the list's day (or `today`).
+ */
+export function draftFromQuickAdd(parsed: ParsedTask, today: DateKey, defaults: ListDefaults = {}): QuickDraft {
+  const dated = withImpliedDates(parsed, defaults.dueDate ?? today);
+  return compact<QuickDraft>({
     title: parsed.title,
-    dueDate: parsed.dueDate ?? defaults.dueDate,
+    dueDate: dated.dueDate ?? defaults.dueDate,
     dueTime: parsed.dueTime,
     projectId: parsed.projectName ? undefined : defaults.projectId,
     projectName: parsed.projectName,
     priority: parsed.priority ?? 4,
     tags: parsed.tags,
     estimateMin: parsed.estimateMin,
-    recurrence: parsed.recurrence,
-  };
-  // Drop absent fields so stored records stay minimal.
-  return Object.fromEntries(Object.entries(draft).filter(([, v]) => v !== undefined)) as unknown as QuickDraft;
+    recurrence: dated.recurrence,
+  });
 }

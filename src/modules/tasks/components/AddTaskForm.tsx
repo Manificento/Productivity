@@ -1,9 +1,11 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { todayKey } from '../../../core/dates';
 import { Button, Chip, Field, Input } from '../../../ui';
+import { useProjects } from '../data/projects';
 import { addQuickTask } from '../data/tasks';
 import { previewChips } from '../logic/format';
-import { parseQuickAdd } from '../logic/quickAdd';
+import { findActiveProject } from '../logic/projects';
+import { parseQuickAddExplicit } from '../logic/quickAdd';
 import { draftFromQuickAdd, type ListDefaults } from '../logic/quickDraft';
 import { validateTitle } from '../logic/tasks';
 
@@ -13,6 +15,7 @@ import { validateTitle } from '../logic/tasks';
  * `hint` says where a task lands by default.
  */
 export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; hint?: string }) {
+  const projects = useProjects() ?? [];
   const [text, setText] = useState('');
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
@@ -23,14 +26,24 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; 
   const focusField = () => form.current?.querySelector('input')?.focus();
   const chipsId = useId();
 
-  const today = todayKey();
-  const parsed = parseQuickAdd(text, today);
-  const chips = text.trim() ? previewChips(parsed, today) : [];
+  /** The task this line would create right now, with the list defaults applied. */
+  const draftOf = (line: string) => {
+    const today = todayKey();
+    return { today, draft: draftFromQuickAdd(parseQuickAddExplicit(line, today), today, defaults) };
+  };
+  const preview = draftOf(text);
+  // Show the project the task will really be bound to: an existing one under its own spelling, or the list's.
+  const projectName = preview.draft.projectName
+    ? (findActiveProject(projects, preview.draft.projectName)?.name ?? preview.draft.projectName)
+    : projects.find((p) => p.id === preview.draft.projectId)?.name;
+  const chips = text.trim() ? previewChips({ ...preview.draft, projectName }, preview.today) : [];
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy.current) return;
-    const invalid = validateTitle(parsed.title);
+    // Parse again: the day may have changed since the last render.
+    const { draft } = draftOf(text);
+    const invalid = validateTitle(draft.title);
     if (invalid) {
       setError(invalid);
       focusField();
@@ -39,7 +52,7 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; 
     busy.current = true;
     setSaving(true);
     try {
-      await addQuickTask(draftFromQuickAdd(parsed, defaults));
+      await addQuickTask(draft);
       setText('');
       setError(undefined);
     } catch {
@@ -54,7 +67,7 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; 
 
   return (
     <form ref={form} onSubmit={submit} noValidate className="mb-2">
-      <Field label="Новая задача" error={error} hint={chips.length ? undefined : hint}>
+      <Field label="Новая задача" error={error} hint={text.trim() ? undefined : hint}>
         {(id) => (
           <div className="flex gap-2">
             <Input
