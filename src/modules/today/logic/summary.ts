@@ -108,7 +108,13 @@ export function parseRunningPomodoro(value: unknown, now: number): RunningPomodo
   const v = value as Record<string, unknown>;
   const { phase, startedAt, endsAt } = v;
   if (phase !== 'work' && phase !== 'shortBreak' && phase !== 'longBreak') return undefined;
-  if (typeof startedAt !== 'number' || typeof endsAt !== 'number' || !Number.isFinite(endsAt)) return undefined;
+  if (
+    typeof startedAt !== 'number' ||
+    typeof endsAt !== 'number' ||
+    !Number.isFinite(startedAt) ||
+    !Number.isFinite(endsAt)
+  )
+    return undefined;
   return endsAt > now ? { phase, startedAt, endsAt } : undefined;
 }
 

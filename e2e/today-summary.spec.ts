@@ -40,9 +40,12 @@ test('Given идёт Pomodoro-сессия When я открываю «Сегод
   await expect(card).toContainText('Идёт Pomodoro · фокус, осталось');
   await expect(card).toContainText('Фокус: 0 из 4');
 
-  await page.clock.fastForward('25:05');
+  await page.clock.fastForward('10:00');
+  await expect(card).toContainText('осталось 15:0'); // the countdown ticks
+
+  await page.clock.fastForward('15:05');
   await expect(card).toContainText('Фокус: 1 из 4');
-  await expect(card).not.toContainText('Идёт Pomodoro · фокус');
+  await expect(card).toContainText('Идёт Pomodoro · короткий перерыв');
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
@@ -155,6 +155,23 @@ describe('Сводка на «Сегодня»', () => {
     expect(card).not.toHaveTextContent('Идёт таймер');
   });
 
+  it('Given идёт Pomodoro When проходит минута Then «осталось» уменьшается', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 10, 4, 12, 0));
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 12 * 60_000, endsAt: now + 13 * 60_000 },
+    });
+    renderToday();
+    expect(await screen.findByText(/осталось 13:00/)).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(screen.getByText(/осталось 12:00/)).toBeInTheDocument();
+  });
+
   it('Given Pomodoro с истёкшим endsAt Then «Идёт Pomodoro» не показывается', async () => {
     const now = Date.now();
     await db.settings.put({
@@ -179,7 +196,7 @@ describe('Сводка на «Сегодня»', () => {
     expect(card).toHaveTextContent('Идёт Pomodoro');
     expect(card).toHaveTextContent('Фокус: 0 из 6');
 
-    // «Время» (a background component) records the session and removes the running mirror.
+    // «Время» (a background component) records the session and moves the mirror to the break phase.
     await db.timeEntries.add({
       id: 'p1',
       categoryId: 'study',
@@ -189,10 +206,14 @@ describe('Сводка на «Сегодня»', () => {
       source: 'pomodoro',
       ...base,
     });
-    await db.settings.delete('time.pomodoro.running');
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'shortBreak', startedAt: now, endsAt: now + 5 * 60_000 },
+    });
     await waitFor(() => {
-      expect(screen.getByRole('region', { name: 'Фокус' })).toHaveTextContent('Фокус: 1 из 6');
-      expect(screen.queryByText(/Идёт Pomodoro/)).not.toBeInTheDocument();
+      const c = screen.getByRole('region', { name: 'Фокус' });
+      expect(c).toHaveTextContent('Фокус: 1 из 6');
+      expect(c).toHaveTextContent('Идёт Pomodoro · короткий перерыв');
     });
   });
 
