@@ -21,7 +21,9 @@ export function pearson(xs: number[], ys: number[]): number | undefined {
     sxx += dx * dx;
     syy += dy * dy;
   }
-  if (sxx === 0 || syy === 0) return undefined;
+  // Float sums of e.g. 7⅓ h are never exactly 0, so "no spread" uses the range with a tolerance.
+  const flat = (a: number[]) => Math.max(...a.slice(0, n)) - Math.min(...a.slice(0, n)) < 1e-9;
+  if (flat(xs) || flat(ys)) return undefined;
   return sxy / Math.sqrt(sxx * syy);
 }
 
@@ -92,11 +94,14 @@ function insight(base: Omit<Insight, 'r' | 'missing'>): Insight {
 }
 
 /**
- * Three pairs. A sleep log marks a day as "tracked", so a tracked day without completed tasks or
- * focus sessions counts as zero; for workouts, a check-in on the next morning marks the pair.
+ * Three pairs. A sleep log marks a finished day as "tracked", so a tracked day without completed tasks
+ * or focus sessions counts as zero; for workouts, a check-in on the next morning marks the pair.
  */
-export function buildInsights(input: InsightInput): Insight[] {
-  const sleepDays = Object.keys(input.sleep).sort();
+export function buildInsights(input: InsightInput, today: DateKey): Insight[] {
+  // Today is not over: its tasks and focus so far would look like a bad day.
+  const sleepDays = Object.keys(input.sleep)
+    .filter((d) => d < today)
+    .sort();
   const energyDays = Object.keys(input.energy).sort();
   return [
     insight({

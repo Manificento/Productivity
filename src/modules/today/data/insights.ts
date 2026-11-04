@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { sleepHours } from '../../../core/adaptation/useDailyTargets';
+import { sleepHours } from '../../../core/logging/sleepTime';
 import { fromDateKey, shiftDateKey, toDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
 import type { DateKey } from '../../../core/types';
@@ -14,12 +14,13 @@ function add(map: Record<DateKey, number>, day: DateKey, value: number) {
 
 /** Reads sleep, tasks, focus, workouts and check-ins of the last 60 days (read-only). */
 export async function loadInsightInput(today: DateKey): Promise<InsightInput> {
-  const from = shiftDateKey(today, -INSIGHT_WINDOW_DAYS);
+  const from = shiftDateKey(today, -(INSIGHT_WINDOW_DAYS - 1));
   const [sleeps, tasks, entries, workouts, checkIns] = await Promise.all([
     db.sleepLogs.where('date').between(from, today, true, true).toArray(),
     db.tasks.where('completedAt').aboveOrEqual(fromDateKey(from).getTime()).toArray(),
     db.timeEntries.where('date').between(from, today, true, true).toArray(),
-    db.workoutLogs.where('date').between(from, today, true, true).toArray(),
+    // From the day before the window: the first morning's energy pairs with that day's workout.
+    db.workoutLogs.where('date').between(shiftDateKey(from, -1), today, true, true).toArray(),
     db.checkIns.where('date').between(from, today, true, true).toArray(),
   ]);
 

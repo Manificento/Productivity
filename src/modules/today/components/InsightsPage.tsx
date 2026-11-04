@@ -23,9 +23,7 @@ function InsightCard({ insight }: { insight: Insight }) {
     );
   } else if (insight.r === undefined) {
     body = (
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Значения почти не меняются день ото дня — вывода пока нет.
-      </p>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">Значения не меняются день ото дня — вывода пока нет.</p>
     );
   } else {
     body = (
@@ -55,7 +53,8 @@ function InsightCard({ insight }: { insight: Insight }) {
 
 /** «Инсайты»: correlations between sleep, tasks, focus, workouts and energy. */
 export function InsightsPage() {
-  const input = useInsightInput(todayKey());
+  const today = todayKey();
+  const input = useInsightInput(today);
   return (
     <Page title="Инсайты">
       <Link to="/" className="mb-3 inline-flex min-h-11 items-center text-sm text-indigo-600 dark:text-indigo-400">
@@ -65,7 +64,7 @@ export function InsightsPage() {
         Связи за последние {INSIGHT_WINDOW_DAYS} дней. Коэффициент Пирсона r: от −1 до 1, чем дальше от нуля, тем теснее
         связь.
       </p>
-      {input ? buildInsights(input).map((i) => <InsightCard key={i.id} insight={i} />) : <Card>Загрузка…</Card>}
+      {input ? buildInsights(input, today).map((i) => <InsightCard key={i.id} insight={i} />) : <Card>Загрузка…</Card>}
     </Page>
   );
 }

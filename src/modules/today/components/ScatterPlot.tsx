@@ -2,7 +2,7 @@ import type { InsightPoint } from '../logic/insights';
 
 const W = 320;
 const H = 180;
-const PAD = { left: 30, right: 8, top: 8, bottom: 22 };
+const PAD = { left: 34, right: 8, top: 10, bottom: 24 };
 
 function fmt(n: number): string {
   return n.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
@@ -44,16 +44,16 @@ export function ScatterPlot({
           y2={H - PAD.bottom}
           className="stroke-zinc-300 dark:stroke-zinc-700"
         />
-        <text x={PAD.left} y={H - 6} fontSize={10} fill="currentColor">
+        <text x={PAD.left} y={H - 6} fontSize={12} fill="currentColor">
           {fmt(x0)}
         </text>
-        <text x={W - PAD.right} y={H - 6} fontSize={10} fill="currentColor" textAnchor="end">
+        <text x={W - PAD.right} y={H - 6} fontSize={12} fill="currentColor" textAnchor="end">
           {fmt(x1)}
         </text>
-        <text x={PAD.left - 4} y={H - PAD.bottom} fontSize={10} fill="currentColor" textAnchor="end">
+        <text x={PAD.left - 4} y={H - PAD.bottom} fontSize={12} fill="currentColor" textAnchor="end">
           {fmt(y0)}
         </text>
-        <text x={PAD.left - 4} y={PAD.top + 8} fontSize={10} fill="currentColor" textAnchor="end">
+        <text x={PAD.left - 4} y={PAD.top + 8} fontSize={12} fill="currentColor" textAnchor="end">
           {fmt(y1)}
         </text>
         {points.map((p) => (
