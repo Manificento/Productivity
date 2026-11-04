@@ -2,16 +2,23 @@ import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import type { Baseline, Phase } from '../../../core/adaptation/types';
 import { fromDateKey } from '../../../core/dates';
-import type { DateKey, LifeEvent } from '../../../core/types';
-import { INTENSITY_LABEL } from '../logic/baseline';
+import type { DateKey, LifeEvent, WorkoutIntensity } from '../../../core/types';
 import { formatCapacity, previewDays } from '../logic/preview';
 
+// Short labels so six columns fit a 360 px screen.
 const PHASE_SHORT: Record<Phase, string> = {
   normal: 'обычный',
-  prep: 'подготовка',
-  taper: 'разгрузка',
+  prep: 'подгот.',
+  taper: 'разгруз.',
   event: 'событие',
-  recovery: 'восстановл.',
+  recovery: 'восстан.',
+};
+
+const INTENSITY_SHORT: Record<WorkoutIntensity, string> = {
+  rest: 'отдых',
+  light: 'лёгкая',
+  moderate: 'умер.',
+  hard: 'любая',
 };
 
 const PHASE_ROW: Record<Phase, string> = {
@@ -61,7 +68,7 @@ export function PlanPreview({ event, baseline, today }: { event: LifeEvent; base
               <td className="whitespace-nowrap px-1 py-1.5">
                 {r.sleepHours.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} ч
               </td>
-              <td className="px-1 py-1.5">{INTENSITY_LABEL[r.maxWorkoutIntensity]}</td>
+              <td className="px-1 py-1.5">{INTENSITY_SHORT[r.maxWorkoutIntensity]}</td>
               <td className="px-1 py-1.5">{r.focusPomodoros}</td>
             </tr>
           ))}

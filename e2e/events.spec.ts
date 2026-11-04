@@ -32,11 +32,19 @@ test.describe('important events', () => {
       /Событие/,
       /Восстановление/,
     ]);
+    const plan = page.getByRole('table', { name: 'План на 10 дней' });
+    await expect(plan.getByRole('row')).toHaveCount(11);
+    await expect(plan.getByRole('row').nth(1)).toContainText('подгот.');
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
 
     await page.getByRole('button', { name: 'Изменить' }).click();
     const edit = page.getByRole('dialog', { name: 'Изменить событие' });
+    const livePlan = edit.getByRole('table', { name: 'План на 10 дней' });
+    await expect(livePlan.getByRole('row').nth(1).getByRole('cell').last()).toHaveText('7');
+    await edit.getByRole('radio', { name: 'Обычное' }).click();
+    await expect(livePlan.getByRole('row').nth(1).getByRole('cell').last()).toHaveText('5');
+    await edit.getByRole('radio', { name: 'Критичное' }).click();
     await edit.getByLabel('Дата').fill('2026-11-05');
     await edit.getByRole('button', { name: 'Сохранить' }).click();
     await expect(page.getByText('Сейчас: разгрузка · событие завтра')).toBeVisible();

@@ -54,7 +54,7 @@ describe('Предпросмотр 10 дней', () => {
     ).toEqual(['День', 'Фаза', 'Задачи', 'Сон', 'Трен.', 'Фокус']);
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(10);
-    expect(rows[0]).toHaveTextContent('4 нояб.подготовка6 ч8 чумеренная7');
+    expect(rows[0]).toHaveTextContent('4 нояб.подгот.6 ч8 чумер.7');
     expect(rows[5]).toHaveTextContent('9 нояб.событие1,8 ч7,5 чотдых0');
   });
 
