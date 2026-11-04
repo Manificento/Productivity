@@ -1,6 +1,7 @@
 import { Empty } from '../../../ui';
 import { useCompletedTasks } from '../data/tasks';
-import { useTasksData } from '../data/useTasksData';
+import { useMemo } from 'react';
+import { useProjects } from '../data/projects';
 import { dayHeading } from '../logic/format';
 import { completedGroups } from '../logic/lists';
 import { TaskRows } from './TaskRows';
@@ -11,7 +12,9 @@ import { useToday } from './useToday';
 /** «Выполнено»: every completed task, grouped by the day it was completed. Unchecking reopens it. */
 export function DoneView() {
   const done = useCompletedTasks();
-  const data = useTasksData();
+  const projects = useProjects();
+  // Only project names are needed here — not the whole tasks table.
+  const projectNames = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects]);
   const today = useToday();
   const { actions, ui } = useTaskActions();
   const groups = done ? completedGroups(done) : [];
@@ -24,8 +27,8 @@ export function DoneView() {
         <Empty>Выполненных задач пока нет</Empty>
       ) : (
         groups.map((g) => (
-          <TaskSection key={g.date} title={`Выполнено: ${dayHeading(g.date, today)}`}>
-            <TaskRows tasks={g.tasks} today={today} actions={actions} projectNames={data?.projectNames} />
+          <TaskSection key={g.date} title={dayHeading(g.date, today)}>
+            <TaskRows tasks={g.tasks} today={today} actions={actions} projectNames={projectNames} />
           </TaskSection>
         ))
       )}

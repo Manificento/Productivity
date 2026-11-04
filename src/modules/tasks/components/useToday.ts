@@ -12,8 +12,19 @@ export function useToday(): DateKey {
 
   useEffect(() => {
     const refresh = () => setToday(todayKey());
-    // A second after midnight, so the new day has surely started.
-    const timer = setTimeout(refresh, msUntilNextDay(Date.now()) + 1000);
+    // A second after midnight, so the new day has surely started. Re-armed every time: if the clock
+    // was moved and the day did not change, `today` stays the same and this effect would not re-run.
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(
+        () => {
+          refresh();
+          schedule();
+        },
+        msUntilNextDay(Date.now()) + 1000,
+      );
+    };
+    schedule();
     const onVisible = () => document.visibilityState === 'visible' && refresh();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', refresh);

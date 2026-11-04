@@ -22,10 +22,10 @@ describe('archive of completed tasks', () => {
 
     await user.click(screen.getByRole('link', { name: 'Выполнено' }));
 
-    const regions = await screen.findAllByRole('region', { name: /^Выполнено: / });
+    const regions = await screen.findAllByRole('region');
     expect(regions.map((r) => within(r).getByRole('heading').textContent)).toEqual([
-      'Выполнено: Вчера · вт, 3 нояб.',
-      'Выполнено: ср, 28 окт.',
+      'Вчера · вт, 3 нояб.',
+      'ср, 28 окт.',
     ]);
     const titles = within(regions[0])
       .getAllByRole('checkbox')
@@ -68,6 +68,21 @@ describe('day change', () => {
 
     expect(await within(section('Сегодня')).findByText('Завтрашняя')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Выполнено сегодня' })).not.toBeInTheDocument();
+  });
+
+  it('useToday re-arms its timer when the day did not change (clock moved back)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 23, 59, 0));
+    const { result } = renderHook(() => useToday());
+    act(() => {
+      vi.setSystemTime(new Date(2026, 10, 4, 22, 0, 0)); // clock corrected backwards
+      vi.advanceTimersByTime(61_000);
+    });
+    expect(result.current).toBe(TODAY);
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 60_000);
+    });
+    expect(result.current).toBe('2026-11-05');
   });
 
   it('useToday switches at local midnight by itself', () => {

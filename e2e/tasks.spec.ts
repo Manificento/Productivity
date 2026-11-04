@@ -17,7 +17,7 @@ test.describe('tasks', () => {
     await expect(done.getByText('Купить молоко')).toBeVisible();
 
     await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Выполнено' }).click();
-    await expect(page.getByRole('region', { name: /^Выполнено: Сегодня/ }).getByText('Купить молоко')).toBeVisible();
+    await expect(page.getByRole('region', { name: /^Сегодня · / }).getByText('Купить молоко')).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });

@@ -6,6 +6,7 @@ import { useProjects } from '../data/projects';
 import { postponeToTomorrow, updateTask, useTask } from '../data/tasks';
 import { formToPatch, taskToForm, validateForm, type FormErrors, type TaskForm } from '../logic/editForm';
 import { activeProjects } from '../logic/projects';
+import { useToday } from './useToday';
 
 const PRIORITIES: { value: TaskForm['priority']; label: string }[] = [
   { value: '1', label: 'P1' },
@@ -28,6 +29,7 @@ export function TaskEditor({ taskId, onClose }: { taskId: Id | undefined; onClos
 
 function EditorForm({ task, onClose }: { task: Task; onClose: () => void }) {
   const projects = useProjects() ?? [];
+  const today = useToday();
   const [form, setForm] = useState<TaskForm>(() => taskToForm(task));
   const [errors, setErrors] = useState<FormErrors>({});
   const [saveError, setSaveError] = useState<string>();
@@ -111,7 +113,7 @@ function EditorForm({ task, onClose }: { task: Task; onClose: () => void }) {
         </p>
       )}
       {/* Only for tasks due today or overdue: for later or undated tasks «tomorrow» is not a postponement. */}
-      {task.completedAt === undefined && task.dueDate !== undefined && task.dueDate <= todayKey() && (
+      {task.completedAt === undefined && task.dueDate !== undefined && task.dueDate <= today && (
         <Button
           variant="secondary"
           className="mb-2 w-full"
