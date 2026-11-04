@@ -4,6 +4,8 @@
 
 - **Пишет в таблицы:** `sleepLogs`, `foods`, `mealLogs`, `workoutLogs`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
 - **Суть модуля:** журналы сна, еды (КБЖУ, Open Food Facts — единственный разрешённый внешний API) и тренировок.
+- **Сон пишется ТОЛЬКО через `saveSleep()` из `src/core/logging/sleep.ts`** (валидация и «одна запись на ночь»),
+  интерпретация введённых часов — `sleepWindow()` из `src/core/logging/sleepTime.ts`. Тот же путь использует утренний экран `today`.
 - **Цели дня:** `useDailyTargets(todayKey())` из `src/core/adaptation/useDailyTargets.ts` — только чтение.
 
 Структура (создавай папки по мере надобности):

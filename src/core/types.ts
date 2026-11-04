@@ -145,6 +145,29 @@ export interface WorkoutLog extends BaseRecord {
   note?: string;
 }
 
+// ---------- cognition ----------
+
+export type CognitiveTestKind = 'pvt';
+
+/**
+ * One run of a cognitive test. PVT = psychomotor vigilance task: tap as fast as possible when
+ * a stimulus appears at random intervals. Objective measure of alertness used for personalization.
+ */
+export interface CognitiveTest extends BaseRecord {
+  date: DateKey;
+  kind: CognitiveTestKind;
+  startedAt: Millis;
+  durationMs: number;
+  /** Reaction times of valid responses, ms. */
+  reactionTimesMs: number[];
+  /** Valid responses slower than 500 ms. */
+  lapses: number;
+  /** Taps before the stimulus appeared (or faster than 100 ms). */
+  falseStarts: number;
+  /** Median of reactionTimesMs, ms — denormalized for charts and adaptation. */
+  medianRtMs: number;
+}
+
 // ---------- check-in ----------
 
 export interface CheckIn extends BaseRecord {

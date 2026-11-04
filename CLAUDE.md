@@ -5,7 +5,7 @@ Local-first PWA, блок «Продуктивность» супер-прило
 
 ## Перед любой работой
 
-- Что строим: `docs/SPEC.md`. Как устроено: `docs/architecture.md`. Почему так: `docs/adr/`.
+- Что строим: `docs/SPEC.md` и `docs/product-decisions.md` (решения владельца — при сомнениях следуй им). Как устроено: `docs/architecture.md`. Почему так: `docs/adr/`.
 - Как работаем (DoR, DoD, метки, ветки, коммиты): `docs/process.md`.
 - Работа берётся **только из GitHub Issues**: `scripts/agent.sh next <area>` → `show <N>`.
   Делай ровно то, что в критериях приёмки issue. Идея сверх scope → новая issue, не код.

@@ -1,14 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { shiftDateKey } from '../dates';
+import { sleepHours } from '../logging/sleepTime';
 import type { DateKey } from '../types';
 import { computeDailyTargets } from './engine';
 import { BASELINE_SETTING_KEY, DEFAULT_BASELINE } from './rules';
 import type { Baseline, DailyTargets } from './types';
 
-export function sleepHours(log: { bedtime: number; wakeTime: number }): number {
-  return (log.wakeTime - log.bedtime) / 3_600_000;
-}
+export { sleepHours } from '../logging/sleepTime';
 
 /** Loads everything the engine needs for `date` from the local DB. */
 export async function loadDailyTargets(date: DateKey): Promise<DailyTargets> {

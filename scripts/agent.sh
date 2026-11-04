@@ -25,19 +25,24 @@ die() { echo "error: $*" >&2; exit 1; }
 
 # Issue numbers listed after "Depends on:" / "Зависит от:" in the body.
 deps_of() {
-  api "repos/$R/issues/$1" --jq '.body // ""' | grep -E '^([Dd]epends on|[Зз]ависит от):' | grep -oE '#[0-9]+' | tr -d '#' || true
+  api "repos/$R/issues/$1" --jq '.body // ""' | grep -E '^(Depends on|depends on|Зависит от|зависит от):' | grep -oE '#[0-9]+' | tr -d '#' || true
 }
 
 is_closed() { [[ "$(api "repos/$R/issues/$1" --jq .state)" == "closed" ]]; }
 
 cmd_next() {
   local area=${1:?usage: next <area>}
-  local rows
+  local rows skip_p2=true
+  [[ "${INCLUDE_P2:-}" == "1" ]] && skip_p2=false
+  # Order: priority (P0 → P1 → P2), then milestone, then issue number. P2 is skipped unless INCLUDE_P2=1.
   rows=$(api "repos/$R/issues?state=open&labels=area:$area&per_page=100" --jq \
-    '[.[] | select(.pull_request == null)
-          | select([.labels[].name] | index("status:in-progress") | not)
-          | select([.labels[].name] | index("status:blocked") | not)]
-     | sort_by(.milestone.title // "zzz", .number) | .[] | "\(.number)\t\(.title)"')
+    "[.[] | select(.pull_request == null)
+          | (.labels | map(.name)) as \$l
+          | select(\$l | index(\"status:in-progress\") | not)
+          | select(\$l | index(\"status:blocked\") | not)
+          | select(($skip_p2 and (\$l | index(\"priority:P2\"))) | not)
+          | . + {prio: ((\$l | map(select(startswith(\"priority:\")))) [0] // \"priority:P9\")}]
+     | sort_by(.prio, .milestone.title // \"zzz\", .number) | .[] | \"\(.number)\t\(.title)\"")
   while IFS=$'\t' read -r num title; do
     [[ -z "$num" ]] && continue
     local ready=1
