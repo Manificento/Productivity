@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Habit, HabitLog, LifeEvent, Task, TimeEntry } from '../../../core/types';
-import { eventBanner, focusSummary, habitsSummary, tasksSummary } from './summary';
+import { eventBanner, focusSummary, habitsSummary, tasksSummary, workoutSummary } from './summary';
 
 const base = { createdAt: 0, updatedAt: 0 };
 
@@ -141,5 +141,40 @@ describe('focusSummary', () => {
 
   it('has no running timer when every entry is finished', () => {
     expect(focusSummary([entry({})], '2026-11-04')).toEqual({ sessions: 0, running: undefined });
+  });
+});
+
+describe('tie-breaks and edge cases', () => {
+  it('puts the older overdue task first when priorities are equal, like the tasks list', () => {
+    const tasks = [
+      task({ id: 'newer', priority: 2, dueDate: '2026-11-03' }),
+      task({ id: 'older', priority: 2, dueDate: '2026-11-01' }),
+    ];
+    expect(tasksSummary(tasks, '2026-11-04', undefined).top.map((t) => t.id)).toEqual(['older', 'newer']);
+  });
+
+  it('shows the latest running timer when several are running', () => {
+    const s = focusSummary(
+      [entry({ id: 'old', end: undefined, start: 10 }), entry({ id: 'new', end: undefined, start: 20 })],
+      '2026-11-04',
+    );
+    expect(s.running?.id).toBe('new');
+  });
+
+  it('sums workouts and keeps the hardest effort', () => {
+    const w = (type: string, durationMin: number, rpe: number) => ({
+      id: type,
+      date: '2026-11-04',
+      type,
+      durationMin,
+      rpe,
+      ...base,
+    });
+    expect(workoutSummary([w('Бег', 30, 6), w('Сила', 45, 8)])).toEqual({
+      types: ['Бег', 'Сила'],
+      minutes: 75,
+      maxRpe: 8,
+    });
+    expect(workoutSummary([])).toBeUndefined();
   });
 });

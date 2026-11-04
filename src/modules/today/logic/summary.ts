@@ -1,7 +1,7 @@
 import { startOfWeek } from 'date-fns';
 import type { Phase } from '../../../core/adaptation/types';
 import { daysBetween, fromDateKey, toDateKey } from '../../../core/dates';
-import type { DateKey, Habit, HabitLog, Id, LifeEvent, Task, TimeEntry } from '../../../core/types';
+import type { DateKey, Habit, HabitLog, Id, LifeEvent, Task, TimeEntry, WorkoutLog } from '../../../core/types';
 import { daysLabel } from './events';
 
 /**
@@ -39,7 +39,11 @@ export function tasksSummary(tasks: Task[], today: DateKey, focusProjectId: Id |
   const sorted = [...due].sort((a, b) => {
     const [ra, rb] = [rank(a), rank(b)];
     for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
-    return (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') || a.createdAt - b.createdAt;
+    return (
+      a.dueDate!.localeCompare(b.dueDate!) ||
+      (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') ||
+      a.createdAt - b.createdAt
+    );
   });
   return {
     plannedMin: due.reduce((sum, t) => sum + (t.estimateMin ?? 0), 0),
@@ -49,10 +53,14 @@ export function tasksSummary(tasks: Task[], today: DateKey, focusProjectId: Id |
 }
 
 /** Monday of the week that contains `day`. */
-function weekStart(day: DateKey): DateKey {
+export function weekStart(day: DateKey): DateKey {
   return toDateKey(startOfWeek(fromDateKey(day), { weekStartsOn: 1 }));
 }
 
+/**
+ * Mirrors the habits module's schedule rule (modules may not import each other).
+ * TODO(#69): use the shared schedule rule from src/core once it exists.
+ */
 function isDueToday(habit: Habit, logs: HabitLog[], today: DateKey): boolean {
   const s = habit.schedule;
   if (s.kind === 'daily') return true;
@@ -74,6 +82,23 @@ export function habitsSummary(habits: Habit[], logs: HabitLog[], today: DateKey)
 export function focusSummary(entries: TimeEntry[], today: DateKey): { sessions: number; running?: TimeEntry } {
   return {
     sessions: entries.filter((e) => e.source === 'pomodoro' && e.date === today && e.end !== undefined).length,
-    running: entries.find((e) => e.end === undefined),
+    // The latest running timer, like the «Время» screen shows.
+    running: entries.filter((e) => e.end === undefined).sort((a, b) => b.start - a.start)[0],
+  };
+}
+
+export interface WorkoutSummary {
+  types: string[];
+  minutes: number;
+  maxRpe: number;
+}
+
+/** Today's workouts in one line; undefined when there were none. */
+export function workoutSummary(workouts: WorkoutLog[]): WorkoutSummary | undefined {
+  if (workouts.length === 0) return undefined;
+  return {
+    types: workouts.map((w) => w.type),
+    minutes: workouts.reduce((sum, w) => sum + w.durationMin, 0),
+    maxRpe: Math.max(...workouts.map((w) => w.rpe)),
   };
 }

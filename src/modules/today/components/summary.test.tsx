@@ -82,7 +82,7 @@ describe('Сводка на «Сегодня»', () => {
     renderToday();
     const card = await screen.findByRole('region', { name: 'Задачи на сегодня' });
     // Prep phase keeps the default capacity of 360 minutes.
-    expect(card).toHaveTextContent('План 150 / ёмкость 360 мин');
+    expect(card).toHaveTextContent('Задачи: план 150 / ёмкость 360 мин');
     expect(
       within(card)
         .getAllByRole('listitem')
@@ -161,5 +161,20 @@ describe('Сводка на «Сегодня»', () => {
       expect(screen.queryByRole('region', { name })).not.toBeInTheDocument();
     }
     expect(screen.queryByRole('link', { name: /через/ })).not.toBeInTheDocument();
+  });
+
+  it('says there are no focus sessions planned on the event day', async () => {
+    await db.lifeEvents.add({
+      id: 'x',
+      title: 'IELTS',
+      type: 'exam',
+      date: today,
+      importance: 3,
+      prepDays: 7,
+      ...base,
+    });
+    renderToday();
+    expect(await screen.findByText(/Сегодня без фокус-сессий/)).toBeInTheDocument();
+    expect(screen.queryByText('Фокус-сессий сегодня ещё не было.')).not.toBeInTheDocument();
   });
 });

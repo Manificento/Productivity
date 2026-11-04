@@ -7,7 +7,7 @@ import { Card, Progress } from '../../../ui';
 import { useEvent } from '../data/events';
 import { useSummaryData, type SummaryData } from '../data/summary';
 import { INTENSITY_LABEL } from '../logic/baseline';
-import { eventBanner, focusSummary, habitsSummary, tasksSummary } from '../logic/summary';
+import { eventBanner, focusSummary, habitsSummary, tasksSummary, workoutSummary } from '../logic/summary';
 
 const LINK = 'inline-flex min-h-11 items-center text-sm font-medium text-indigo-600 dark:text-indigo-400';
 
@@ -54,14 +54,14 @@ function TasksCard({ data, targets, today }: { data: SummaryData; targets: Daily
     <section aria-label="Задачи на сегодня">
       <Card title="Задачи">
         <p className="mb-2 text-sm">
-          План {s.plannedMin} / ёмкость {targets.taskCapacityMin} мин
+          Задачи: план {s.plannedMin} / ёмкость {targets.taskCapacityMin} мин
         </p>
         <Progress label="План задач против ёмкости дня" value={s.plannedMin} max={targets.taskCapacityMin} />
         <ol className="mt-3 space-y-1 text-sm">
           {s.top.map((t) => (
             <li key={t.id} className="truncate">
               {t.projectId !== undefined && t.projectId === targets.focusProjectId && (
-                <span className="mr-1" aria-label="Фокус-проект">
+                <span className="mr-1" role="img" aria-label="Фокус-проект">
                   🎯
                 </span>
               )}
@@ -104,6 +104,11 @@ function HabitsCard({ data, today }: { data: SummaryData; today: DateKey }) {
 
 function FocusCard({ data, targets, today }: { data: SummaryData; targets: DailyTargets; today: DateKey }) {
   const s = focusSummary(data.timeEntries, today);
+  if (targets.focusPomodoros === 0 && !s.running) {
+    return (
+      <p className="mb-3 px-1 text-sm text-zinc-500">Сегодня без фокус-сессий — по плану отдых от глубокой работы.</p>
+    );
+  }
   if (!s.running && s.sessions === 0) {
     return (
       <Hint to="/time" linkText="Запустить">
@@ -140,8 +145,7 @@ function HealthCard({ data, targets }: { data: SummaryData; targets: DailyTarget
       </Hint>
     );
   }
-  const minutes = data.workouts.reduce((sum, w) => sum + w.durationMin, 0);
-  const maxRpe = Math.max(0, ...data.workouts.map((w) => w.rpe));
+  const w = workoutSummary(data.workouts);
   return (
     <section aria-label="Сон и тренировка">
       <Card title="Сон и тренировка">
@@ -153,9 +157,7 @@ function HealthCard({ data, targets }: { data: SummaryData; targets: DailyTarget
           </dd>
           <dt className="text-zinc-500">Тренировка</dt>
           <dd>
-            {data.workouts.length
-              ? `${data.workouts.map((w) => w.type).join(', ')}, ${minutes} мин, RPE ${maxRpe}`
-              : 'не было'}
+            {w ? `${w.types.join(', ')}, ${w.minutes} мин, RPE ${w.maxRpe}` : 'не было'}
             <span className="text-zinc-500"> · предел: {INTENSITY_LABEL[targets.maxWorkoutIntensity]}</span>
           </dd>
         </dl>

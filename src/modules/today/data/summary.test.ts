@@ -27,6 +27,7 @@ beforeEach(async () => {
     { id: 'p1', categoryId: 'study', start: 1, end: 2, date: today, source: 'pomodoro', ...base },
     { id: 'run', categoryId: 'study', start: 3, date: '2026-11-03', source: 'timer', ...base },
     { id: 'old', categoryId: 'study', start: 1, end: 2, date: '2026-10-01', source: 'pomodoro', ...base },
+    { id: 'forgotten', categoryId: 'study', start: 0, date: '2026-10-20', source: 'timer', ...base },
   ]);
   await db.sleepLogs.add({ id: 's1', date: today, bedtime: 0, wakeTime: 8 * 3600_000, quality: 4, ...base });
   await db.workoutLogs.add({ id: 'w1', date: today, type: 'Бег', durationMin: 30, rpe: 6, ...base });
@@ -40,7 +41,7 @@ describe('loadSummaryData', () => {
     expect(d.tasks.map((t) => t.id).sort()).toEqual(['due', 'overdue']);
     expect(d.habits.map((h) => h.id)).toEqual(['h1']);
     expect(d.habitLogs.map((l) => l.id).sort()).toEqual(['l1', 'l2']);
-    expect(d.timeEntries.map((e) => e.id).sort()).toEqual(['p1', 'run']);
+    expect(d.timeEntries.map((e) => e.id).sort()).toEqual(['forgotten', 'p1', 'run']);
     expect(d.categories).toEqual({ study: 'Учёба' });
     expect(d.sleepHours).toBe(8);
     expect(d.workouts.map((w) => w.id)).toEqual(['w1']);

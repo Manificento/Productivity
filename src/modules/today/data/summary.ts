@@ -1,9 +1,8 @@
-import { startOfWeek } from 'date-fns';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { sleepHours } from '../../../core/adaptation/useDailyTargets';
-import { fromDateKey, shiftDateKey, toDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
 import type { DateKey, Habit, HabitLog, Id, Task, TimeEntry, WorkoutLog } from '../../../core/types';
+import { weekStart } from '../logic/summary';
 
 /** Raw records of other blocks the «Сегодня» summary reads (read-only). */
 export interface SummaryData {
@@ -13,7 +12,7 @@ export interface SummaryData {
   habits: Habit[];
   /** Habit logs of the current week (Monday … today). */
   habitLogs: HabitLog[];
-  /** Today's time entries plus a timer still running from an earlier day. */
+  /** Today's time entries plus timers still running from earlier days. */
   timeEntries: TimeEntry[];
   /** Time category names by id. */
   categories: Record<Id, string>;
@@ -23,8 +22,8 @@ export interface SummaryData {
 }
 
 export async function loadSummaryData(today: DateKey): Promise<SummaryData> {
-  const monday = toDateKey(startOfWeek(fromDateKey(today), { weekStartsOn: 1 }));
-  const [tasks, habits, habitLogs, recentEntries, categories, sleep, workouts] = await Promise.all([
+  const monday = weekStart(today);
+  const [tasks, habits, habitLogs, todayEntries, running, categories, sleep, workouts] = await Promise.all([
     db.tasks
       .where('dueDate')
       .belowOrEqual(today)
@@ -32,7 +31,9 @@ export async function loadSummaryData(today: DateKey): Promise<SummaryData> {
       .toArray(),
     db.habits.filter((h) => !h.archived).toArray(),
     db.habitLogs.where('date').between(monday, today, true, true).toArray(),
-    db.timeEntries.where('date').between(shiftDateKey(today, -2), today, true, true).toArray(),
+    db.timeEntries.where('date').equals(today).toArray(),
+    // Any timer without an end is running, however long ago it started (same as the «Время» screen).
+    db.timeEntries.filter((e) => e.end === undefined).toArray(),
     db.timeCategories.toArray(),
     db.sleepLogs.where('date').equals(today).first(),
     db.workoutLogs.where('date').equals(today).toArray(),
@@ -41,7 +42,7 @@ export async function loadSummaryData(today: DateKey): Promise<SummaryData> {
     tasks,
     habits,
     habitLogs,
-    timeEntries: recentEntries.filter((e) => e.date === today || e.end === undefined),
+    timeEntries: [...todayEntries, ...running.filter((e) => e.date !== today)],
     categories: Object.fromEntries(categories.map((c) => [c.id, c.name])),
     sleepHours: sleep ? sleepHours(sleep) : undefined,
     workouts,
