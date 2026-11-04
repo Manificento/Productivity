@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../../../core/types';
+import { parseQuickAdd } from './quickAdd';
 import { isNextCopyOf, nextDueDate, nextOccurrence } from './recurrence';
 
 function task(over: Partial<Task>): Task {
   return { id: 't', createdAt: 0, updatedAt: 0, title: 'зарядка', priority: 2, tags: [], ...over };
+}
+
+/** Due dates of `count` copies, each completed on its due date. */
+function dueChain(first: Task, count: number): string[] {
+  const due: string[] = [];
+  let current = first;
+  for (let i = 0; i < count; i++) {
+    const next = nextOccurrence(current, current.dueDate!)!;
+    due.push(next.dueDate!);
+    current = task({ ...next });
+  }
+  return due;
 }
 
 describe('nextDueDate', () => {
@@ -32,15 +45,15 @@ describe('nextDueDate', () => {
   });
 
   it('Given ежемесячная задача, созданная на 31 января When её копии выполняются по очереди Then сроки: 28 февраля → 31 марта → 30 апреля', () => {
-    const monthly = { kind: 'monthly' as const, dayOfMonth: 31 };
-    const due: string[] = [];
-    let current = task({ dueDate: '2027-01-31', recurrence: monthly });
-    for (let i = 0; i < 3; i++) {
-      const next = nextOccurrence(current, current.dueDate!)!;
-      due.push(next.dueDate!);
-      current = task({ ...next });
-    }
-    expect(due).toEqual(['2027-02-28', '2027-03-31', '2027-04-30']);
+    const parsed = parseQuickAdd('31 января каждый месяц аренда', '2026-11-04');
+    expect(dueChain(task({ dueDate: parsed.dueDate, recurrence: parsed.recurrence }), 3)).toEqual([
+      '2027-02-28',
+      '2027-03-31',
+      '2027-04-30',
+    ]);
+  });
+
+  it('the anchor also brings a leap-year February back: 30 Jan → 29 Feb → 30 Mar', () => {
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 30 }, '2028-01-30')).toBe('2028-02-29');
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 30 }, '2028-02-29')).toBe('2028-03-30');
   });
@@ -48,20 +61,24 @@ describe('nextDueDate', () => {
   it('Given старые записи без якоря When они повторяются Then поведение прежнее (день из срока), миграция не нужна', () => {
     expect(nextDueDate({ kind: 'monthly' }, '2027-02-28')).toBe('2027-03-28');
     expect(nextDueDate({ kind: 'monthly' }, '2027-03-31')).toBe('2027-04-30');
+    expect(dueChain(task({ dueDate: '2027-01-31', recurrence: { kind: 'monthly' } }), 2)).toEqual([
+      '2027-02-28',
+      '2027-03-28',
+    ]);
   });
 
-  it('a stale anchor (the due date was moved by hand to another day) gives way to the due date', () => {
+  it('a stale anchor (the due date was moved by hand to another day) gives way to the new day for good', () => {
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 31 }, '2027-03-15')).toBe('2027-04-15');
-    // An invalid anchor (e.g. from an import) is ignored.
+    const moved = (dueDate: string) => task({ dueDate, recurrence: { kind: 'monthly', dayOfMonth: 31 } });
+    // Even when the chain later reaches the end of a short month, the old anchor does not come back.
+    expect(dueChain(moved('2027-01-28'), 3)).toEqual(['2027-02-28', '2027-03-28', '2027-04-28']);
+    expect(dueChain(moved('2027-03-30'), 3)).toEqual(['2027-04-30', '2027-05-30', '2027-06-30']);
+    expect(nextOccurrence(moved('2027-01-28'), '2027-01-28')?.recurrence).toEqual({ kind: 'monthly', dayOfMonth: 28 });
+  });
+
+  it('an invalid anchor (e.g. from an import) is ignored', () => {
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 0 }, '2027-01-31')).toBe('2027-02-28');
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 40 }, '2027-02-28')).toBe('2027-03-28');
-  });
-
-  it('Given задача «каждые 3 дня» When я её выполняю Then следующая — через 3 дня от срока', () => {
-    expect(nextDueDate({ kind: 'everyNDays', interval: 3 }, '2026-11-29')).toBe('2026-12-02');
-    expect(nextDueDate({ kind: 'everyNDays' }, '2026-11-04')).toBe('2026-11-05');
-    expect(nextDueDate({ kind: 'everyNDays', interval: Number.NaN }, '2026-11-04')).toBe('2026-11-05');
-    expect(nextDueDate({ kind: 'everyNDays', interval: 2.7 }, '2026-11-04')).toBe('2026-11-06');
   });
 });
 

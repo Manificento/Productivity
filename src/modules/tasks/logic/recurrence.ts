@@ -46,12 +46,23 @@ type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
  * daily task gives tomorrow, not another overdue copy. A task without a due date repeats from the completion day.
  */
 export function nextOccurrence(task: Task, completedDay: DateKey): NewTask | undefined {
-  const { recurrence } = task;
-  if (!recurrence) return undefined;
+  if (!task.recurrence) return undefined;
   const { id: _id, createdAt: _c, updatedAt: _u, completedAt: _done, ...fields } = task;
-  let dueDate = nextDueDate(recurrence, task.dueDate ?? completedDay);
+  const from = task.dueDate ?? completedDay;
+  const recurrence = settledAnchor(task.recurrence, from);
+  let dueDate = nextDueDate(recurrence, from);
   while (dueDate <= completedDay) dueDate = nextDueDate(recurrence, dueDate);
-  return { ...fields, dueDate };
+  return { ...fields, recurrence, dueDate };
+}
+
+/**
+ * A monthly anchor that no longer matches the due date (moved by hand, or invalid) is replaced with the due
+ * date's day, so later copies never jump back to the old day. Records without an anchor stay as they are.
+ */
+function settledAnchor(recurrence: Recurrence, dueDate: DateKey): Recurrence {
+  if (recurrence.kind !== 'monthly' || recurrence.dayOfMonth === undefined) return recurrence;
+  if (monthlyAnchor(recurrence, dueDate) === recurrence.dayOfMonth) return recurrence;
+  return { ...recurrence, dayOfMonth: fromDateKey(dueDate).getDate() };
 }
 
 /**

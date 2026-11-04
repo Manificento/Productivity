@@ -26,7 +26,7 @@ export interface BaseRecord {
 export type Priority = 1 | 2 | 3 | 4; // 1 = highest
 
 export interface Recurrence {
-  /** 'daily' | 'weekly' (on `weekdays`) | 'monthly' (same day of month) | every N days */
+  /** 'daily' | 'weekly' (on `weekdays`) | 'monthly' (on `dayOfMonth`, else the due date's day) | every N days */
   kind: 'daily' | 'weekly' | 'monthly' | 'everyNDays';
   /** 0 = Sunday … 6 = Saturday; used when kind = 'weekly'. */
   weekdays?: number[];
