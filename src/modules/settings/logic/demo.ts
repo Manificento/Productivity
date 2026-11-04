@@ -66,7 +66,7 @@ const base = (id: string, time: Millis) => ({ id: `demo-${id}`, createdAt: time,
 
 /**
  * Realistic data of every block for the 14 days ending `today`, plus an IELTS exam in 5 days.
- * Nothing is dated after `now`. Pure: the caller loads it through `importAll`.
+ * Nothing is dated after `now` (loaded early in the morning, today has no sleep or meals yet). Pure: the caller loads it through `importAll`.
  */
 export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
   const rnd = random(Number(today.replaceAll('-', '')));
@@ -74,18 +74,20 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
   const days = Array.from({ length: DEMO_DAYS }, (_, i) => shiftDateKey(today, i - (DEMO_DAYS - 1)));
   const first = days[0];
   const past = <T extends { at: Millis }>(rows: T[]) => rows.filter((r) => r.at <= now);
+  /** Record stamps never lie in the future (e.g. today's evening habit log when loaded in the morning). */
+  const stamp = (id: string, time: Millis) => base(id, Math.min(time, now));
 
   // ---------- tasks ----------
   const projects: Project[] = [
-    { ...base('project-study', now), name: 'Учёба', color: '#6366f1', archived: false },
-    { ...base('project-work', now), name: 'Работа', color: '#0ea5e9', archived: false },
-    { ...base('project-home', now), name: 'Дом', color: '#10b981', archived: false },
+    { ...stamp('project-study', at(first, 8)), name: 'Учёба', color: '#6366f1', archived: false },
+    { ...stamp('project-work', at(first, 8)), name: 'Работа', color: '#0ea5e9', archived: false },
+    { ...stamp('project-home', at(first, 8)), name: 'Дом', color: '#10b981', archived: false },
   ];
   const [study, work, home] = projects.map((p) => p.id);
   const task = (n: number, title: string, fields: Partial<Task> & { dueIn?: number; doneIn?: number } = {}): Task => {
     const { dueIn, doneIn, ...rest } = fields;
     return {
-      ...base(`task-${n}`, at(first, 9)),
+      ...stamp(`task-${n}`, at(first, 9)),
       title,
       priority: 3,
       tags: [],
@@ -143,13 +145,12 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
       dueIn: -4,
       doneIn: -4,
       estimateMin: 10,
-      recurrence: { kind: 'monthly' },
     }),
     task(13, 'Купить продукты на неделю', { projectId: home, dueIn: 1, estimateMin: 40 }),
     task(14, 'Уборка', {
       projectId: home,
       priority: 4,
-      dueIn: 3,
+      dueIn: (6 - fromDateKey(today).getDay()) % 7 || 7, // next Saturday, as the weekly rule says
       estimateMin: 60,
       recurrence: { kind: 'weekly', weekdays: [6] },
     }),
@@ -159,17 +160,23 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
 
   // ---------- habits ----------
   const habits: Habit[] = [
-    { ...base('habit-exercise', now), name: 'Зарядка', schedule: { kind: 'daily' }, archived: false, color: '#f59e0b' },
-    { ...base('habit-reading', now), name: 'Чтение 20 минут', schedule: { kind: 'daily' }, archived: false },
     {
-      ...base('habit-english', now),
+      ...stamp('habit-exercise', at(first, 8)),
+      name: 'Зарядка',
+      schedule: { kind: 'daily' },
+      archived: false,
+      color: '#f59e0b',
+    },
+    { ...stamp('habit-reading', at(first, 8)), name: 'Чтение 20 минут', schedule: { kind: 'daily' }, archived: false },
+    {
+      ...stamp('habit-english', at(first, 8)),
       name: 'Английский 30 минут',
       schedule: { kind: 'weekdays', weekdays: [1, 2, 3, 4, 5] },
       archived: false,
       color: '#6366f1',
     },
     {
-      ...base('habit-run', now),
+      ...stamp('habit-run', at(first, 8)),
       name: 'Пробежка',
       schedule: { kind: 'timesPerWeek', timesPerWeek: 3 },
       archived: false,
@@ -182,7 +189,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
     const done = (habit: Habit, chance: number) => {
       if (rnd() < chance)
         habitLogs.push({
-          ...base(`habitlog-${habit.id}-${day}`, at(day, 21)),
+          ...stamp(`habitlog-${habit.id}-${day}`, at(day, 21)),
           habitId: habit.id,
           date: day,
           done: true,
@@ -199,10 +206,10 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
 
   // ---------- time ----------
   const timeCategories: TimeCategory[] = [
-    { ...base('cat-study', now), name: 'Учёба', color: '#6366f1', archived: false },
-    { ...base('cat-work', now), name: 'Работа', color: '#0ea5e9', archived: false },
-    { ...base('cat-sport', now), name: 'Спорт', color: '#10b981', archived: false },
-    { ...base('cat-rest', now), name: 'Отдых', color: '#f59e0b', archived: false },
+    { ...stamp('cat-study', at(first, 8)), name: 'Учёба', color: '#6366f1', archived: false },
+    { ...stamp('cat-work', at(first, 8)), name: 'Работа', color: '#0ea5e9', archived: false },
+    { ...stamp('cat-sport', at(first, 8)), name: 'Спорт', color: '#10b981', archived: false },
+    { ...stamp('cat-rest', at(first, 8)), name: 'Отдых', color: '#f59e0b', archived: false },
   ];
   const [catStudy, catWork, catSport, catRest] = timeCategories.map((c) => c.id);
   const timeEntries: TimeEntry[] = past(
@@ -217,7 +224,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
       return plan.map(([categoryId, hour, minute, duration, source, taskId], k) => {
         const start = at(day, hour, minute);
         return {
-          ...base(`time-${day}-${k}`, start),
+          ...stamp(`time-${day}-${k}`, start),
           categoryId,
           ...(taskId ? { taskId } : {}),
           start,
@@ -237,12 +244,12 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
       const wakeTime = at(day, 7, int(-30, 45));
       const hours = (wakeTime - bedtime) / 3_600_000;
       const quality = Math.max(1, Math.min(5, Math.round(hours - 3 + rnd())));
-      return { ...base(`sleep-${day}`, wakeTime), date: day, bedtime, wakeTime, quality, at: wakeTime };
+      return { ...stamp(`sleep-${day}`, wakeTime), date: day, bedtime, wakeTime, quality, at: wakeTime };
     }),
   ).map(({ at: _at, ...s }) => s);
 
   const food = (id: string, name: string, kcal: number, protein: number, fat: number, carbs: number): Food => ({
-    ...base(`food-${id}`, at(first, 8)),
+    ...stamp(`food-${id}`, at(first, 8)),
     name,
     kcal,
     protein,
@@ -267,7 +274,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
       const meal = (kind: MealLog['kind'], hour: number, items: [string, number][]) => {
         const time = at(day, hour, int(0, 40));
         return {
-          ...base(`meal-${day}-${kind}`, time),
+          ...stamp(`meal-${day}-${kind}`, time),
           date: day,
           time,
           kind,
@@ -305,7 +312,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
 
   const workout = (dayAgo: number, type: string, durationMin: number, rpe: number, extra: Partial<WorkoutLog> = {}) => {
     const day = shiftDateKey(today, -dayAgo);
-    return { ...base(`workout-${day}`, at(day, 19, 50)), date: day, type, durationMin, rpe, ...extra };
+    return { ...stamp(`workout-${day}`, at(day, 19, 50)), date: day, type, durationMin, rpe, ...extra };
   };
   const workoutLogs: WorkoutLog[] = [
     workout(13, 'Бег', 35, 6),
@@ -353,7 +360,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
       const reactionTimesMs = Array.from({ length: 20 }, () => int(230, 420)).concat(int(510, 640));
       const sorted = [...reactionTimesMs].sort((a, b) => a - b);
       return {
-        ...base(`pvt-${day}`, startedAt),
+        ...stamp(`pvt-${day}`, startedAt),
         date: day,
         kind: 'pvt' as const,
         startedAt,
@@ -367,7 +374,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
     .filter((t) => t.startedAt + t.durationMs <= now);
 
   const checkIns: CheckIn[] = days.map((day, i) => ({
-    ...base(`checkin-${day}`, at(day, 9)),
+    ...stamp(`checkin-${day}`, at(day, 9)),
     date: day,
     energy: int(2, 5),
     focus: int(2, 5),
@@ -377,7 +384,7 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
   // ---------- events ----------
   const lifeEvents: LifeEvent[] = [
     {
-      ...base('event-ielts', at(first, 10)),
+      ...stamp('event-ielts', at(first, 10)),
       title: 'IELTS',
       type: 'exam',
       date: shiftDateKey(today, DEMO_EVENT_IN_DAYS),

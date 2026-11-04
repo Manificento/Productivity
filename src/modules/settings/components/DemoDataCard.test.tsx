@@ -56,16 +56,19 @@ describe('demo data', () => {
     render(<DemoDataCard today="2026-11-04" onExport={onExport} />);
     fill();
     const sheet = await dialog();
-    expect(within(sheet).getByRole('alert')).toHaveTextContent('Все ваши текущие данные будут заменены демо-данными');
-    expect(within(sheet).getByRole('alert')).toHaveTextContent('Сначала сделайте экспорт');
+    const warning = within(sheet).getByRole('note', { name: 'Предупреждение' });
+    expect(warning).toHaveTextContent('Все ваши текущие данные будут заменены демо-данными');
+    expect(warning).toHaveTextContent('Сначала сделайте экспорт');
 
     fireEvent.click(within(sheet).getByRole('button', { name: 'Сначала экспорт' }));
     expect(onExport).toHaveBeenCalledTimes(1);
+    expect(await within(sheet).findByRole('status')).toHaveTextContent('Резервная копия сохранена');
     // Nothing is replaced until «Заменить» is pressed.
     expect(await db.tasks.get('mine')).toBeDefined();
 
     fireEvent.click(within(sheet).getByRole('button', { name: 'Заменить' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Демо-данные загружены');
+    expect(await screen.findByText('Демо-данные загружены')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(await db.tasks.get('mine')).toBeUndefined();
   });
 
@@ -85,5 +88,28 @@ describe('demo data', () => {
     const sheet = await dialog();
     fireEvent.click(within(sheet).getByRole('button', { name: 'Заполнить' }));
     expect(await within(sheet).findByRole('alert')).toHaveTextContent('Не удалось загрузить демо-данные');
+  });
+
+  it('a failed export first says so inside the sheet and replaces nothing', async () => {
+    await db.tasks.put({ id: 'mine', createdAt: 0, updatedAt: 0, title: 'Моя задача', priority: 1, tags: [] });
+    render(<DemoDataCard today="2026-11-04" onExport={vi.fn().mockRejectedValue(new Error('quota'))} />);
+    fill();
+    const sheet = await dialog();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Сначала экспорт' }));
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent(
+      'Не удалось сделать экспорт — данные не заменены',
+    );
+    expect(await db.tasks.get('mine')).toBeDefined();
+  });
+
+  it('a failed replace keeps my data and shows the error', async () => {
+    await db.tasks.put({ id: 'mine', createdAt: 0, updatedAt: 0, title: 'Моя задача', priority: 1, tags: [] });
+    vi.spyOn(backup, 'importAll').mockRejectedValueOnce(new Error('quota'));
+    render(<DemoDataCard today="2026-11-04" onExport={vi.fn()} />);
+    fill();
+    const sheet = await dialog();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Заменить' }));
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent('ваши данные не изменились');
+    expect(await db.tasks.get('mine')).toBeDefined();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shiftDateKey, toDateKey } from '../../../core/dates';
+import { fromDateKey, shiftDateKey, toDateKey } from '../../../core/dates';
 import { buildDemoTables, DEMO_DAYS, DEMO_EVENT_IN_DAYS } from './demo';
 
 const TODAY = '2026-11-04';
@@ -91,5 +91,20 @@ describe('demo data', () => {
     expect(t.tasks.some((x) => x.completedAt !== undefined)).toBe(true);
     const todayLogs = t.habitLogs.filter((l) => l.date === TODAY);
     expect(todayLogs.length).toBeLessThan(t.habits.length);
+  });
+
+  it('loaded early in the morning, nothing is dated or stamped after now', () => {
+    const early = new Date(2026, 10, 4, 6, 0).getTime();
+    const rows = Object.values(buildDemoTables(TODAY, early)).flat();
+    for (const r of rows) {
+      if ('createdAt' in r) expect(r.createdAt, r.id).toBeLessThanOrEqual(early);
+      if ('updatedAt' in r) expect(r.updatedAt, r.id).toBeLessThanOrEqual(early);
+    }
+  });
+
+  it('the weekly «Уборка» is due on the next Saturday', () => {
+    const cleaning = t.tasks.find((x) => x.title === 'Уборка');
+    expect(cleaning?.dueDate).toBe('2026-11-07');
+    expect(fromDateKey(cleaning!.dueDate!).getDay()).toBe(6);
   });
 });

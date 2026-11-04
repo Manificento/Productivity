@@ -19,7 +19,9 @@ test.describe('settings', () => {
 
     await page.goto('/#/settings');
     await fill.click();
-    await expect(dialog.getByRole('alert')).toContainText('Все ваши текущие данные будут заменены');
+    await expect(dialog.getByRole('note', { name: 'Предупреждение' })).toContainText(
+      'Все ваши текущие данные будут заменены',
+    );
     const download = page.waitForEvent('download');
     await dialog.getByRole('button', { name: 'Сначала экспорт' }).click();
     expect((await download).suggestedFilename()).toBe('lifeos-backup-2026-11-04.json');

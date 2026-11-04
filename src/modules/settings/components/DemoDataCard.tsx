@@ -13,10 +13,22 @@ export function DemoDataCard({ onExport, today }: { onExport: () => Promise<void
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
+  const [exported, setExported] = useState(false);
   const close = () => {
     setStep({ kind: 'idle' });
     setError(undefined);
+    setExported(false);
   };
+
+  async function exportFirst() {
+    setError(undefined);
+    try {
+      await onExport();
+      setExported(true);
+    } catch {
+      setError('Не удалось сделать экспорт — данные не заменены');
+    }
+  }
 
   async function open() {
     setStatus(undefined);
@@ -55,13 +67,13 @@ export function DemoDataCard({ onExport, today }: { onExport: () => Promise<void
       )}
       <Sheet open={step.kind === 'confirm'} title="Заполнить демо-данными?" onClose={close}>
         {step.kind === 'confirm' && step.replaces ? (
-          <div role="alert" className="mb-4 text-sm text-amber-800 dark:text-amber-300">
+          <div role="note" aria-label="Предупреждение" className="mb-4 text-sm text-amber-800 dark:text-amber-300">
             <p className="font-medium">Все ваши текущие данные будут заменены демо-данными.</p>
-            <p className="mt-1">Сначала сделайте экспорт, чтобы потом их восстановить.</p>
+            <p className="mt-1">Сначала сделайте экспорт, чтобы потом их восстановить. Настройки сохранятся.</p>
           </div>
         ) : (
           <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
-            Приложение заполнится примером за {DEMO_DAYS} дней. Удалить его можно импортом своей копии.
+            Приложение заполнится примером за {DEMO_DAYS} дней. Ваши настройки сохранятся.
           </p>
         )}
         {error && (
@@ -70,9 +82,16 @@ export function DemoDataCard({ onExport, today }: { onExport: () => Promise<void
           </p>
         )}
         {step.kind === 'confirm' && step.replaces && (
-          <Button className="mb-3 w-full" onClick={() => void onExport()}>
-            Сначала экспорт
-          </Button>
+          <>
+            <Button className="mb-3 w-full" onClick={() => void exportFirst()}>
+              Сначала экспорт
+            </Button>
+            {exported && (
+              <p role="status" className="mb-3 text-sm text-emerald-700 dark:text-emerald-400">
+                Резервная копия сохранена
+              </p>
+            )}
+          </>
         )}
         <div className="grid grid-cols-2 gap-3">
           <Button variant="secondary" onClick={close}>
