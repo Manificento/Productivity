@@ -1,8 +1,12 @@
 import { useState } from 'react';
+import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
+import { todayKey } from '../../../core/dates';
 import { Button, Card, Empty, Field, Select, Sheet } from '../../../ui';
-import { createDefaultCategories, useCategories, useOpenTasks } from '../data/timeStore';
+import { createDefaultCategories, useCategories, useEntriesOnDay, useOpenTasks } from '../data/timeStore';
+import { countFocusSessions, focusProjectFirst, focusQuota } from '../logic/focusQuota';
 import { phaseMinutes, remainingMs, sessionInCycle, type Phase } from '../logic/pomodoro';
 import { formatDuration } from '../logic/timer';
+import { FocusQuotaCard } from './FocusQuotaCard';
 import { PomodoroSettingsForm } from './PomodoroSettingsForm';
 import { notificationsState } from './signal';
 import type { Pomodoro } from './usePomodoro';
@@ -18,6 +22,9 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
   const { state, settings, now } = pomodoro;
   const categories = useCategories();
   const tasks = useOpenTasks();
+  const day = todayKey(new Date(now));
+  const targets = useDailyTargets(day);
+  const todayEntries = useEntriesOnDay(day);
   const [taskId, setTaskId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -49,6 +56,18 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
     );
   }
 
+  const quota =
+    targets && todayEntries ? focusQuota(targets, countFocusSessions(todayEntries, day, settings.workMin)) : undefined;
+  const focusProjectId = targets?.focusProjectId;
+  const ordered = focusProjectFirst(tasks, focusProjectId);
+  const focusTasks = focusProjectId ? ordered.filter((t) => t.projectId === focusProjectId) : [];
+  const otherTasks = ordered.slice(focusTasks.length);
+  const option = (t: (typeof tasks)[number]) => (
+    <option key={t.id} value={t.id}>
+      {t.title}
+    </option>
+  );
+
   const chosenCategory = categories.some((c) => c.id === categoryId) ? categoryId : categories[0]!.id;
   const chosenTask = tasks.some((t) => t.id === taskId) ? taskId : '';
   const running = state.status === 'running';
@@ -63,6 +82,7 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
 
   return (
     <>
+      {quota && <FocusQuotaCard quota={quota} />}
       <Card>
         <div role="timer" aria-label="Pomodoro" className="text-center">
           <p className="text-sm font-medium text-zinc-500">
@@ -109,11 +129,14 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
             {(id) => (
               <Select id={id} value={chosenTask} onChange={(e) => setTaskId(e.target.value)}>
                 <option value="">Без задачи</option>
-                {tasks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
+                {focusTasks.length > 0 ? (
+                  <>
+                    <optgroup label="Фокус-проект дня">{focusTasks.map(option)}</optgroup>
+                    <optgroup label="Остальные задачи">{otherTasks.map(option)}</optgroup>
+                  </>
+                ) : (
+                  otherTasks.map(option)
+                )}
               </Select>
             )}
           </Field>

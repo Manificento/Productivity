@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
-import type { Id, Millis, Task, TimeCategory, TimeEntry } from '../../../core/types';
+import type { DateKey, Id, Millis, Task, TimeCategory, TimeEntry } from '../../../core/types';
 import type { FocusRecord } from '../logic/pomodoro';
 import { DEFAULT_CATEGORY_NAMES, type ManualEntry } from '../logic/timer';
 import { startTimer, type NewTimer } from '../logic/totals';
@@ -135,4 +135,9 @@ export function useEntriesOverlapping(from: Millis): TimeEntry[] | undefined {
     const byId = new Map([...recent, ...running].map((e) => [e.id, e]));
     return [...byId.values()];
   }, [from]);
+}
+
+/** Entries of one local day (by the day they started). */
+export function useEntriesOnDay(day: DateKey): TimeEntry[] | undefined {
+  return useLiveQuery(() => db.timeEntries.where('date').equals(day).toArray(), [day]);
 }

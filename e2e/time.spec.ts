@@ -54,6 +54,9 @@ test.describe('pomodoro', () => {
 
     const timer = page.getByRole('timer', { name: 'Pomodoro' });
     await expect(timer).toContainText('25:00');
+    // daily quota from adaptation (default baseline: 4 focus sessions)
+    await expect(page.getByText('0 из 4', { exact: true })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: 'Фокус-сессии сегодня' })).toBeVisible();
     await page.getByRole('button', { name: 'Начать фокус' }).click();
     await expect(timer).toContainText('Фокус · сессия 1 из 4');
 
@@ -61,6 +64,7 @@ test.describe('pomodoro', () => {
     await expect(timer).toContainText('Перерыв');
     await expect(timer).toContainText(/0[45]:\d\d/);
 
+    await expect(page.getByText('1 из 4', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Пропустить перерыв' }).click();
     await page.getByRole('button', { name: /^Длительности/ }).click();
     const dialog = page.getByRole('dialog', { name: 'Настройки Pomodoro' });
