@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { todayKey } from '../../../core/dates';
 import type { LifeEvent, Project } from '../../../core/types';
 import { Button, Card, Empty, Page, Sheet } from '../../../ui';
+import { useBaseline } from '../data/baseline';
 import { deleteEvent, updateEvent, useEvent, useProjects } from '../data/events';
 import {
   daysLabel,
@@ -15,6 +16,7 @@ import {
   type EventTimeline,
 } from '../logic/events';
 import { EventForm } from './EventForm';
+import { PlanPreview } from './PlanPreview';
 
 const POSITION_LABEL: Record<EventTimeline['position'], string> = {
   before: 'до начала подготовки',
@@ -97,6 +99,7 @@ export function EventDetail() {
   const { id = '' } = useParams();
   const event = useEvent(id);
   const projects = useProjects() ?? [];
+  const baseline = useBaseline();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -131,6 +134,13 @@ export function EventDetail() {
     <Page title={event.title}>
       {BACK}
       <Timeline timeline={eventTimeline(event, todayKey())} />
+      {baseline && (
+        <section aria-label="Как изменятся следующие 10 дней">
+          <Card title="Следующие 10 дней">
+            <PlanPreview event={event} baseline={baseline} today={todayKey()} />
+          </Card>
+        </section>
+      )}
       <Details event={event} projects={projects} />
       <div className="grid grid-cols-2 gap-3">
         <Button variant="secondary" onClick={() => setEditing(true)}>
@@ -144,6 +154,7 @@ export function EventDetail() {
         <EventForm
           initial={eventToForm(event)}
           projects={projects}
+          preview={baseline && { baseline, today: todayKey() }}
           onSubmit={async (fields) => {
             await updateEvent(id, fields);
             setEditing(false);
