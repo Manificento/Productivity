@@ -5,10 +5,12 @@ import {
   savePomodoroSettings,
   savePomodoroState,
   syncRunningSetting,
+  watchPomodoroSettings,
 } from '../data/pomodoroStore';
 import { addFocusRecords, stopRunningTimers } from '../data/timeStore';
 import {
   advance,
+  DEFAULT_POMODORO,
   startFocus,
   stop,
   type FocusTarget,
@@ -44,11 +46,13 @@ let users = 0;
 let busy = false;
 /** Bumped on every (re)start, so writes that finish after a restart are ignored. */
 let generation = 0;
+/** Last known durations: shown right away when the timer is re-attached, until the stored ones are read. */
+let lastSettings: PomodoroSettings = DEFAULT_POMODORO;
 let teardown: (() => void) | undefined;
 const listeners = new Set<() => void>();
 
 function load(): PomodoroSnapshot {
-  return { state: loadPomodoroState(), settings: loadPomodoroSettings(), now: Date.now() };
+  return { state: loadPomodoroState(), settings: lastSettings, now: Date.now() };
 }
 
 export function getPomodoro(): PomodoroSnapshot {
@@ -121,11 +125,16 @@ function run(): () => void {
     void syncRunningSetting(state);
     emit({ state });
   };
+  const stopWatching = watchPomodoroSettings((settings) => {
+    lastSettings = settings;
+    emit({ settings });
+  });
   const first = setTimeout(tick, 0);
   const id = setInterval(tick, 1000);
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('storage', onStorage);
   return () => {
+    stopWatching();
     clearTimeout(first);
     clearInterval(id);
     document.removeEventListener('visibilitychange', onVisibility);
@@ -170,6 +179,9 @@ export async function startPomodoro(target: FocusTarget): Promise<void> {
   unlockSound(); // inside the click: browsers allow audio only after a user gesture
   const t = Date.now();
   try {
+    // Durations are read from storage, so a start right after opening never uses stale defaults.
+    lastSettings = await loadPomodoroSettings();
+    emit({ settings: lastSettings });
     await stopRunningTimers(t);
   } catch {
     emit({ error: 'Не удалось остановить таймер учёта. Попробуйте ещё раз' });
@@ -199,7 +211,12 @@ export async function stopPomodoro(): Promise<boolean> {
   return true;
 }
 
-export function savePomodoroSettingsNow(next: PomodoroSettings): void {
-  savePomodoroSettings(next);
+export async function savePomodoroSettingsNow(next: PomodoroSettings): Promise<void> {
+  lastSettings = next;
   emit({ settings: next });
+  try {
+    await savePomodoroSettings(next);
+  } catch {
+    emit({ error: 'Не удалось сохранить длительности. Попробуйте ещё раз' });
+  }
 }

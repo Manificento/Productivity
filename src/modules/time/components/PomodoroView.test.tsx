@@ -1,6 +1,7 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { exportAll, importAll } from '../../../core/backup';
 import { db } from '../../../core/db';
 import { newRecord } from '../../../core/ids';
 import { atLocalTime } from '../../../core/logging/sleepTime';
@@ -36,7 +37,7 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   localStorage.clear();
-  await Promise.all([db.timeCategories.clear(), db.timeEntries.clear(), db.tasks.clear()]);
+  await Promise.all([db.timeCategories.clear(), db.timeEntries.clear(), db.tasks.clear(), db.settings.clear()]);
   await createDefaultCategories(NOW - 10_000);
 });
 
@@ -133,6 +134,47 @@ describe('PomodoroView', () => {
     first.unmount();
     render(<Pomodoro />);
     expect(await screen.findByRole('button', { name: 'Длительности: 50 / 10 / 15 мин' })).toBeInTheDocument();
+  });
+
+  it('Given я меняю длительности When нажимаю «Сохранить» Then они пишутся в settings под time.pomodoro, а не в localStorage, и попадают в экспорт', async () => {
+    const user = userEvent.setup();
+    render(<Pomodoro />);
+    await user.click(await screen.findByRole('button', { name: /^Длительности/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Настройки Pomodoro' });
+    await user.clear(within(dialog).getByLabelText('Фокус, мин'));
+    await user.type(within(dialog).getByLabelText('Фокус, мин'), '50');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+
+    await waitFor(async () => expect((await db.settings.get('time.pomodoro'))?.value).toMatchObject({ workMin: 50 }));
+    expect(localStorage.getItem('lifeos.time.pomodoro.settings')).toBeNull();
+    const backup = await exportAll();
+    expect(JSON.stringify(backup)).toContain('time.pomodoro');
+  });
+
+  it('Given длительности лежат в localStorage и нет time.pomodoro When открываю «Время» Then значение переносится в settings, старый ключ удалён, таймер показывает мои длительности', async () => {
+    localStorage.setItem('lifeos.time.pomodoro.settings', JSON.stringify({ workMin: 40 }));
+    render(<Pomodoro />);
+    expect(await screen.findByRole('button', { name: 'Длительности: 40 / 5 / 15 мин' })).toBeInTheDocument();
+    await waitFor(() => expect(localStorage.getItem('lifeos.time.pomodoro.settings')).toBeNull());
+    expect((await db.settings.get('time.pomodoro'))?.value).toMatchObject({ workMin: 40 });
+  });
+
+  it('Given импорт резервной копии с time.pomodoro When открываю «Pomodoro» Then таймер использует длительности из копии', async () => {
+    const backup = await exportAll();
+    await importAll({
+      ...backup,
+      tables: {
+        ...backup.tables,
+        settings: [
+          {
+            key: 'time.pomodoro',
+            value: { workMin: 30, shortBreakMin: 7, longBreakMin: 20, sessionsBeforeLongBreak: 3 },
+          },
+        ],
+      },
+    });
+    render(<Pomodoro />);
+    expect(await screen.findByRole('button', { name: 'Длительности: 30 / 7 / 20 мин' })).toBeInTheDocument();
   });
 
   it('неверная длительность — ошибка у поля, настройки не меняются', async () => {
