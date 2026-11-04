@@ -6,7 +6,7 @@ import { parseCheckIn, type CheckInFormValues } from '../logic/checkIn';
 
 const TITLE = 'Как вы сегодня?';
 
-function CheckInForm({ initial, date, onSaved }: { initial?: CheckIn; date: DateKey; onSaved: () => void }) {
+function CheckInForm({ initial, date, onDone }: { initial?: CheckIn; date: DateKey; onDone: () => void }) {
   const [values, setValues] = useState<CheckInFormValues>({
     energy: initial?.energy,
     focus: initial?.focus,
@@ -26,7 +26,7 @@ function CheckInForm({ initial, date, onSaved }: { initial?: CheckIn; date: Date
     setSaving(true);
     try {
       await saveCheckIn(date, parsed.data);
-      onSaved();
+      onDone();
     } catch {
       setError('Не удалось сохранить чек-ин. Попробуйте ещё раз.');
     } finally {
@@ -56,9 +56,16 @@ function CheckInForm({ initial, date, onSaved }: { initial?: CheckIn; date: Date
           {error}
         </p>
       )}
-      <Button type="submit" className="w-full" disabled={saving}>
-        Сохранить
-      </Button>
+      <div className="flex gap-3">
+        {initial && (
+          <Button variant="secondary" className="flex-1" onClick={onDone}>
+            Отмена
+          </Button>
+        )}
+        <Button type="submit" className="flex-1" disabled={saving}>
+          Сохранить
+        </Button>
+      </div>
     </form>
   );
 }
@@ -68,12 +75,12 @@ export function CheckInCard({ date }: { date: DateKey }) {
   const checkIn = useCheckIn(date);
   const [editing, setEditing] = useState(false);
 
-  if (checkIn === undefined) return null;
-
   return (
     <section aria-label={TITLE}>
       <Card title={TITLE}>
-        {checkIn && !editing ? (
+        {checkIn === undefined ? (
+          <p className="text-sm text-zinc-500">Загрузка…</p>
+        ) : checkIn && !editing ? (
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 text-sm">
               <p className="font-medium">
@@ -90,7 +97,7 @@ export function CheckInCard({ date }: { date: DateKey }) {
             key={checkIn?.id ?? 'new'}
             initial={checkIn ?? undefined}
             date={date}
-            onSaved={() => setEditing(false)}
+            onDone={() => setEditing(false)}
           />
         )}
       </Card>

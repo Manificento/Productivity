@@ -30,7 +30,7 @@ describe('Чек-ин', () => {
   it('Given чек-ина сегодня нет When я открываю «Сегодня» Then вверху карточка с Rating энергии и фокуса и полем заметки', async () => {
     renderToday();
     const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
-    expect(within(card).getByRole('radiogroup', { name: 'Энергия' })).toBeInTheDocument();
+    expect(await within(card).findByRole('radiogroup', { name: 'Энергия' })).toBeInTheDocument();
     expect(within(card).getByRole('radiogroup', { name: 'Фокус' })).toBeInTheDocument();
     expect(within(card).getByLabelText('Заметка')).toBeInTheDocument();
     // The check-in comes before the daily targets.
@@ -42,7 +42,7 @@ describe('Чек-ин', () => {
     const user = userEvent.setup();
     renderToday();
     const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
-    await user.click(within(card).getByRole('radio', { name: 'Энергия: 2' }));
+    await user.click(await within(card).findByRole('radio', { name: 'Энергия: 2' }));
     await user.click(within(card).getByRole('radio', { name: 'Фокус: 3' }));
     await user.type(within(card).getByLabelText('Заметка'), 'плохо спал');
     await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
@@ -58,7 +58,7 @@ describe('Чек-ин', () => {
     const user = userEvent.setup();
     renderToday();
     const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
-    await user.click(within(card).getByRole('radio', { name: 'Энергия: 4' }));
+    await user.click(await within(card).findByRole('radio', { name: 'Энергия: 4' }));
     await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
     expect(within(card).getByRole('alert')).toHaveTextContent('Оцените энергию и фокус');
     expect(await db.checkIns.count()).toBe(0);
@@ -85,9 +85,25 @@ describe('Чек-ин', () => {
     vi.spyOn(db.checkIns, 'add').mockRejectedValueOnce(new Error('quota'));
     renderToday();
     const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
-    await user.click(within(card).getByRole('radio', { name: 'Энергия: 3' }));
+    await user.click(await within(card).findByRole('radio', { name: 'Энергия: 3' }));
     await user.click(within(card).getByRole('radio', { name: 'Фокус: 3' }));
     await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
     expect(await within(card).findByRole('alert')).toHaveTextContent('Не удалось сохранить чек-ин');
+  });
+
+  it('shows an error when updating fails and lets me cancel editing', async () => {
+    const user = userEvent.setup();
+    await db.checkIns.add({ id: 'c1', date: '2026-11-04', energy: 2, focus: 3, createdAt: 0, updatedAt: 0 });
+    vi.spyOn(db.checkIns, 'put').mockRejectedValueOnce(new Error('locked'));
+    renderToday();
+    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    await user.click(await within(card).findByRole('button', { name: 'Изменить' }));
+    await user.click(within(card).getByRole('radio', { name: 'Энергия: 5' }));
+    await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Не удалось сохранить чек-ин');
+    expect(await db.checkIns.get('c1')).toMatchObject({ energy: 2 });
+
+    await user.click(within(card).getByRole('button', { name: 'Отмена' }));
+    expect(within(card).getByText('Энергия 2/5 · фокус 3/5')).toBeInTheDocument();
   });
 });
