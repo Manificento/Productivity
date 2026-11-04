@@ -21,7 +21,23 @@ const UPDATE = new Set(
 );
 
 const LABELS = [
-  ...['core', 'tasks', 'habits', 'time', 'health', 'today', 'cognition', 'settings', 'infra'].map((a) => ({
+  ...[
+    'core',
+    'tasks',
+    'habits',
+    'time',
+    'health',
+    'today',
+    'cognition',
+    'settings',
+    'infra',
+    // SPEC 0.3
+    'nutrition',
+    'training',
+    'meditation',
+    'notes',
+    'progress',
+  ].map((a) => ({
     name: `area:${a}`,
     color: '1d76db',
     description: `Lane: ${a}`,
@@ -30,9 +46,13 @@ const LABELS = [
   { name: 'type:bug', color: 'd73a4a', description: 'Something is broken' },
   { name: 'type:chore', color: 'c5def5', description: 'Tooling, infra, tests' },
   { name: 'type:contract', color: 'b60205', description: 'Changes shared core (src/core, src/ui, src/app, config)' },
-  { name: 'priority:P0', color: 'e99695', description: 'MVP' },
-  { name: 'priority:P1', color: 'f9d0c4', description: 'Next release' },
-  { name: 'priority:P2', color: 'fef2c0', description: 'Later' },
+  { name: 'priority:P0', color: 'e99695', description: 'First in line' },
+  { name: 'priority:P1', color: 'f9d0c4', description: 'Next in line, after ready P0' },
+  {
+    name: 'priority:P2',
+    color: 'fef2c0',
+    description: 'Needs the owner (decision, account or content) — agents take it only on request',
+  },
   { name: 'size:S', color: 'ededed', description: '≤ 1 h of agent work' },
   { name: 'size:M', color: 'd4c5f9', description: '≤ 3 h of agent work' },
   { name: 'size:L', color: 'bfd4f2', description: '≤ 1 day of agent work' },
@@ -48,9 +68,19 @@ function gh(args, input) {
   });
 }
 
+/**
+ * Reads every page by explicit `page=N`. `gh api --paginate` follows the Link header, which points at
+ * `repositories/{id}/…` URLs — the proxy in Claude Code cloud sessions rejects those (HTTP 403).
+ */
 function paged(path) {
   if (DRY) return [];
-  return JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', path], { encoding: 'utf8' })).flat();
+  const perPage = Number(/per_page=(\d+)/.exec(path)?.[1] ?? 30);
+  const all = [];
+  for (let page = 1; ; page++) {
+    const chunk = JSON.parse(execFileSync('gh', ['api', `${path}&page=${page}`], { encoding: 'utf8' }));
+    all.push(...chunk);
+    if (chunk.length < perPage) return all;
+  }
 }
 
 function sleep(ms) {
@@ -85,7 +115,11 @@ function labelsFor(item) {
 }
 
 function bodyFor(item, numbers) {
-  const deps = (item.deps ?? []).map((k) => `#${numbers.get(k) ?? `<${k}>`}`);
+  const deps = [
+    ...(item.deps ?? []).map((k) => `#${numbers.get(k) ?? `<${k}>`}`),
+    // Issues that were not created from the backlog (e.g. filed by an agent), by number.
+    ...(item.depIssues ?? []).map((n) => `#${n}`),
+  ];
   return [
     '## История',
     item.story,

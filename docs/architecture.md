@@ -27,8 +27,9 @@ flowchart TB
     habits[habits]
     time[time]
     health[health]
-    cognition[cognition<br/>тесты внимания]
+    cognition[cognition<br/>тесты внимания и тренажёры]
     settings[settings]
+    planned[nutrition · training · meditation<br/>notes · progress — SPEC 0.3, M5]
   end
   subgraph kernel[core — общее ядро]
     types[types.ts<br/>доменные типы]
@@ -104,10 +105,35 @@ flowchart LR
 | settings  | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                  |
 
 Таблица `settings` делится по префиксу ключа: модуль пишет только свои ключи `<модуль>.*` (`adaptation.*` — today,
-`time.*` — time), остальные ключи — модуль `settings`.
+`time.*` — time, `nutrition.*` — nutrition после SPEC 0.3), остальные ключи — модуль `settings`.
 
 Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
 ([ADR-0007](adr/0007-shared-write-paths.md)): сейчас это только сон.
 
 Чистое правило, которое нужно двум модулям одинаково, тоже живёт в ядре, а не копируется: расписание привычек
 (`isDue`, неделя с понедельника) — `src/core/habitSchedule.ts`, им считают и «Привычки», и «Привычки: X из Y» на «Сегодня».
+
+## Расширение по SPEC 0.3
+
+[SPEC 0.3](SPEC.md) добавляет пять блоков и переносит два журнала. Таблицы и каркасы появляются контрактной
+issue «каркасы блоков» (веха M5); до её слияния этих модулей и таблиц **нет**, писать в них нельзя.
+
+| Модуль (план) | Будет писать в таблицы                                                                                               | Читает                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| nutrition     | `weightLogs`, `settings` (`nutrition.*`); после переноса — `foods`, `mealLogs`                                       | `sleepLogs`, `workoutLogs`, цели дня |
+| training      | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                      | `workoutLogs`, цели дня              |
+| meditation    | `meditationSessions`                                                                                                 | цели дня                             |
+| cognition     | `cognitiveTests`, `mindSessions` (новая)                                                                             | цели дня                             |
+| notes         | `notes`                                                                                                              | `projects`, `lifeEvents`             |
+| progress      | `xpEvents`                                                                                                           | все таблицы (только чтение)          |
+| health        | `sleepLogs` через `saveSleep`; `workoutLogs` — только через `saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
+
+Второй общий путь записи — `saveWorkout()`: журнал тренировок заполняют `health` (импорт из Health Connect /
+HealthKit) и `training` (ручная запись и выполнение плана).
+
+Платформа: нативные возможности (будильник, датчики, уведомления, Health) доступны модулям только через
+`src/core/platform.ts` ([ADR-0008](adr/0008-web-and-native-one-codebase.md)); флаги возможностей говорят,
+что доступно на текущей платформе, модуль показывает объяснение вместо недоступной функции.
+
+Навигация: при 12 блоках нижняя панель держит «Сегодня», закреплённые вкладки и «Все блоки»; манифест
+`AppModule` получает группу блока (контрактная issue «навигация», веха M5).
