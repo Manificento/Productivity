@@ -1,0 +1,73 @@
+import { format } from 'date-fns';
+import { z } from 'zod';
+import { sleepWindow } from '../../../core/logging/sleepTime';
+import type { DateKey, SleepLog } from '../../../core/types';
+
+export type MorningStep = 'sleep' | 'checkIn' | 'test';
+export const MORNING_STEPS: MorningStep[] = ['sleep', 'checkIn', 'test'];
+
+export interface SleepSuggestion {
+  /** 'HH:mm' */
+  bedtime: string;
+  /** 'HH:mm' */
+  wake: string;
+  quality: number;
+}
+
+const DEFAULT_WAKE = '07:30';
+
+/** One-tap suggestion: last night's clock times, or the baseline bedtime and 07:30. */
+export function suggestSleep(last: SleepLog | undefined, baselineBedtime: string): SleepSuggestion {
+  if (!last) return { bedtime: baselineBedtime, wake: DEFAULT_WAKE, quality: 3 };
+  return { bedtime: format(last.bedtime, 'HH:mm'), wake: format(last.wakeTime, 'HH:mm'), quality: last.quality };
+}
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** A night for `saveSleep` (which validates durations itself). */
+export interface MorningSleepInput {
+  bedtime: number;
+  wakeTime: number;
+  quality: number;
+}
+
+/** Clock times → the night that ended on `today`. */
+export function parseMorningSleep(
+  today: DateKey,
+  s: SleepSuggestion,
+): { ok: true; input: MorningSleepInput } | { ok: false; error: string } {
+  if (!HHMM.test(s.bedtime) || !HHMM.test(s.wake)) return { ok: false, error: 'Укажите время отбоя и подъёма' };
+  return { ok: true, input: { ...sleepWindow(today, s.bedtime, s.wake), quality: s.quality } };
+}
+
+export type StepState = 'done' | 'skipped' | 'pending';
+
+export function morningSteps(
+  done: Record<MorningStep, boolean>,
+  skipped: MorningStep[],
+): { steps: { step: MorningStep; state: StepState }[]; complete: boolean } {
+  const steps = MORNING_STEPS.map((step) => ({
+    step,
+    state: (done[step] ? 'done' : skipped.includes(step) ? 'skipped' : 'pending') as StepState,
+  }));
+  return { steps, complete: steps.every((s) => s.state !== 'pending') };
+}
+
+/** Stored under `adaptation.morning`: steps skipped on one day. */
+export interface MorningSkips {
+  date: DateKey;
+  skipped: MorningStep[];
+}
+
+const skipsSchema = z.object({ date: z.string(), skipped: z.array(z.string()) });
+
+export function readSkipped(raw: unknown, today: DateKey): MorningStep[] {
+  const r = skipsSchema.safeParse(raw);
+  if (!r.success || r.data.date !== today) return [];
+  return r.data.skipped.filter((s): s is MorningStep => (MORNING_STEPS as string[]).includes(s));
+}
+
+export function withSkipped(raw: unknown, today: DateKey, step: MorningStep): MorningSkips {
+  const current = readSkipped(raw, today);
+  return { date: today, skipped: current.includes(step) ? current : [...current, step] };
+}

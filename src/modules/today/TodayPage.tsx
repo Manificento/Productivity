@@ -3,7 +3,7 @@ import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import type { DailyTargets, Phase } from '../../core/adaptation/types';
 import { todayKey } from '../../core/dates';
 import { Card, Page } from '../../ui';
-import { CheckInCard } from './components/CheckInCard';
+import { MorningCard } from './components/MorningCard';
 import { BaselineEditor } from './components/BaselineEditor';
 import { EventDetail } from './components/EventDetail';
 import { EventsList } from './components/EventsList';
@@ -76,7 +76,7 @@ function TodayHome() {
   return (
     <Page title="Сегодня">
       {targets && <EventBanner targets={targets} today={today} />}
-      <CheckInCard date={today} />
+      <MorningCard today={today} />
       {targets ? (
         <>
           <TargetsCard t={targets} />
