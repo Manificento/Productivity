@@ -1,10 +1,10 @@
-import { todayKey } from '../../core/dates';
-import type { DateKey } from '../../core/types';
-import { Card, Empty } from '../../ui';
-import { SleepChart } from './components/SleepChart';
-import { SleepForm } from './components/SleepForm';
-import { useRecentSleep } from './data/sleep';
-import { averageHours, formatHours, sleepChart } from './logic/sleep';
+import { todayKey } from '../../../core/dates';
+import type { DateKey } from '../../../core/types';
+import { Card, Empty } from '../../../ui';
+import { SleepChart } from './SleepChart';
+import { SleepForm } from './SleepForm';
+import { useRecentSleep } from '../data/sleep';
+import { averageHours, formatHours, sleepChart } from '../logic/sleep';
 
 /** «Сон»: log last night and see the last 14 days. */
 export function SleepTab({ today = todayKey() }: { today?: DateKey }) {
@@ -13,7 +13,8 @@ export function SleepTab({ today = todayKey() }: { today?: DateKey }) {
 
   return (
     <>
-      <SleepForm today={today} hasRecord={(day) => !!logs?.some((l) => l.date === day)} />
+      {/* Re-mount after midnight so the form defaults to the new «last night». */}
+      <SleepForm key={today} today={today} hasRecord={(day) => !!logs?.some((l) => l.date === day)} />
       <Card title="Сон за 14 дней">
         {logs === undefined ? (
           <Empty>Загрузка…</Empty>

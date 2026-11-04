@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
+import { shiftDateKey } from '../../../core/dates';
 import { sleepHours, sleepWindow } from '../../../core/logging/sleepTime';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Field, Input, Rating } from '../../../ui';
 import { logSleep } from '../data/sleep';
-import { DEFAULT_BEDTIME, DEFAULT_QUALITY, DEFAULT_WAKE, formatHours } from '../logic/sleep';
+import { CHART_DAYS, DEFAULT_BEDTIME, DEFAULT_QUALITY, DEFAULT_WAKE, formatHours } from '../logic/sleep';
 
 function previewHours(wakeDay: DateKey, bedtime: string, wake: string): number | undefined {
   try {
@@ -21,13 +22,22 @@ export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (da
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [error, setError] = useState<string>();
   const [saved, setSaved] = useState<string>();
+  const [saving, setSaving] = useState(false);
+
+  /** Any edit makes the last «Сохранено» message stale. */
+  const edit = (set: (v: string) => void) => (v: string) => {
+    set(v);
+    setSaved(undefined);
+  };
 
   const hours = previewHours(wakeDay, bedtime, wake);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSaved(undefined);
-    const result = await logSleep({ wakeDay, bedtime, wake, quality });
+    setSaving(true);
+    const result = await logSleep({ wakeDay, bedtime, wake, quality }, today);
+    setSaving(false);
     if (result.ok) {
       setError(undefined);
       setSaved(`Сохранено: ${formatHours(sleepHours(result.log))}`);
@@ -41,19 +51,33 @@ export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (da
       <form onSubmit={onSubmit} noValidate>
         <Field label="День подъёма">
           {(id) => (
-            <Input id={id} type="date" max={today} value={wakeDay} onChange={(e) => setWakeDay(e.target.value)} />
+            <Input
+              id={id}
+              type="date"
+              min={shiftDateKey(today, -(CHART_DAYS - 1))}
+              max={today}
+              value={wakeDay}
+              onChange={(e) => edit(setWakeDay)(e.target.value)}
+            />
           )}
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Отбой">
-            {(id) => <Input id={id} type="time" value={bedtime} onChange={(e) => setBedtime(e.target.value)} />}
+            {(id) => <Input id={id} type="time" value={bedtime} onChange={(e) => edit(setBedtime)(e.target.value)} />}
           </Field>
           <Field label="Подъём">
-            {(id) => <Input id={id} type="time" value={wake} onChange={(e) => setWake(e.target.value)} />}
+            {(id) => <Input id={id} type="time" value={wake} onChange={(e) => edit(setWake)(e.target.value)} />}
           </Field>
         </div>
         <p className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Качество сна</p>
-        <Rating label="Качество сна" value={quality} onChange={setQuality} />
+        <Rating
+          label="Качество сна"
+          value={quality}
+          onChange={(q) => {
+            setQuality(q);
+            setSaved(undefined);
+          }}
+        />
         <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
           Длительность: <strong>{hours === undefined ? '—' : formatHours(hours)}</strong>
           {hasRecord(wakeDay) && ' · запись за этот день уже есть, сохранение её обновит'}
@@ -68,7 +92,7 @@ export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (da
             {saved}
           </p>
         )}
-        <Button type="submit" className="w-full">
+        <Button type="submit" className="w-full" disabled={saving}>
           Сохранить сон
         </Button>
       </form>

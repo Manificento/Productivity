@@ -19,13 +19,18 @@ export interface SleepEntry {
  * Saves a night through the shared write path (`sleepWindow` + `saveSleep`, ADR-0007).
  * Returns a Russian error message instead of throwing when the input is invalid.
  */
-export async function logSleep(entry: SleepEntry): Promise<{ ok: true; log: SleepLog } | { ok: false; error: string }> {
+export async function logSleep(
+  entry: SleepEntry,
+  today: DateKey,
+): Promise<{ ok: true; log: SleepLog } | { ok: false; error: string }> {
+  if (!entry.wakeDay) return { ok: false, error: 'Укажите день подъёма' };
+  if (entry.wakeDay > today) return { ok: false, error: 'День подъёма не может быть позже сегодняшнего' };
+  if (!entry.bedtime || !entry.wake) return { ok: false, error: 'Укажите время отбоя и подъёма' };
   try {
     const span = sleepWindow(entry.wakeDay, entry.bedtime, entry.wake);
     return { ok: true, log: await saveSleep({ ...span, quality: entry.quality }) };
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? 'Проверьте время' };
-    if (e instanceof Error && /ЧЧ:ММ/.test(e.message)) return { ok: false, error: 'Укажите время отбоя и подъёма' };
     return { ok: false, error: 'Не удалось сохранить сон — попробуйте ещё раз' };
   }
 }

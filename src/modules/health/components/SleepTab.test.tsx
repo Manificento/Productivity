@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { db } from '../../core/db';
-import { sleepHours } from '../../core/logging/sleepTime';
-import { logSleep } from './data/sleep';
+import { db } from '../../../core/db';
+import { sleepHours } from '../../../core/logging/sleepTime';
+import { logSleep } from '../data/sleep';
 import { SleepTab } from './SleepTab';
 
 const TODAY = '2026-11-04';
@@ -71,10 +71,26 @@ describe('sleep tab', () => {
     expect(await db.sleepLogs.count()).toBe(0);
   });
 
+  it('a future wake-up day shows an error and saves nothing', async () => {
+    renderTab();
+    fireEvent.change(screen.getByLabelText('День подъёма'), { target: { value: '2026-11-05' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить сон' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('День подъёма не может быть позже сегодняшнего');
+    expect(await db.sleepLogs.count()).toBe(0);
+  });
+
+  it('editing the times after a save hides the stale «Сохранено» message', async () => {
+    renderTab();
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить сон' }));
+    await screen.findByText('Сохранено: 8 ч');
+    setTime('Подъём', '06:30');
+    expect(screen.queryByText(/Сохранено/)).not.toBeInTheDocument();
+  });
+
   it('Given records for 14 days When the screen opens Then there are SVG duration bars and the 7-day average', async () => {
-    await logSleep({ wakeDay: '2026-11-04', bedtime: '23:00', wake: '07:00', quality: 3 }); // 8 h
-    await logSleep({ wakeDay: '2026-11-02', bedtime: '00:00', wake: '06:00', quality: 3 }); // 6 h
-    await logSleep({ wakeDay: '2026-10-25', bedtime: '23:00', wake: '09:00', quality: 3 }); // 10 h, outside 7 days
+    await logSleep({ wakeDay: '2026-11-04', bedtime: '23:00', wake: '07:00', quality: 3 }, TODAY); // 8 h
+    await logSleep({ wakeDay: '2026-11-02', bedtime: '00:00', wake: '06:00', quality: 3 }, TODAY); // 6 h
+    await logSleep({ wakeDay: '2026-10-25', bedtime: '23:00', wake: '09:00', quality: 3 }, TODAY); // 10 h, outside 7 days
     renderTab();
     const chart = await screen.findByRole('img', { name: /Длительность сна за 14 дней/ });
     expect(within(chart.parentElement!).getAllByTestId('sleep-bar')).toHaveLength(3);

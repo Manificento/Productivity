@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 test.describe('health: sleep', () => {
   test('log last night, update it, and see it in the 14-day chart', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
     await page.goto('/#/health');
+    await expect(page.getByLabel('День подъёма')).toHaveValue('2026-11-04');
     await expect(page.getByRole('link', { name: 'Сон' })).toBeVisible();
     await expect(page.getByLabel('Отбой', { exact: true })).toHaveValue('23:30');
     await expect(page.getByLabel('Подъём', { exact: true })).toHaveValue('07:30');
@@ -27,7 +29,9 @@ test.describe('health: sleep', () => {
     await page.goto('/#/health');
     await page.getByRole('link', { name: 'Тренировки' }).click();
     await expect(page).toHaveURL(/#\/health\/workouts$/);
+    await expect(page.getByText('Модуль «Тренировки» ещё строится')).toBeVisible();
     await page.getByRole('link', { name: 'Еда' }).click();
     await expect(page).toHaveURL(/#\/health\/food$/);
+    await expect(page.getByText('Модуль «Еда» ещё строится')).toBeVisible();
   });
 });
