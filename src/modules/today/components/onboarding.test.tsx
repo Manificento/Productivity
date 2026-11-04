@@ -32,6 +32,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('Онбординг', () => {
@@ -109,6 +110,39 @@ describe('Онбординг', () => {
     renderToday();
     await screenToday();
     expect(screen.queryByRole('heading', { name: QUESTION })).not.toBeInTheDocument();
+  });
+
+  it('marks onboarding done as soon as the event exists, so leaving via the navigation does not bring it back', async () => {
+    const user = userEvent.setup();
+    renderToday();
+    await screen.findByRole('heading', { name: QUESTION });
+    await user.type(screen.getByLabelText('Название'), 'IELTS');
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await screen.findByRole('heading', { name: 'Твой план на 10 дней' });
+    await waitFor(async () => expect((await db.settings.get(ONBOARDING_DONE_KEY))?.value).toBe(true));
+  });
+
+  it('shows an error and stays on the question when the event cannot be saved', async () => {
+    vi.spyOn(db.lifeEvents, 'add').mockRejectedValueOnce(new Error('disk full'));
+    const user = userEvent.setup();
+    renderToday();
+    await screen.findByRole('heading', { name: QUESTION });
+    await user.type(screen.getByLabelText('Название'), 'IELTS');
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить событие. Попробуйте ещё раз.');
+    expect(screen.getByRole('heading', { name: QUESTION })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Дальше' })).toBeEnabled();
+  });
+
+  it('shows an error and stays open when skipping cannot be saved', async () => {
+    vi.spyOn(db.settings, 'put').mockRejectedValueOnce(new Error('disk full'));
+    const user = userEvent.setup();
+    renderToday();
+    await screen.findByRole('heading', { name: QUESTION });
+    await user.click(screen.getByRole('button', { name: 'Пропустить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить. Попробуйте ещё раз.');
+    expect(screen.getByRole('heading', { name: QUESTION })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Пропустить' })).toBeEnabled();
   });
 
   it('Given я нажимаю «Пропустить» When онбординг закрывается Then обычный экран «Сегодня», событие можно добавить позже', async () => {

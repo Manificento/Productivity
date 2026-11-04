@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { todayKey } from '../../../core/dates';
-import type { LifeEvent } from '../../../core/types';
+import type { DateKey, LifeEvent } from '../../../core/types';
 import { Button, Card, Empty, Field, Input, Page, Segmented } from '../../../ui';
 import { useBaseline } from '../data/baseline';
 import { createEvent } from '../data/events';
@@ -18,31 +18,36 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const today = todayKey();
   const [event, setEvent] = useState<LifeEvent>();
   const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
 
   async function done() {
+    setBusy(true);
     try {
       await finishOnboarding();
       onDone();
     } catch {
       setError('Не удалось сохранить. Попробуйте ещё раз.');
+      setBusy(false);
     }
   }
 
   return event ? (
-    <PlanStep event={event} today={today} error={error} onStart={done} />
+    <PlanStep event={event} today={today} error={error} busy={busy} onStart={done} />
   ) : (
-    <EventStep today={today} error={error} onCreated={setEvent} onSkip={done} />
+    <EventStep today={today} error={error} busy={busy} onCreated={setEvent} onSkip={done} />
   );
 }
 
 function EventStep({
   today,
   error,
+  busy,
   onCreated,
   onSkip,
 }: {
-  today: string;
+  today: DateKey;
   error?: string;
+  busy: boolean;
   onCreated: (e: LifeEvent) => void;
   onSkip: () => void;
 }) {
@@ -64,6 +69,9 @@ function EventStep({
     try {
       const now = Date.now();
       const id = await createEvent(parsed.data, now);
+      // The event is the point of onboarding: once it exists, leaving via the navigation also counts as done.
+      // «Начать» writes the flag again, so a failure here only costs a retry there.
+      void finishOnboarding().catch(() => {});
       onCreated({ ...parsed.data, id, createdAt: now, updatedAt: now });
     } catch {
       setSaveError('Не удалось сохранить событие. Попробуйте ещё раз.');
@@ -105,15 +113,15 @@ function EventStep({
           onChange={(v) => setValues((s) => ({ ...s, importance: Number(v) as LifeEvent['importance'] }))}
         />
         {(saveError ?? error) && (
-          <p role="alert" className="mb-3 text-sm text-rose-600">
+          <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
             {saveError ?? error}
           </p>
         )}
-        <Button type="submit" className="mb-2 w-full" disabled={saving}>
+        <Button type="submit" className="mb-2 w-full" disabled={saving || busy}>
           Дальше
         </Button>
       </form>
-      <Button variant="secondary" className="w-full" onClick={onSkip}>
+      <Button variant="secondary" className="w-full" disabled={saving || busy} onClick={onSkip}>
         Пропустить
       </Button>
     </Page>
@@ -124,11 +132,13 @@ function PlanStep({
   event,
   today,
   error,
+  busy,
   onStart,
 }: {
   event: LifeEvent;
-  today: string;
+  today: DateKey;
   error?: string;
+  busy: boolean;
   onStart: () => void;
 }) {
   const baseline = useBaseline();
@@ -145,11 +155,11 @@ function PlanStep({
         Цели каждого дня на «Сегодня» будут меняться по этому плану. Событие можно изменить в «Событиях».
       </p>
       {error && (
-        <p role="alert" className="mb-3 text-sm text-rose-600">
+        <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
           {error}
         </p>
       )}
-      <Button className="w-full" onClick={onStart}>
+      <Button className="w-full" disabled={busy} onClick={onStart}>
         Начать
       </Button>
     </Page>

@@ -99,7 +99,7 @@ function TodayHome() {
 }
 
 /**
- * `/`: onboarding on the first run, otherwise «Сегодня». The first answer is kept for the whole visit, so
+ * `/`: onboarding on the first run, otherwise «Сегодня». The first answer is kept while this screen is mounted, so
  * creating the event during onboarding does not swap the screen before the plan is shown.
  */
 function TodayIndex() {
