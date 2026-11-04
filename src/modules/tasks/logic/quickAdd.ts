@@ -128,7 +128,9 @@ function parseRecurrence(s: State): void {
     const days = words.split(/\s*(?:,|\sи\s|\sand\s)\s*/iu).map((w) => weekdayOf(w.trim()));
     return [...new Set(days.filter((d) => d !== undefined))].sort((a, b) => a - b);
   };
-  take(s, re('каждый\\s+день|ежедневно|every\\s+day|daily'), () => set({ kind: 'daily' })) ||
+  // Patterns are tried in order; the first one that matches wins.
+  void (
+    take(s, re('каждый\\s+день|ежедневно|every\\s+day|daily'), () => set({ kind: 'daily' })) ||
     take(s, re('каждую\\s+неделю|еженедельно|every\\s+week|weekly'), () => set({ kind: 'weekly' })) ||
     take(s, re('каждый\\s+месяц|ежемесячно|every\\s+month|monthly'), () => set({ kind: 'monthly' })) ||
     take(s, re('по\\s+будням'), () => set({ kind: 'weekly', weekdays: [1, 2, 3, 4, 5] })) ||
@@ -145,7 +147,8 @@ function parseRecurrence(s: State): void {
     take(s, re('каждые\\s+(\\d{1,3})\\s+(дн(?:я|ей)|недел[иь])'), (m) => {
       const n = Number(m[1]) * (m[2].toLowerCase().startsWith('нед') ? 7 : 1);
       return n > 0 && set({ kind: 'everyNDays', interval: n });
-    });
+    })
+  );
 }
 
 function parseDate(s: State): void {
@@ -156,9 +159,11 @@ function parseDate(s: State): void {
     return true;
   };
   const RELATIVE: Record<string, number> = { сегодня: 0, today: 0, завтра: 1, tomorrow: 1, послезавтра: 2 };
-  take(s, re('сегодня|завтра|послезавтра|today|tomorrow'), (m) =>
-    set(shiftDateKey(today, RELATIVE[m[0].toLowerCase()])),
-  ) ||
+  // Patterns are tried in order; the first one that matches wins.
+  void (
+    take(s, re('сегодня|завтра|послезавтра|today|tomorrow'), (m) =>
+      set(shiftDateKey(today, RELATIVE[m[0].toLowerCase()])),
+    ) ||
     take(s, re('через\\s+(?:(\\d{1,3})\\s+)?(день|дня|дней|неделю|недели|недель|месяц|месяца|месяцев)'), (m) => {
       const n = m[1] === undefined ? 1 : Number(m[1]);
       const unit = m[2].toLowerCase();
@@ -176,7 +181,8 @@ function parseDate(s: State): void {
     ) ||
     take(s, re(`(?:(?:в|на)\\s+)?(\\d{1,2})\\s+(${MONTH_WORD})\\.?(?:\\s+(\\d{4}))?`), (m) =>
       set(calendarDate(today, Number(m[1]), monthOf(m[2]), m[3])),
-    );
+    )
+  );
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -207,9 +213,11 @@ function parseTime(s: State): void {
     return true;
   };
   // «в 9», «в 18:30», «в 18.30», «в 9 часов утра», «at 6».
-  take(s, re(`(?:в|at)\\s+(\\d{1,2})(?:[:.](\\d{2}))?${NOT_AN_HOUR}${HOUR_WORD}(?:\\s+(${PART_OF_DAY}))?`), (m) =>
-    set(toTime(Number(m[1]), Number(m[2] ?? 0), m[3])),
-  ) ||
+  // Patterns are tried in order; the first one that matches wins.
+  void (
+    take(s, re(`(?:в|at)\\s+(\\d{1,2})(?:[:.](\\d{2}))?${NOT_AN_HOUR}${HOUR_WORD}(?:\\s+(${PART_OF_DAY}))?`), (m) =>
+      set(toTime(Number(m[1]), Number(m[2] ?? 0), m[3])),
+    ) ||
     // «7:00-8:00»: a range keeps its start time.
     take(s, re('(?:(?:в|с|at)\\s+)?(\\d{1,2}):(\\d{2})\\s?[-–]\\s?\\d{1,2}:\\d{2}'), (m) =>
       set(toTime(Number(m[1]), Number(m[2]))),
@@ -217,7 +225,8 @@ function parseTime(s: State): void {
     // «9:00», «18:30 вечера» (a colon is needed — «12.11» without «в» is a date).
     take(s, re(`(?:(?:в|at)\\s+)?(\\d{1,2}):(\\d{2})(?:\\s+(${PART_OF_DAY}))?`), (m) =>
       set(toTime(Number(m[1]), Number(m[2]), m[3])),
-    );
+    )
+  );
 }
 
 function parseMarkers(s: State): void {
@@ -261,6 +270,7 @@ export function parseQuickAdd(input: string, today: DateKey): ParsedTask {
   const quotes: string[] = [];
   // Quoted text is swapped for placeholders made of control characters (never matched by any pattern).
   const masked = input
+    // oxlint-disable-next-line no-control-regex -- strips our own placeholder characters
     .replace(/[\u0000\u0001]/g, ' ')
     .replace(QUOTED, (q) => `\u0000${'\u0001'.repeat(quotes.push(q))}\u0000`);
   const s: State = { text: ` ${masked} `, today, out: { title: '', tags: [] } };
@@ -279,6 +289,7 @@ export function parseQuickAdd(input: string, today: DateKey): ParsedTask {
     }
   }
   out.title = s.text
+    // oxlint-disable-next-line no-control-regex -- restores the quote placeholders
     .replace(/\u0000(\u0001+)\u0000/g, (_, n: string) => quotes[n.length - 1])
     .replace(/\s+/g, ' ')
     .trim();

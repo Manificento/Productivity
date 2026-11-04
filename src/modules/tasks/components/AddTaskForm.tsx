@@ -54,7 +54,7 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; 
 
   return (
     <form ref={form} onSubmit={submit} noValidate className="mb-2">
-      <Field label="Новая задача" error={error} hint={hint}>
+      <Field label="Новая задача" error={error} hint={chips.length ? undefined : hint}>
         {(id) => (
           <div className="flex gap-2">
             <Input
