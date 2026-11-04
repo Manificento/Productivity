@@ -79,6 +79,7 @@ test('экзамен перестраивает режим во всех бло�
     await page.goto('/#/time/pomodoro');
     // 4 on a normal day (checked above) + importance 3.
     await expect(page.getByText('0 из 7', { exact: true })).toBeVisible();
+    await noHorizontalScroll(page);
   });
 
   await test.step('Given тот же экзамен When я открываю «Здоровье» Then цель сна 8 ч и ограничение интенсивности', async () => {
@@ -87,7 +88,7 @@ test('экзамен перестраивает режим во всех бло�
     await page.getByRole('link', { name: 'Тренировки' }).click();
     await page.getByLabel('RPE (1–10)').selectOption('9');
     await expect(page.getByRole('note', { name: 'Предупреждение об интенсивности' })).toContainText(
-      /умеренная интенсивность — RPE до \d/,
+      'умеренная интенсивность — RPE до 6',
     );
     await noHorizontalScroll(page);
   });
@@ -113,6 +114,15 @@ test('экзамен перестраивает режим во всех бло�
 
     await expectPrepOnToday(other);
     await expectFocusTaskFirst(other);
+    // Not only what adaptation derives: the plain records are back too.
+    await expect(other.getByRole('region', { name: 'Сегодня', exact: true }).getByRole('listitem')).toHaveText([
+      /Эссе/,
+      /Позвонить в банк/,
+    ]);
+    await other.goto('/#/today/events');
+    await expect(other.getByRole('region', { name: 'Предстоящие' }).getByRole('link', { name: /IELTS/ })).toBeVisible();
+    await other.goto('/#/health');
+    await expect(other.getByRole('region', { name: 'Цель сна' })).toContainText('Сегодня: 8 ч');
     await other.goto('/#/time/pomodoro');
     await expect(other.getByText('0 из 7', { exact: true })).toBeVisible();
     await fresh.close();
