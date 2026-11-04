@@ -33,3 +33,23 @@ test.describe('tasks', () => {
     await expect(page.getByRole('region', { name: 'Входящие' }).getByText('#Учёба')).toBeVisible();
   });
 });
+
+test.describe('quick add', () => {
+  test('a quick add line lands in «Предстоящие» with its project', async ({ page }) => {
+    // Fixed noon, so «завтра» cannot drift across midnight during the run.
+    await page.clock.setFixedTime(new Date(2026, 10, 4, 12, 0));
+    await page.goto('/#/tasks/inbox');
+    const field = page.getByLabel('Новая задача');
+    await field.fill('завтра 9:00 позвонить научнику #учёба !1');
+    await expect(page.getByRole('list', { name: 'Распознано' })).toContainText('Завтра 09:00');
+    await page.getByRole('button', { name: 'Добавить' }).click();
+    await expect(field).toHaveValue('');
+    await expect(field).toBeFocused();
+
+    await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Предстоящие' }).click();
+    const tomorrow = page.getByRole('region', { name: /^Завтра/ });
+    await expect(tomorrow.getByText('позвонить научнику')).toBeVisible();
+    await expect(tomorrow.getByText('#учёба')).toBeVisible();
+    await expect(tomorrow.getByText('09:00')).toBeVisible();
+  });
+});
