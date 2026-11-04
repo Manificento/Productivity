@@ -89,6 +89,16 @@ describe('streak', () => {
     expect(streak(h, TODAY)).toEqual({ current: 0, best: 1, unit: 'weeks' });
   });
 
+  it('отметки после сегодняшнего дня не засчитываются', () => {
+    const h = { schedule: threePerWeek, logs: logs(['2026-11-03', '2026-11-07', '2026-11-08']), since: '2026-11-02' };
+    expect(streak(h, TODAY).current).toBe(0);
+  });
+
+  it('отметка задним числом до дня создания продлевает серию', () => {
+    const h = { schedule: daily, logs: logs(['2026-11-03', '2026-11-04']), since: '2026-11-04' };
+    expect(streak(h, TODAY)).toMatchObject({ current: 2, best: 2 });
+  });
+
   it('привычка из будущего или без записей — нули', () => {
     expect(streak({ schedule: daily, logs: [], since: '2026-11-10' }, TODAY)).toEqual({
       current: 0,
@@ -126,19 +136,53 @@ describe('completionRate', () => {
     expect(completionRate(h, TODAY)).toBe(67);
   });
 
-  it('«3 раза в неделю»: выполненные дни к норме за период, не больше 100%', () => {
-    const h28 = {
+  it('«3 раза в неделю»: процент по целым неделям, каждая неделя — не больше нормы', () => {
+    // weeks of 10/12, 10/19, 10/26: 3, 2, 3 done; current week 11/02 — 1 so far (not counted yet)
+    const h = {
       schedule: threePerWeek,
-      logs: logs(daysBack('2026-11-04', 28).filter((_, i) => i % 2 === 0)),
-      since: '2026-10-08',
+      logs: logs([
+        '2026-10-12',
+        '2026-10-13',
+        '2026-10-14',
+        '2026-10-20',
+        '2026-10-21',
+        '2026-10-26',
+        '2026-10-27',
+        '2026-10-28',
+        '2026-11-03',
+      ]),
+      since: '2026-10-12',
     };
-    expect(completionRate(h28, TODAY, 28)).toBe(100); // 14 done vs quota 12 → capped
-    const half = {
+    expect(completionRate(h, TODAY, 28)).toBe(89); // 8 of 9
+  });
+
+  it('«3 раза в неделю»: перевыполнение одной недели не покрывает пропущенную', () => {
+    const h = {
       schedule: threePerWeek,
-      logs: logs(['2026-11-02', '2026-10-28', '2026-10-21']),
-      since: '2026-10-08',
+      logs: logs([...daysBack('2026-10-18', 7), ...daysBack('2026-10-25', 7)]), // 7/7 twice, then nothing
+      since: '2026-10-12',
     };
-    expect(completionRate(half, TODAY, 28)).toBe(25); // 3 of 12
+    expect(completionRate(h, TODAY, 28)).toBe(67); // 3 + 3 + 0 of 9 (current week pending)
+    expect(streak(h, TODAY).current).toBe(0);
+  });
+
+  it('«3 раза в неделю»: незавершённая текущая неделя не снижает процент, выполненная — засчитывается', () => {
+    const fresh = { schedule: threePerWeek, logs: logs(['2026-11-03']), since: '2026-11-02' };
+    expect(completionRate(fresh, TODAY)).toBe(0); // nothing to judge yet
+    const prev = {
+      schedule: threePerWeek,
+      logs: logs(['2026-10-26', '2026-10-27', '2026-10-28', '2026-11-03']),
+      since: '2026-10-26',
+    };
+    expect(completionRate(prev, TODAY)).toBe(100);
+    const met = { schedule: threePerWeek, logs: logs(['2026-11-02', '2026-11-03', '2026-11-04']), since: '2026-11-02' };
+    expect(completionRate(met, TODAY)).toBe(100);
+  });
+
+  it('сегодня не отмечена — процент не снижается', () => {
+    // 11/01–11/04 all done; today pending → 4 of 4, not 4 of 5
+    const h = { schedule: daily, logs: logs(daysBack('2026-11-04', 4)), since: '2026-11-01' };
+    expect(completionRate(h, TODAY)).toBe(100);
   });
 
   it('привычка создана сегодня и не отмечена — 0%', () => {

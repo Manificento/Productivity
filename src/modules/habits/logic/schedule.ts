@@ -30,7 +30,9 @@ export function doneDays(logs: readonly HabitLog[]): Set<DateKey> {
   return new Set([...latest.values()].filter((l) => l.done).map((l) => l.date));
 }
 
-/** Weekly quota (at least 1). */
+/** Weekly quota: a whole number 1…7 (bad or missing values, e.g. from an import, fall back to 1). */
 export function weeklyQuota(schedule: HabitSchedule): number {
-  return Math.max(1, schedule.timesPerWeek ?? 1);
+  const n = schedule.timesPerWeek;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return 1;
+  return Math.min(7, Math.max(1, Math.floor(n)));
 }

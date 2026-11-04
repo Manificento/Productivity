@@ -55,6 +55,10 @@ describe('helpers', () => {
   it('недельная норма и тип', () => {
     expect(weeklyQuota({ kind: 'timesPerWeek', timesPerWeek: 3 })).toBe(3);
     expect(weeklyQuota({ kind: 'timesPerWeek' })).toBe(1);
+    expect(weeklyQuota({ kind: 'timesPerWeek', timesPerWeek: 9 })).toBe(7);
+    expect(weeklyQuota({ kind: 'timesPerWeek', timesPerWeek: 2.7 })).toBe(2);
+    expect(weeklyQuota({ kind: 'timesPerWeek', timesPerWeek: Number.NaN })).toBe(1);
+    expect(weeklyQuota({ kind: 'timesPerWeek', timesPerWeek: 0 })).toBe(1);
     expect(isWeekly({ kind: 'timesPerWeek', timesPerWeek: 3 })).toBe(true);
     expect(isWeekly({ kind: 'daily' })).toBe(false);
   });
