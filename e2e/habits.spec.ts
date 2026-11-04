@@ -64,7 +64,9 @@ test.describe('habits', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
-  test('weekly goal met: hint under «Не сегодня», an extra mark goes through the habit card', async ({ page }) => {
+  test('Given привычка в «Не сегодня» When хочу отметить лишний раз Then открываю её карточку и отмечаю день в календаре', async ({
+    page,
+  }) => {
     await page.clock.install({ time: new Date('2026-11-05T20:00:00+05:00') });
     await page.goto('/#/habits');
     await page.getByRole('button', { name: '+ Привычка' }).click();

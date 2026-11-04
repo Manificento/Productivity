@@ -12,7 +12,7 @@ export interface TodayHabit {
 /**
  * Active habits planned for `today` with today's mark and streak, in creation order.
  * `other` are active habits not planned today (e.g. «пн, ср, пт» on a Tuesday, or «2 раза в неделю»
- * whose weekly goal is already met). The rule is shared with «Сегодня» (`isDue` in src/core).
+ * whose weekly goal is already met). `goalMet` — ids in `other` that are weekly habits with this week's goal met. The rule is shared with «Сегодня» (`isDue` in src/core).
  */
 export function todayHabits(
   habits: readonly Habit[],

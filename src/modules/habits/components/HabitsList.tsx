@@ -72,12 +72,17 @@ export function HabitsList() {
                     <Link
                       to={`/habits/${h.id}`}
                       aria-label={`Открыть «${h.name}»`}
+                      aria-describedby={goalMet.has(h.id) ? `goal-met-${h.id}` : undefined}
                       className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-sm"
                     >
                       <span className="truncate">{h.name}</span>
                       <span className="shrink-0 text-right text-zinc-500">
                         {describeSchedule(h.schedule)}
-                        {goalMet.has(h.id) && <span className="block text-xs">цель недели выполнена</span>}
+                        {goalMet.has(h.id) && (
+                          <span id={`goal-met-${h.id}`} className="block text-xs">
+                            цель недели выполнена
+                          </span>
+                        )}
                       </span>
                     </Link>
                   </li>
