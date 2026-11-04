@@ -70,4 +70,61 @@ describe('tasks data', () => {
     await expect(addQuickTask({ title: ' ', projectName: 'учёба', priority: 4, tags: [] })).rejects.toThrow();
     expect(await db.projects.count()).toBe(0);
   });
+
+  describe('repeating tasks', () => {
+    // 2026-11-04 12:00 local time.
+    const DONE_AT = new Date(2026, 10, 4, 12, 0).getTime();
+
+    async function addDaily() {
+      return addTask(
+        { title: 'зарядка', dueDate: '2026-11-04', projectId: 'health', priority: 2, recurrence: { kind: 'daily' } },
+        1000,
+      );
+    }
+
+    it('Given ежедневная задача на 2026-11-04 When я её выполняю Then создаётся копия на 2026-11-05 с тем же названием, проектом, приоритетом и повтором', async () => {
+      const id = await addDaily();
+      await toggleTask(id, DONE_AT);
+
+      const copies = (await db.tasks.toArray()).filter((t) => t.id !== id);
+      expect(copies).toHaveLength(1);
+      expect(copies[0]).toMatchObject({
+        title: 'зарядка',
+        dueDate: '2026-11-05',
+        projectId: 'health',
+        priority: 2,
+        recurrence: { kind: 'daily' },
+        createdAt: DONE_AT,
+      });
+      expect(copies[0].completedAt).toBeUndefined();
+      expect((await db.tasks.get(id))?.completedAt).toBe(DONE_AT);
+    });
+
+    it('Given я снимаю отметку с выполненной повторяющейся задачи When список обновляется Then созданная копия удаляется, если ещё не выполнена', async () => {
+      const id = await addDaily();
+      await toggleTask(id, DONE_AT);
+      await toggleTask(id, DONE_AT + 1000);
+
+      expect(await db.tasks.count()).toBe(1);
+      expect((await db.tasks.get(id))?.completedAt).toBeUndefined();
+    });
+
+    it('reopening keeps a copy that was already completed', async () => {
+      const id = await addDaily();
+      await toggleTask(id, DONE_AT);
+      const copy = (await db.tasks.toArray()).find((t) => t.id !== id)!;
+      await toggleTask(copy.id, DONE_AT + 1000); // completes the copy, creating the 11-06 one
+      await toggleTask(id, DONE_AT + 2000);
+
+      const all = await db.tasks.toArray();
+      expect(all.find((t) => t.id === copy.id)?.completedAt).toBe(DONE_AT + 1000);
+      expect(all.map((t) => t.dueDate).sort()).toEqual(['2026-11-04', '2026-11-05', '2026-11-06']);
+    });
+
+    it('a task without a repeat creates no copy', async () => {
+      const id = await addTask({ title: 'разово', dueDate: '2026-11-04' });
+      await toggleTask(id, DONE_AT);
+      expect(await db.tasks.count()).toBe(1);
+    });
+  });
 });

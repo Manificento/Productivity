@@ -53,3 +53,19 @@ test.describe('quick add', () => {
     await expect(tomorrow.getByText('09:00')).toBeVisible();
   });
 });
+
+test.describe('repeating tasks', () => {
+  test('completing a daily task schedules tomorrow’s copy', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(2026, 10, 4, 12, 0));
+    await page.goto('/#/tasks');
+    await page.getByLabel('Новая задача').fill('каждый день зарядка');
+    await page.getByRole('button', { name: 'Добавить' }).click();
+
+    const today = page.getByRole('region', { name: 'Сегодня' });
+    await today.getByRole('checkbox', { name: 'Выполнено: зарядка' }).click();
+    await expect(page.getByRole('region', { name: 'Выполнено сегодня' }).getByText('зарядка')).toBeVisible();
+
+    await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Предстоящие' }).click();
+    await expect(page.getByRole('region', { name: /^Завтра/ }).getByText('зарядка')).toBeVisible();
+  });
+});

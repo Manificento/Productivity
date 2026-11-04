@@ -1,6 +1,6 @@
 import type { DateKey, Task } from '../../../core/types';
 import { Chip, IconButton } from '../../../ui';
-import { dueLabel } from '../logic/format';
+import { dueLabel, recurrenceLabel } from '../logic/format';
 import { isOverdue } from '../logic/lists';
 
 export interface TaskActions {
@@ -46,9 +46,10 @@ export function TaskItem({
         <span className={`break-words text-base ${done ? 'text-zinc-400 line-through dark:text-zinc-500' : ''}`}>
           {task.title}
         </span>
-        {(overdue || due || projectName) && (
+        {(overdue || due || projectName || task.recurrence) && (
           <div className="mt-1 flex flex-wrap gap-1">
             {overdue ? <Chip tone="danger">Просрочено · {due}</Chip> : due && <Chip>{due}</Chip>}
+            {task.recurrence && <Chip>↻ {recurrenceLabel(task.recurrence)}</Chip>}
             {projectName && <Chip tone="accent">#{projectName}</Chip>}
           </div>
         )}

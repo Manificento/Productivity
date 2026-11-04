@@ -1,8 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { toDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { Id, Project, Task } from '../../../core/types';
 import { findActiveProject } from '../logic/projects';
+import { isNextCopyOf, nextOccurrence } from '../logic/recurrence';
 import type { QuickDraft } from '../logic/quickDraft';
 import { validateTitle } from '../logic/tasks';
 
@@ -46,13 +48,26 @@ export async function addQuickTask(draft: QuickDraft, now: number = Date.now()):
   });
 }
 
-/** Marks a task done (sets completedAt) or, if it is done, reopens it (clears completedAt). */
+/**
+ * Marks a task done (sets completedAt) or, if it is done, reopens it (clears completedAt).
+ * Completing a repeating task creates its next copy; reopening it removes that copy while it is still open.
+ */
 export async function toggleTask(id: Id, now: number = Date.now()): Promise<void> {
   await db.transaction('rw', db.tasks, async () => {
     const task = await db.tasks.get(id);
     if (!task) return;
-    const { completedAt, ...rest } = task;
-    await db.tasks.put(completedAt === undefined ? { ...task, ...touch({ completedAt: now }, now) } : touch(rest, now));
+    if (task.completedAt === undefined) {
+      await db.tasks.put({ ...task, ...touch({ completedAt: now }, now) });
+      const next = nextOccurrence(task, toDateKey(now));
+      if (next) await db.tasks.add(newRecord(next, now));
+      return;
+    }
+    if (task.recurrence) {
+      const open = await db.tasks.filter((t) => isNextCopyOf(t, task)).toArray();
+      await db.tasks.bulkDelete(open.map((t) => t.id));
+    }
+    const { completedAt: _done, ...reopened } = task;
+    await db.tasks.put(touch(reopened, now));
   });
 }
 
