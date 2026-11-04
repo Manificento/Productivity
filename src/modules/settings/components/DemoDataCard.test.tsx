@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as backup from '../../../core/backup';
 import { db, TABLE_NAMES } from '../../../core/db';
 import { SettingsPage } from '../SettingsPage';
+import { buildDemoTables } from '../logic/demo';
 import { DemoDataCard } from './DemoDataCard';
 
 const NOW = new Date(2026, 10, 4, 10, 0);
@@ -39,7 +40,8 @@ describe('demo data', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Демо-данные загружены');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(importAll).toHaveBeenCalledTimes(1);
-    for (const name of TABLE_NAMES.filter((n) => n !== 'settings')) {
+    // Every block the demo covers; tables of blocks that are still skeletons (SPEC 0.3) stay empty.
+    for (const name of Object.keys(buildDemoTables('2026-11-04', NOW.getTime())).filter((n) => n !== 'settings')) {
       expect(await db.table(name).count(), name).toBeGreaterThan(0);
     }
     const sleepDays = (await db.sleepLogs.toArray()).map((s) => s.date).sort();
