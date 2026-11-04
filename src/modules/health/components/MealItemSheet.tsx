@@ -1,14 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import type { Food } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
-import { removeMealItem, setMealItemGrams } from '../data/food';
+import { removeMealItem, setMealItemGrams, type MealItemAt } from '../data/food';
 import { formatGrams, macrosFor } from '../logic/nutrition';
 
 /** One logged item: which meal record it is in and its position there. */
-export interface MealItemRef {
-  mealId: string;
-  index: number;
-  grams: number;
+export interface MealItemRef extends MealItemAt {
   food: Food | undefined;
   mealLabel: string;
 }
@@ -33,6 +30,12 @@ function MealItemForm({ item, onClose }: { item: MealItemRef; onClose: () => voi
   const value = Number(grams.replace(',', '.'));
   const valid = Number.isFinite(value) && value > 0;
 
+  /** Errors belong to one view: switching between the form and the confirmation clears them. */
+  const switchTo = (confirm: boolean) => {
+    setConfirming(confirm);
+    setError(undefined);
+  };
+
   async function run(action: () => Promise<void>, failure: string) {
     setBusy(true);
     try {
@@ -50,7 +53,7 @@ function MealItemForm({ item, onClose }: { item: MealItemRef; onClose: () => voi
       setError('Укажите вес в граммах');
       return;
     }
-    void run(() => setMealItemGrams(item.mealId, item.index, value), 'Не удалось сохранить — попробуйте ещё раз');
+    void run(() => setMealItemGrams(item, value), 'Не удалось сохранить — попробуйте ещё раз');
   }
 
   if (confirming) {
@@ -65,15 +68,13 @@ function MealItemForm({ item, onClose }: { item: MealItemRef; onClose: () => voi
           </p>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <Button variant="secondary" onClick={() => setConfirming(false)}>
+          <Button variant="secondary" onClick={() => switchTo(false)}>
             Отмена
           </Button>
           <Button
             variant="danger"
             disabled={busy}
-            onClick={() =>
-              void run(() => removeMealItem(item.mealId, item.index), 'Не удалось удалить — попробуйте ещё раз')
-            }
+            onClick={() => void run(() => removeMealItem(item), 'Не удалось удалить — попробуйте ещё раз')}
           >
             Удалить
           </Button>
@@ -108,7 +109,7 @@ function MealItemForm({ item, onClose }: { item: MealItemRef; onClose: () => voi
         </p>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="danger" onClick={() => setConfirming(true)}>
+        <Button variant="danger" onClick={() => switchTo(true)}>
           Удалить
         </Button>
         <Button type="submit" disabled={busy}>

@@ -21,7 +21,7 @@ export async function addMealItem(
   item: { foodId: string; grams: number },
   now: number = Date.now(),
 ): Promise<MealLog> {
-  if (!(item.grams > 0)) throw new Error('Укажите вес в граммах');
+  if (!validGrams(item.grams)) throw new Error('Укажите вес в граммах');
   return db.transaction('rw', db.mealLogs, async () => {
     const existing = await db.mealLogs
       .where('date')
@@ -39,33 +39,43 @@ export async function addMealItem(
   });
 }
 
-/** Changes the weight of one item (by its position in the meal). */
-export async function setMealItemGrams(
-  mealId: string,
-  index: number,
-  grams: number,
-  now: number = Date.now(),
-): Promise<void> {
-  if (!(grams > 0)) throw new Error('Укажите вес в граммах');
-  await updateItems(mealId, index, now, (items) => items.with(index, { ...items[index], grams }));
+/**
+ * Where a logged item sits: its meal record and position, plus what was there when the screen showed it.
+ * A write fails if the item at that position has changed meanwhile (e.g. edited in another tab).
+ */
+export interface MealItemAt {
+  mealId: string;
+  index: number;
+  foodId: string;
+  grams: number;
 }
 
-/** Removes one item (by its position); a meal left without items is removed too. */
-export async function removeMealItem(mealId: string, index: number, now: number = Date.now()): Promise<void> {
-  await updateItems(mealId, index, now, (items) => items.toSpliced(index, 1));
+const validGrams = (grams: number) => Number.isFinite(grams) && grams > 0;
+
+/** Changes the weight of one logged item. */
+export async function setMealItemGrams(at: MealItemAt, grams: number, now: number = Date.now()): Promise<void> {
+  if (!validGrams(grams)) throw new Error('Укажите вес в граммах');
+  await updateItems(at, now, (items) => items.with(at.index, { ...items[at.index], grams }));
+}
+
+/** Removes one logged item; a meal left without items is removed too. */
+export async function removeMealItem(at: MealItemAt, now: number = Date.now()): Promise<void> {
+  await updateItems(at, now, (items) => items.toSpliced(at.index, 1));
 }
 
 async function updateItems(
-  mealId: string,
-  index: number,
+  at: MealItemAt,
   now: number,
   change: (items: MealLog['items']) => MealLog['items'],
 ): Promise<void> {
   await db.transaction('rw', db.mealLogs, async () => {
-    const meal = await db.mealLogs.get(mealId);
-    if (!meal || !meal.items[index]) throw new Error('Позиция не найдена — обновите экран');
+    const meal = await db.mealLogs.get(at.mealId);
+    const current = meal?.items[at.index];
+    if (!meal || current?.foodId !== at.foodId || current.grams !== at.grams) {
+      throw new Error('Позиция не найдена — обновите экран');
+    }
     const items = change(meal.items);
-    if (items.length === 0) await db.mealLogs.delete(mealId);
+    if (items.length === 0) await db.mealLogs.delete(at.mealId);
     else await db.mealLogs.put({ ...meal, ...touch({ items }, now) });
   });
 }

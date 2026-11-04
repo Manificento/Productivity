@@ -10,6 +10,7 @@ import { Button, Sheet } from '../../../ui';
 export function DeleteSleep({ log, onDeleted }: { log: SleepLog; onDeleted: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
   const day = format(fromDateKey(log.date), 'd MMMM', { locale: ru });
 
   const close = () => {
@@ -17,6 +18,7 @@ export function DeleteSleep({ log, onDeleted }: { log: SleepLog; onDeleted: () =
     setError(undefined);
   };
   async function remove() {
+    setBusy(true);
     try {
       await deleteSleep(log.id);
       close();
@@ -24,6 +26,7 @@ export function DeleteSleep({ log, onDeleted }: { log: SleepLog; onDeleted: () =
     } catch {
       setError('Не удалось удалить — попробуйте ещё раз');
     }
+    setBusy(false);
   }
 
   return (
@@ -48,7 +51,7 @@ export function DeleteSleep({ log, onDeleted }: { log: SleepLog; onDeleted: () =
           <Button variant="secondary" onClick={close}>
             Отмена
           </Button>
-          <Button variant="danger" onClick={() => void remove()}>
+          <Button variant="danger" disabled={busy} onClick={() => void remove()}>
             Удалить
           </Button>
         </div>

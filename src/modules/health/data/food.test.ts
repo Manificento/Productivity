@@ -51,20 +51,20 @@ describe('food data', () => {
   it('Given a meal item When I delete it Then only that item is removed', async () => {
     const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 }, 1);
     await addMealItem(TODAY, 'lunch', { foodId: 'b', grams: 50 }, 2);
-    await removeMealItem(meal.id, 0, 3);
+    await removeMealItem({ mealId: meal.id, index: 0, foodId: 'a', grams: 150 }, 3);
     expect(await db.mealLogs.get(meal.id)).toMatchObject({ items: [{ foodId: 'b', grams: 50 }], updatedAt: 3 });
   });
 
   it('deleting the last item of a meal removes the meal record', async () => {
     const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 });
-    await removeMealItem(meal.id, 0);
+    await removeMealItem({ mealId: meal.id, index: 0, foodId: 'a', grams: 150 });
     expect(await db.mealLogs.count()).toBe(0);
   });
 
   it('Given a meal item When I change its weight Then the new grams are stored', async () => {
     const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 }, 1);
     await addMealItem(TODAY, 'lunch', { foodId: 'b', grams: 50 }, 2);
-    await setMealItemGrams(meal.id, 1, 80, 3);
+    await setMealItemGrams({ mealId: meal.id, index: 1, foodId: 'b', grams: 50 }, 80, 3);
     expect(await db.mealLogs.get(meal.id)).toMatchObject({
       items: [
         { foodId: 'a', grams: 150 },
@@ -74,11 +74,15 @@ describe('food data', () => {
     });
   });
 
-  it('changing the weight to zero or a missing item is an error and changes nothing', async () => {
+  it('changing the weight to zero, or an item that changed meanwhile, is an error and changes nothing', async () => {
     const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 });
-    await expect(setMealItemGrams(meal.id, 0, 0)).rejects.toThrow(/граммах/);
-    await expect(setMealItemGrams(meal.id, 5, 10)).rejects.toThrow(/не найдена/);
-    await expect(removeMealItem('missing', 0)).rejects.toThrow(/не найдена/);
+    const at = { mealId: meal.id, index: 0, foodId: 'a', grams: 150 };
+    await expect(setMealItemGrams(at, 0)).rejects.toThrow(/граммах/);
+    await expect(setMealItemGrams(at, Infinity)).rejects.toThrow(/граммах/);
+    await expect(setMealItemGrams({ ...at, index: 5 }, 10)).rejects.toThrow(/не найдена/);
+    await expect(setMealItemGrams({ ...at, grams: 100 }, 10)).rejects.toThrow(/не найдена/);
+    await expect(removeMealItem({ ...at, foodId: 'b' })).rejects.toThrow(/не найдена/);
+    await expect(removeMealItem({ ...at, mealId: 'missing' })).rejects.toThrow(/не найдена/);
     expect((await db.mealLogs.get(meal.id))?.items).toEqual([{ foodId: 'a', grams: 150 }]);
   });
 });

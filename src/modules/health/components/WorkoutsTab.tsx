@@ -16,18 +16,21 @@ export function WorkoutsTab({ today = todayKey() }: { today?: DateKey }) {
   const formRef = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState<WorkoutLog>();
   const [deleteError, setDeleteError] = useState<string>();
+  const [removing, setRemoving] = useState(false);
 
   const askDelete = (w: WorkoutLog | undefined) => {
     setDeleting(w);
     setDeleteError(undefined);
   };
   const confirmDelete = async (w: WorkoutLog) => {
+    setRemoving(true);
     try {
       await deleteWorkout(w.id);
       askDelete(undefined);
     } catch {
       setDeleteError('Не удалось удалить — попробуйте ещё раз');
     }
+    setRemoving(false);
   };
 
   const repeat = (w: WorkoutLog) => {
@@ -109,7 +112,7 @@ export function WorkoutsTab({ today = todayKey() }: { today?: DateKey }) {
           <Button variant="secondary" onClick={() => askDelete(undefined)}>
             Отмена
           </Button>
-          <Button variant="danger" onClick={() => deleting && void confirmDelete(deleting)}>
+          <Button variant="danger" disabled={removing} onClick={() => deleting && void confirmDelete(deleting)}>
             Удалить
           </Button>
         </div>

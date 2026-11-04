@@ -67,6 +67,7 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
             m.items.map((it, index) => ({
               mealId: m.id,
               index,
+              foodId: it.foodId,
               grams: it.grams,
               food: byId.get(it.foodId),
               mealLabel: label,

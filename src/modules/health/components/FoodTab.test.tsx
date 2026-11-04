@@ -239,4 +239,17 @@ describe('food tab', () => {
     );
     put.mockRestore();
   });
+
+  it('an error of the weight form is not carried over to the delete confirmation', async () => {
+    const b = await createFood(bread);
+    await addMealItem(TODAY, 'lunch', { foodId: b.id, grams: 100 });
+    renderTab();
+    fireEvent.click(await within(await meal('Обед')).findByRole('button', { name: 'Изменить: Хлеб, 100 г' }));
+    const dialog = screen.getByRole('dialog');
+    type('Вес, г', '0');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
