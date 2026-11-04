@@ -118,6 +118,15 @@ describe('loadDailyTargets', () => {
     }
   });
 
+  it('ignores a non-positive weight', async () => {
+    await db.settings.bulkPut([
+      { key: 'nutrition.expenditure', value: { kcal: 2500 } },
+      { key: 'nutrition.goal', value: { kind: 'lose', ratePct: 0.5 } },
+    ]);
+    await db.weightLogs.add({ id: 'w0', date: '2026-11-01', kg: 0, ...base });
+    expect((await loadDailyTargets('2026-11-04')).kcal).toBeUndefined();
+  });
+
   it('Given Habit When я читаю src/core/types.ts Then есть поле essential?: boolean', () => {
     expectTypeOf<Habit['essential']>().toEqualTypeOf<boolean | undefined>();
   });

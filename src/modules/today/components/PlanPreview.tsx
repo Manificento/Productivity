@@ -122,7 +122,9 @@ export function PlanPreview({
         </table>
       </div>
       {/* Second table: v2 targets, so six columns above still fit a 360 px screen. */}
-      <h4 className="mb-1 mt-3 text-xs font-medium text-zinc-500">Режим: медитация, тренажёры ума, привычки</h4>
+      <p className="mb-1 mt-3 text-xs font-medium text-zinc-500">
+        Режим: медитация, тренажёры ума, привычки, разгрузка
+      </p>
       <div className="-mx-1 overflow-x-auto">
         <table aria-label="Режим на 10 дней" className="w-full border-collapse text-xs">
           <thead>
