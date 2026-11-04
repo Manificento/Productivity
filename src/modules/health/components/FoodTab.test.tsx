@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { addMealItem, createFood } from '../data/food';
 import { FoodTab } from './FoodTab';
@@ -26,6 +26,12 @@ async function openAdd(label: string) {
 
 beforeEach(async () => {
   await Promise.all([db.foods.clear(), db.mealLogs.clear(), db.settings.clear(), db.lifeEvents.clear()]);
+  // No real network in tests: Open Food Facts finds nothing here (searching is covered in FoodSearch.test.tsx).
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ products: [] }) }));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('food tab', () => {
@@ -61,7 +67,7 @@ describe('food tab', () => {
     renderTab();
     const dialog = await openAdd('Ужин');
     type('Поиск продукта', 'Сырники');
-    expect(within(dialog).getByText('Ничего не нашлось.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Среди ваших продуктов ничего нет.')).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Создать свой продукт' }));
 
     expect(screen.getByLabelText('Название')).toHaveValue('Сырники');

@@ -2,8 +2,11 @@ import { useState, type FormEvent } from 'react';
 import type { DateKey, Food } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
 import { addMealItem, useHasLoggedFood } from '../data/food';
+import { addOffFoodToMeal } from '../data/openFoodFacts';
+import type { OffFood } from '../logic/openFoodFacts';
 import { formatGrams, macrosFor, MEAL_KINDS, searchFoods, type MealKind } from '../logic/nutrition';
 import { CustomFoodForm } from './CustomFoodForm';
+import { OffResults } from './OffResults';
 
 function FoodButton({ food, onPick }: { food: Food; onPick: (f: Food) => void }) {
   return (
@@ -20,26 +23,32 @@ function FoodButton({ food, onPick }: { food: Food; onPick: (f: Food) => void })
   );
 }
 
+/** A stored food, or an Open Food Facts product that is cached only when actually added. */
+export type PickedFood = { food: Food } | { off: OffFood };
+
 /** Step 2: grams for the picked food, with a soft «no new foods» warning before an event. */
 function GramsForm({
-  food,
+  picked,
   date,
   kind,
   noNewFoods,
   onDone,
   onBack,
 }: {
-  food: Food;
+  picked: PickedFood;
   date: DateKey;
   kind: MealKind;
   noNewFoods: boolean;
   onDone: () => void;
   onBack: () => void;
 }) {
+  const food = 'food' in picked ? picked.food : picked.off;
   const [grams, setGrams] = useState('100');
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  const logged = useHasLoggedFood(food.id);
+  // A product straight from Open Food Facts was never logged: it is new by definition.
+  const storedLogged = useHasLoggedFood('food' in picked ? picked.food.id : undefined);
+  const logged = 'food' in picked ? storedLogged : false;
   // Before an event, wait until we know whether the food is new, so the warning is never skipped.
   const checking = noNewFoods && logged === undefined;
   const value = Number(grams.replace(',', '.'));
@@ -53,7 +62,8 @@ function GramsForm({
     }
     setSaving(true);
     try {
-      await addMealItem(date, kind, { foodId: food.id, grams: value });
+      if ('food' in picked) await addMealItem(date, kind, { foodId: picked.food.id, grams: value });
+      else await addOffFoodToMeal(date, kind, picked.off, value);
       onDone();
     } catch {
       setError('Не удалось добавить — попробуйте ещё раз');
@@ -115,7 +125,8 @@ export function AddFoodSheet({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const [picked, setPicked] = useState<Food>();
+  const [picked, setPicked] = useState<PickedFood>();
+  const pickFood = (food: Food) => setPicked({ food });
   const [creating, setCreating] = useState(false);
   const label = MEAL_KINDS.find((m) => m.kind === kind)?.label ?? '';
   const results = searchFoods(foods, query);
@@ -131,7 +142,7 @@ export function AddFoodSheet({
     <Sheet open={kind !== undefined} title={`Добавить: ${label.toLowerCase()}`} onClose={close}>
       {kind === undefined ? null : picked ? (
         <GramsForm
-          food={picked}
+          picked={picked}
           date={date}
           kind={kind}
           noNewFoods={noNewFoods}
@@ -143,7 +154,7 @@ export function AddFoodSheet({
           initialName={query.trim()}
           onCreated={(f) => {
             setCreating(false);
-            setPicked(f);
+            pickFood(f);
           }}
           onCancel={() => setCreating(false)}
         />
@@ -168,7 +179,7 @@ export function AddFoodSheet({
                   <li key={f.id}>
                     <button
                       type="button"
-                      onClick={() => setPicked(f)}
+                      onClick={() => pickFood(f)}
                       className="min-h-11 rounded-full bg-zinc-100 px-4 text-sm dark:bg-zinc-800"
                     >
                       {f.name}
@@ -179,13 +190,19 @@ export function AddFoodSheet({
             </section>
           )}
           {query.trim() !== '' && (
-            <ul aria-label="Найденные продукты" className="mb-3">
-              {results.map((f) => (
-                <FoodButton key={f.id} food={f} onPick={setPicked} />
-              ))}
-              {results.length === 0 && <li className="py-3 text-sm text-zinc-500">Ничего не нашлось.</li>}
-            </ul>
+            <section aria-label="Мои продукты" className="mb-3">
+              <p className="mb-1 text-sm text-zinc-500">Мои продукты</p>
+              <ul aria-label="Найденные продукты">
+                {results.map((f) => (
+                  <FoodButton key={f.id} food={f} onPick={pickFood} />
+                ))}
+                {results.length === 0 && (
+                  <li className="py-2 text-sm text-zinc-500">Среди ваших продуктов ничего нет.</li>
+                )}
+              </ul>
+            </section>
           )}
+          <OffResults query={query} foods={foods} onPick={(off) => setPicked({ off })} />
           {foods.length === 0 && query.trim() === '' && (
             <p className="mb-3 text-sm text-zinc-500">Продуктов пока нет — создайте свой.</p>
           )}
