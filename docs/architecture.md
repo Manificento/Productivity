@@ -29,7 +29,7 @@ flowchart TB
     health[health]
     cognition[cognition<br/>тесты внимания и тренажёры]
     settings[settings]
-    planned[nutrition · training · meditation<br/>notes · progress — SPEC 0.3, M5]
+    planned[nutrition · training · meditation<br/>notes · progress — каркасы SPEC 0.3]
   end
   subgraph kernel[core — общее ядро]
     types[types.ts<br/>доменные типы]
@@ -94,45 +94,40 @@ flowchart LR
 
 ## Владение таблицами
 
-| Модуль    | Пишет в таблицы                                                                       |
-| --------- | ------------------------------------------------------------------------------------- |
-| tasks     | `projects`, `tasks`                                                                   |
-| habits    | `habits`, `habitLogs`                                                                 |
-| time      | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)      |
-| health    | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`, `workoutLogs`      |
-| today     | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep` |
-| cognition | `cognitiveTests`                                                                      |
-| settings  | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                  |
+| Модуль     | Пишет в таблицы                                                                                                                                                       | Читает (кроме своих)                 |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| tasks      | `projects`, `tasks`                                                                                                                                                   | цели дня                             |
+| habits     | `habits`, `habitLogs`                                                                                                                                                 | цели дня                             |
+| time       | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)                                                                                      | `tasks`, цели дня                    |
+| health     | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`; `workoutLogs` — только через `core/logging/saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
+| today      | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep`                                                                                 | все таблицы (сводка, инсайты)        |
+| cognition  | `cognitiveTests`, `mindSessions`                                                                                                                                      | цели дня                             |
+| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                                                                                                  | все таблицы (экспорт)                |
+| nutrition  | `weightLogs`, `settings` (`nutrition.*`); после переноса дневника еды (#107) — `foods`, `mealLogs`                                                                    | `sleepLogs`, `workoutLogs`, цели дня |
+| training   | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                                                                       | `workoutLogs`, цели дня              |
+| meditation | `meditationSessions`                                                                                                                                                  | цели дня                             |
+| notes      | `notes`                                                                                                                                                               | `projects`, `lifeEvents`             |
+| progress   | `xpEvents`                                                                                                                                                            | все таблицы (только чтение)          |
 
 Ключ `time.pomodoro.running` = `{ phase, startedAt, endsAt }` (мс) — идущая фаза Pomodoro; ключа нет, когда таймер
 не идёт. Пишет `time`, читают все (например, «Сегодня»); `endsAt <= now` — не идёт.
 
 Таблица `settings` делится по префиксу ключа: модуль пишет только свои ключи `<модуль>.*` (`adaptation.*` — today,
-`time.*` — time, `nutrition.*` — nutrition после SPEC 0.3), остальные ключи — модуль `settings`.
+`time.*` — time, `nutrition.*` — nutrition), остальные ключи — модуль `settings`.
 
 Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
-([ADR-0007](adr/0007-shared-write-paths.md)): сейчас это только сон.
+([ADR-0007](adr/0007-shared-write-paths.md)): `saveSleep()` (сон: health и утренний поток today) и `saveWorkout()`
+(тренировки: training — ручная запись и выполнение плана, health — импорт из Health Connect / HealthKit).
 
 Чистое правило, которое нужно двум модулям одинаково, тоже живёт в ядре, а не копируется: расписание привычек
 (`isDue`, неделя с понедельника) — `src/core/habitSchedule.ts`, им считают и «Привычки», и «Привычки: X из Y» на «Сегодня».
 
 ## Расширение по SPEC 0.3
 
-[SPEC 0.3](SPEC.md) добавляет пять блоков и переносит два журнала. Таблицы и каркасы появляются контрактной
-issue «каркасы блоков» (веха M5); до её слияния этих модулей и таблиц **нет**, писать в них нельзя.
-
-| Модуль (план) | Будет писать в таблицы                                                                                               | Читает                               |
-| ------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| nutrition     | `weightLogs`, `settings` (`nutrition.*`); после переноса — `foods`, `mealLogs`                                       | `sleepLogs`, `workoutLogs`, цели дня |
-| training      | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                      | `workoutLogs`, цели дня              |
-| meditation    | `meditationSessions`                                                                                                 | цели дня                             |
-| cognition     | `cognitiveTests`, `mindSessions` (новая)                                                                             | цели дня                             |
-| notes         | `notes`                                                                                                              | `projects`, `lifeEvents`             |
-| progress      | `xpEvents`                                                                                                           | все таблицы (только чтение)          |
-| health        | `sleepLogs` через `saveSleep`; `workoutLogs` — только через `saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
-
-Второй общий путь записи — `saveWorkout()`: журнал тренировок заполняют `health` (импорт из Health Connect /
-HealthKit) и `training` (ручная запись и выполнение плана).
+[SPEC 0.3](SPEC.md) добавляет пять блоков и переносит два журнала. Таблицы (Dexie v3) и каркасы модулей
+`nutrition`, `training`, `meditation`, `notes`, `progress` созданы контрактной issue «каркасы блоков» (#105, веха M5):
+маршруты работают и показывают «скоро», в навигации модули скрыты (`navOrder` не задан) до первой полезной функции.
+Типы — `src/core/types.ts` (раздел «SPEC 0.3, 5.6»), владение — таблица выше.
 
 Платформа: нативные возможности (будильник, датчики, уведомления, Health) доступны модулям только через
 `src/core/platform.ts` ([ADR-0008](adr/0008-web-and-native-one-codebase.md)); флаги возможностей говорят,
