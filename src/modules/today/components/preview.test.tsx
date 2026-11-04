@@ -58,6 +58,21 @@ describe('Предпросмотр 10 дней', () => {
     expect(rows[5]).toHaveTextContent('9 нояб.событие1,8 ч7,5 чотдых0');
   });
 
+  it('Given предпросмотр 10 дней When событие открыто Then видны и новые поля: медитация, тренажёры ума, привычки, разгрузка', async () => {
+    renderAt('/today/events/e1');
+    const table = await screen.findByRole('table', { name: 'Восстановление на 10 дней' });
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['День', 'Медит.', 'Ум', 'Привычки', 'Разгр.']);
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(10);
+    expect(rows[0]).toHaveTextContent('4 нояб.фокус10 минвсе—');
+    expect(rows[5]).toHaveTextContent('9 нояб.дыхание5 минключевыеда');
+    expect(rows[6]).toHaveTextContent('10 нояб.тело10 минвсе—');
+  });
+
   it('Given я меняю важность или дни подготовки в форме When значения меняются Then предпросмотр пересчитывается сразу, до сохранения', async () => {
     const user = userEvent.setup();
     renderAt('/today/events/e1');

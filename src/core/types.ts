@@ -76,6 +76,8 @@ export interface Habit extends BaseRecord {
   schedule: HabitSchedule;
   archived: boolean;
   color?: string;
+  /** Kept on days with `DailyTargets.habitsMode = 'essential'` (event day). Default false. */
+  essential?: boolean;
 }
 
 export interface HabitLog extends BaseRecord {

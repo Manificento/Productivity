@@ -1,6 +1,6 @@
 import { daysBetween } from '../dates';
 import type { DateKey, WorkoutIntensity } from '../types';
-import type { AdaptationContext, Baseline, ConditionRule, DailyTargets, PhaseRule } from './types';
+import type { AdaptationContext, Baseline, ConditionRule, DailyTargets, NutritionGoal, PhaseRule } from './types';
 
 export const DEFAULT_BASELINE: Baseline = {
   taskCapacityMin: 360,
@@ -10,7 +10,49 @@ export const DEFAULT_BASELINE: Baseline = {
   focusPomodoros: 4,
   meditationMin: 10,
   caffeineCutoff: '15:00',
+  wakeTime: '07:30',
+  mindTrainingMin: 10,
 };
+
+/** Smart alarm window before the wake-up time, minutes. */
+export const WAKE_WINDOW_MIN = 30;
+
+const KCAL_PER_KG = 7700;
+/** A deficit is never bigger than this share of the expenditure. */
+const MAX_DEFICIT_SHARE = 0.25;
+
+/**
+ * Daily energy and macros from the expenditure (computed by the nutrition module), the goal and body weight.
+ * `ratePct` is % of body weight per week. Protein 1.8 g/kg (1.6 when maintaining), fat 0.8 g/kg, carbs — the rest.
+ */
+export function nutritionTargets(
+  expenditureKcal: number,
+  goal: NutritionGoal,
+  weightKg: number,
+): { kcal: number; proteinG: number; fatG: number; carbsG: number } {
+  const delta = (weightKg * (goal.ratePct / 100) * KCAL_PER_KG) / 7;
+  const raw =
+    goal.kind === 'lose'
+      ? expenditureKcal - Math.min(delta, expenditureKcal * MAX_DEFICIT_SHARE)
+      : goal.kind === 'gain'
+        ? expenditureKcal + delta
+        : expenditureKcal;
+  const kcal = Math.round(raw / 10) * 10;
+  const proteinG = Math.round(weightKg * (goal.kind === 'maintain' ? 1.6 : 1.8));
+  const fatG = Math.round(weightKg * 0.8);
+  const carbsG = Math.max(0, Math.round((kcal - proteinG * 4 - fatG * 9) / 4));
+  return { kcal, proteinG, fatG, carbsG };
+}
+
+/** Phase-independent part of the v2 taper/event rule (rule 7). */
+function deloadDay(t: DailyTargets): DailyTargets {
+  return {
+    ...t,
+    deload: true,
+    mindTrainingMin: Math.min(t.mindTrainingMin, 5),
+    reasons: [...t.reasons, 'Разгрузка: тренировка по плану облегчённая, тренажёры ума ≤ 5 мин, без дефицита калорий'],
+  };
+}
 
 export const BASELINE_SETTING_KEY = 'adaptation.baseline';
 
@@ -62,37 +104,45 @@ export const PHASE_RULES: PhaseRule[] = [
   },
   {
     phase: 'taper',
-    apply: (t, e) => ({
-      ...t,
-      focusProjectId: e.projectId,
-      taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.6),
-      focusPomodoros: 2,
-      allowDeferLowPriority: true,
-      sleepHours: Math.max(t.sleepHours, 8.5),
-      bedtime: shiftTime(t.bedtime, -30),
-      maxWorkoutIntensity: capIntensity(t.maxWorkoutIntensity, 'light'),
-      meditationMin: t.meditationMin + 10,
-      caffeineCutoff: earlierTime(t.caffeineCutoff, '14:00'),
-      noNewFoods: true,
-      reasons: [
-        ...t.reasons,
-        `Завтра «${e.title}»: разгрузочный день, нагрузка −40%`,
-        'Отбой на 30 минут раньше, без новых продуктов, кофеин до 14:00',
-      ],
-    }),
+    apply: (t, e) =>
+      deloadDay({
+        ...t,
+        focusProjectId: e.projectId,
+        taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.6),
+        focusPomodoros: 2,
+        allowDeferLowPriority: true,
+        sleepHours: Math.max(t.sleepHours, 8.5),
+        bedtime: shiftTime(t.bedtime, -30),
+        maxWorkoutIntensity: capIntensity(t.maxWorkoutIntensity, 'light'),
+        meditationMin: t.meditationMin + 10,
+        caffeineCutoff: earlierTime(t.caffeineCutoff, '14:00'),
+        noNewFoods: true,
+        reasons: [
+          ...t.reasons,
+          `Завтра «${e.title}»: разгрузочный день, нагрузка −40%`,
+          'Отбой на 30 минут раньше, без новых продуктов, кофеин до 14:00',
+        ],
+      }),
   },
   {
     phase: 'event',
-    apply: (t, e) => ({
-      ...t,
-      focusProjectId: e.projectId,
-      taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.3),
-      focusPomodoros: 0,
-      allowDeferLowPriority: true,
-      maxWorkoutIntensity: 'rest',
-      noNewFoods: true,
-      reasons: [...t.reasons, `Сегодня «${e.title}»: только самое важное, без тренировки`],
-    }),
+    apply: (t, e) =>
+      deloadDay({
+        ...t,
+        focusProjectId: e.projectId,
+        taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.3),
+        focusPomodoros: 0,
+        allowDeferLowPriority: true,
+        maxWorkoutIntensity: 'rest',
+        noNewFoods: true,
+        habitsMode: 'essential',
+        meditationKind: 'breathing',
+        reasons: [
+          ...t.reasons,
+          `Сегодня «${e.title}»: только самое важное, без тренировки`,
+          'Только ключевые привычки, дыхательная медитация перед событием',
+        ],
+      }),
   },
   {
     phase: 'recovery',
@@ -101,7 +151,8 @@ export const PHASE_RULES: PhaseRule[] = [
       taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.7),
       sleepHours: Math.max(t.sleepHours, 8),
       maxWorkoutIntensity: capIntensity(t.maxWorkoutIntensity, 'light'),
-      reasons: [...t.reasons, `День после «${e.title}»: восстановление, нагрузка −30%`],
+      meditationKind: 'body',
+      reasons: [...t.reasons, `День после «${e.title}»: восстановление, нагрузка −30%, медитация на тело`],
     }),
   },
 ];
@@ -140,7 +191,8 @@ export const CONDITION_RULES: ConditionRule[] = [
     apply: (t) => ({
       ...t,
       taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.8),
-      reasons: [...t.reasons, 'Низкая энергия в чек-ине: нагрузка −20%'],
+      mindTrainingMin: 0,
+      reasons: [...t.reasons, 'Низкая энергия в чек-ине: нагрузка −20%, без тренажёров ума'],
     }),
   },
   {
@@ -201,6 +253,12 @@ export function baselineTargets(date: string, b: Baseline): DailyTargets {
     meditationMin: b.meditationMin,
     caffeineCutoff: b.caffeineCutoff,
     noNewFoods: false,
+    habitsMode: 'all',
+    wakeTime: b.wakeTime,
+    wakeWindowMin: WAKE_WINDOW_MIN,
+    deload: false,
+    meditationKind: 'focus',
+    mindTrainingMin: b.mindTrainingMin,
     reasons: [],
   };
 }

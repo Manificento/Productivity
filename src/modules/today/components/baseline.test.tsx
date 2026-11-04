@@ -35,6 +35,27 @@ async function fill(label: string, value: string) {
 }
 
 describe('Базовый режим', () => {
+  it('Given Baseline When я открываю редактор базового режима Then есть время подъёма и минуты тренажёров ума; старые сохранённые baseline читаются со значениями по умолчанию', async () => {
+    // A baseline saved before v2: no wakeTime, no mindTrainingMin.
+    const { wakeTime: _w, mindTrainingMin: _m, ...v1 } = { ...DEFAULT_BASELINE, taskCapacityMin: 300 };
+    await db.settings.put({ key: BASELINE_SETTING_KEY, value: v1 });
+    const user = userEvent.setup();
+    renderAt('/today/baseline');
+    expect(await screen.findByLabelText('Ёмкость дня, мин')).toHaveValue(300);
+    expect(screen.getByLabelText('Подъём')).toHaveValue(DEFAULT_BASELINE.wakeTime);
+    expect(screen.getByLabelText('Тренажёры ума, мин')).toHaveValue(DEFAULT_BASELINE.mindTrainingMin);
+
+    await fill('Подъём', '06:45');
+    await fill('Тренажёры ума, мин', '15');
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Сохранено'));
+    expect((await db.settings.get(BASELINE_SETTING_KEY))?.value).toMatchObject({
+      taskCapacityMin: 300,
+      wakeTime: '06:45',
+      mindTrainingMin: 15,
+    });
+  });
+
   it('Given экран «Базовый режим» When я меняю ёмкость дня на 300 мин и отбой на 23:00 Then сохраняется в settings под adaptation.baseline, цели обычного дня меняются', async () => {
     const user = userEvent.setup();
     renderAt('/today/baseline');
