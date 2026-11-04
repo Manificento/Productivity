@@ -71,6 +71,8 @@ describe('loadDailyTargets', () => {
       pvt('p1', '2026-11-04', 270),
       pvt('p2', '2026-11-01', 320),
       pvt('p3', '2026-10-15', 500), // older than 14 days
+      pvt('p4', '2026-10-22', 300), // 13 days before: the oldest day of the window
+      pvt('p5', '2026-10-21', 400), // 14 days before: outside
     ]);
     const meditation = (id: string, date: string, durationMin: number) => ({
       id,
@@ -92,10 +94,28 @@ describe('loadDailyTargets', () => {
       expenditureKcal: 2500,
       nutritionGoal: { kind: 'lose', ratePct: 0.5 },
       weightKg: 80,
-      recentPvtMediansMs: [270, 320],
+      recentPvtMediansMs: [270, 320, 300],
       meditationMinYesterday: 15,
     });
     expect((await loadDailyTargets('2026-11-04')).kcal).toBe(2060);
+  });
+
+  it('ignores malformed nutrition settings instead of producing NaN targets', async () => {
+    await db.weightLogs.add({ id: 'w', date: '2026-11-01', kg: 80, ...base });
+    for (const [expenditure, goal] of [
+      [{ kcal: 2500 }, { kind: 'lose' }], // no ratePct
+      [{ kcal: 2500 }, { kind: 'lose', ratePct: -1 }],
+      [{ kcal: 2500 }, { kind: 'cut', ratePct: 0.5 }],
+      [{ kcal: Number.NaN }, { kind: 'lose', ratePct: 0.5 }],
+      [{ kcal: 0 }, { kind: 'lose', ratePct: 0.5 }],
+    ]) {
+      await db.settings.bulkPut([
+        { key: 'nutrition.expenditure', value: expenditure },
+        { key: 'nutrition.goal', value: goal },
+      ]);
+      const t = await loadDailyTargets('2026-11-04');
+      expect(t.kcal).toBeUndefined();
+    }
   });
 
   it('Given Habit When я читаю src/core/types.ts Then есть поле essential?: boolean', () => {

@@ -30,6 +30,21 @@ const nutrition = {
 describe('DailyTargets v2', () => {
   it('Given DailyTargets v1 When я смотрю types.ts Then добавлены новые поля, существующие не изменены', () => {
     const t = baselineTargets('2026-11-01', DEFAULT_BASELINE);
+    const v1 = [
+      'date',
+      'phase',
+      'taskCapacityMin',
+      'allowDeferLowPriority',
+      'sleepHours',
+      'bedtime',
+      'maxWorkoutIntensity',
+      'focusPomodoros',
+      'meditationMin',
+      'caffeineCutoff',
+      'noNewFoods',
+      'reasons',
+    ];
+    expect(Object.keys(t)).toEqual(expect.arrayContaining(v1));
     expect(t).toMatchObject({
       // v1 fields keep their names
       taskCapacityMin: DEFAULT_BASELINE.taskCapacityMin,
@@ -56,6 +71,18 @@ describe('DailyTargets v2', () => {
       expect(t.kcal).toBeGreaterThanOrEqual(nutrition.expenditureKcal);
       expect(t.reasons.some((r) => r.includes('без дефицита калорий'))).toBe(true);
     }
+    // An uneven expenditure is not rounded below itself.
+    for (const date of ['2026-11-09', '2026-11-10']) {
+      const t = computeDailyTargets(date, ctx({ ...nutrition, expenditureKcal: 2504 }));
+      expect(t.kcal).toBeGreaterThanOrEqual(2504);
+      expect(t.proteinG).toBe(144); // protein stays as for the goal (1.8 g/kg)
+    }
+    // Without a deficit to remove, the reason does not claim one.
+    const gain = computeDailyTargets(
+      '2026-11-09',
+      ctx({ ...nutrition, nutritionGoal: { kind: 'gain', ratePct: 0.25 } }),
+    );
+    expect(gain.reasons.some((r) => r.includes('без дефицита калорий'))).toBe(false);
     // Before taper (prep) the deficit stays.
     const prep = computeDailyTargets('2026-11-05', ctx(nutrition));
     expect(prep.deload).toBe(false);
@@ -106,6 +133,7 @@ describe('nutritionTargets', () => {
     expect(nutritionTargets(2500, { kind: 'maintain', ratePct: 0 }, 80).kcal).toBe(2500);
     expect(nutritionTargets(2500, { kind: 'gain', ratePct: 0.25 }, 80).kcal).toBe(2720);
     expect(nutritionTargets(2000, { kind: 'lose', ratePct: 1.5 }, 100).kcal).toBe(1500);
+    expect(nutritionTargets(2000, { kind: 'gain', ratePct: 1.5 }, 100).kcal).toBe(2500); // surplus capped at 25 %
   });
 
   it('carbs never go negative', () => {

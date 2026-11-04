@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { z } from 'zod';
 import { db } from '../db';
 import { shiftDateKey } from '../dates';
 import { sleepHours } from '../logging/sleepTime';
@@ -8,6 +9,10 @@ import { BASELINE_SETTING_KEY, DEFAULT_BASELINE } from './rules';
 import type { AdaptationContext, Baseline, DailyTargets, NutritionGoal } from './types';
 
 export { sleepHours } from '../logging/sleepTime';
+
+// `nutrition.*` settings are written by another module: validate, and treat anything odd as «no data».
+const expenditureSchema = z.object({ kcal: z.number().finite().positive() });
+const goalSchema = z.object({ kind: z.enum(['lose', 'maintain', 'gain']), ratePct: z.number().finite().min(0).max(2) });
 
 /** Loads everything the engine needs for `date` from the local DB. */
 export async function loadAdaptationContext(date: DateKey): Promise<AdaptationContext> {
@@ -46,7 +51,8 @@ export async function loadAdaptationContext(date: DateKey): Promise<AdaptationCo
     return log ? sleepHours(log) : undefined;
   };
   const baseline: Baseline = { ...DEFAULT_BASELINE, ...((baselineSetting?.value as Partial<Baseline>) ?? {}) };
-  const expenditureKcal = (expenditure?.value as { kcal?: number } | undefined)?.kcal;
+  const parsedExpenditure = expenditureSchema.safeParse(expenditure?.value);
+  const parsedGoal = goalSchema.safeParse(goal?.value);
   const pvtMedians = pvtRuns
     .sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt)
     .map((run) => run.medianRtMs)
@@ -58,10 +64,12 @@ export async function loadAdaptationContext(date: DateKey): Promise<AdaptationCo
     checkIn,
     recentSleepHours: [0, -1, -2].map((d) => hoursOn(shiftDateKey(date, d))),
     yesterdayMaxRpe: yesterdayWorkouts.length ? Math.max(...yesterdayWorkouts.map((w) => w.rpe)) : undefined,
-    expenditureKcal: typeof expenditureKcal === 'number' ? expenditureKcal : undefined,
-    nutritionGoal: goal?.value as NutritionGoal | undefined,
-    weightKg: weight?.kg,
+    expenditureKcal: parsedExpenditure.success ? parsedExpenditure.data.kcal : undefined,
+    nutritionGoal: parsedGoal.success ? (parsedGoal.data as NutritionGoal) : undefined,
+    // The latest weight, however old: the nutrition module decides when to ask for a new one.
+    weightKg: weight && Number.isFinite(weight.kg) && weight.kg > 0 ? weight.kg : undefined,
     recentPvtMediansMs: pvtMedians,
+    // `durationMin` is the time actually spent, so sessions stopped early count too.
     meditationMinYesterday: yesterdayMeditation.reduce((sum, m) => sum + m.durationMin, 0),
   };
 }

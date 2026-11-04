@@ -163,8 +163,9 @@ P2 не означает «не делаем».
 8. `event` → `habitsMode = essential`, `meditationKind = breathing`; `recovery` → `meditationKind = body`.
 9. Низкая энергия → `mindTrainingMin = 0`.
 10. Питание: `kcal`, `proteinG`, `fatG`, `carbsG` считаются, только когда известны расход (`nutrition.expenditure`),
-    цель (`nutrition.goal`) и вес. Изменение веса `ratePct` % в неделю ≈ 7700 ккал/кг; дефицит не больше 25% расхода;
-    белок 1,8 г/кг (1,6 — при поддержании), жиры 0,8 г/кг, углеводы — остаток.
+    цель (`nutrition.goal`) и вес; некорректные значения считаются отсутствующими. Изменение веса — `ratePct` % массы
+    тела в неделю, ≈ 7700 ккал/кг; дефицит и профицит не больше 25% расхода; белок 1,8 г/кг (1,6 — при поддержании),
+    жиры 0,8 г/кг, углеводы — остаток (не меньше 0).
 
 Планируется:
 
@@ -195,7 +196,8 @@ P2 не означает «не делаем».
 | `notes`              | notes      | `title`, `body` (markdown), `linkIds` (мульти-индекс: id проекта, события или `DateKey` дня), `pinned?`                                     |
 | `xpEvents`           | progress   | `date`, `source` (`quest`), `questId`, `amount`                                                                                             |
 
-Настройки блоков — ключи `settings`: `nutrition.goal` (`kind: lose \| maintain \| gain`, `ratePct`),
+Настройки блоков — ключи `settings`: `nutrition.goal` (`kind: lose \| maintain \| gain`, `ratePct` — % массы тела в
+неделю, от 0 до 2, обычно 0,25–1),
 `nutrition.expenditure` (`kcal`, `updatedAt`), `nutrition.profile` (`heightCm`, `birthYear`, `sex`).
 Привычки получают поле `Habit.essential?: boolean` (контракт «цели дня v2»).
 

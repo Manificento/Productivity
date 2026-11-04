@@ -60,7 +60,7 @@ describe('Предпросмотр 10 дней', () => {
 
   it('Given предпросмотр 10 дней When событие открыто Then видны и новые поля: медитация, тренажёры ума, привычки, разгрузка', async () => {
     renderAt('/today/events/e1');
-    const table = await screen.findByRole('table', { name: 'Восстановление на 10 дней' });
+    const table = await screen.findByRole('table', { name: 'Режим на 10 дней' });
     expect(
       within(table)
         .getAllByRole('columnheader')
