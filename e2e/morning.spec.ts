@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test('morning flow in a few taps: sleep, check-in, test link, collapse', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-04T07:45:00+05:00'));
-  await page.goto('/');
+  await skipOnboarding(page);
   const card = page.getByRole('region', { name: 'Утро: 3 минуты' });
   await expect(card.getByText('Лёг 23:30 · встал 07:30')).toBeVisible();
 

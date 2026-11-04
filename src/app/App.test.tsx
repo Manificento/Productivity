@@ -32,6 +32,9 @@ describe('App shell', () => {
     expect(nav).toHaveClass('pl-[env(safe-area-inset-left)]', 'pr-[env(safe-area-inset-right)]');
   });
 
-  // Filled in by #41, which builds the onboarding screen (#84 allows it to edit this test).
-  it.todo('opens the onboarding screen «Какое у тебя ближайшее важное событие?» at / on an empty DB');
+  it('opens the onboarding screen «Какое у тебя ближайшее важное событие?» at / on an empty DB', async () => {
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Какое у тебя ближайшее важное событие?' })).toBeInTheDocument();
+    expect(screen.queryByText(/Цели дня/)).not.toBeInTheDocument();
+  });
 });

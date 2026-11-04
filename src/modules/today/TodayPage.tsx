@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import type { DailyTargets, Phase } from '../../core/adaptation/types';
@@ -8,6 +9,8 @@ import { BaselineEditor } from './components/BaselineEditor';
 import { EventDetail } from './components/EventDetail';
 import { EventsList } from './components/EventsList';
 import { InsightsPage } from './components/InsightsPage';
+import { Onboarding } from './components/Onboarding';
+import { useNeedsOnboarding } from './data/onboarding';
 import { EventBanner, SummaryCards } from './components/SummaryCards';
 import { INTENSITY_LABEL } from './logic/baseline';
 
@@ -96,13 +99,27 @@ function TodayHome() {
 }
 
 /**
+ * `/`: onboarding on the first run, otherwise «Сегодня». The first answer is kept while this screen is mounted, so
+ * creating the event during onboarding does not swap the screen before the plan is shown.
+ */
+function TodayIndex() {
+  const needs = useNeedsOnboarding();
+  const [first, setFirst] = useState<boolean>();
+  const [closed, setClosed] = useState(false);
+  if (first === undefined && needs !== undefined) setFirst(needs);
+  // A few milliseconds: render nothing rather than flash «Сегодня» before the onboarding.
+  if (first === undefined) return null;
+  return first && !closed ? <Onboarding onDone={() => setClosed(true)} /> : <TodayHome />;
+}
+
+/**
  * "Today" module: the daily targets screen and important events.
  * Sub-routes live under /today/… because the module itself is mounted at the app root.
  */
 export function TodayPage() {
   return (
     <Routes>
-      <Route index element={<TodayHome />} />
+      <Route index element={<TodayIndex />} />
       <Route path="today/events" element={<EventsList />} />
       <Route path="today/events/:id" element={<EventDetail />} />
       <Route path="today/baseline" element={<BaselineEditor />} />
