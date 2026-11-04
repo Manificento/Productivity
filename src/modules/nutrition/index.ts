@@ -8,6 +8,6 @@ export const nutritionModule: AppModule = {
   path: '/nutrition/*',
   icon: '🥗',
   group: 'body',
-  summary: 'Калории, БЖУ и вес',
+  summary: 'Дневник еды, КБЖУ и поиск Open Food Facts',
   Page: NutritionPage,
 };

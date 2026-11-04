@@ -26,10 +26,12 @@ flowchart TB
     tasks[tasks]
     habits[habits]
     time[time]
-    health[health]
+    health[health<br/>сон]
+    nutrition[nutrition<br/>дневник еды]
+    training[training<br/>журнал тренировок]
     cognition[cognition<br/>тесты внимания и тренажёры]
     settings[settings]
-    planned[nutrition · training · meditation<br/>notes · progress — каркасы SPEC 0.3]
+    planned[meditation · notes · progress<br/>каркасы SPEC 0.3]
   end
   subgraph kernel[core — общее ядро]
     types[types.ts<br/>доменные типы]
@@ -86,7 +88,9 @@ flowchart LR
   eng --> dt{{DailyTargets}}
   dt --> t[tasks: ёмкость, фокус-проект]
   dt --> tm[time: норма Pomodoro]
-  dt --> h[health: сон, тренировка, еда]
+  dt --> h[health: сон]
+  dt --> tr[training: интенсивность, разгрузка]
+  dt --> nu[nutrition: еда, кофеин, ккал]
   dt --> td[today: цели и причины]
 ```
 

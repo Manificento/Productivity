@@ -28,18 +28,19 @@ test.describe('health', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 
-  test('«Сон», «Питание» and «Тренировки» are separate blocks (#107); old health tabs lead to sleep', async ({
+  test('Given модуль health When я открываю /health Then только сон; дневник еды — в /nutrition, журнал тренировок — в /training', async ({
     page,
   }) => {
-    // An old link to a health tab lands on the sleep block.
-    await page.goto('/#/health/food');
-    await expect(page).toHaveURL(/#\/health$/);
+    await page.goto('/#/health');
     await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Разделы' })).toHaveCount(0);
     await page.goto('/#/training');
     await expect(page.getByText('Новая тренировка')).toBeVisible();
     await page.goto('/#/nutrition');
     await expect(page.getByRole('region', { name: 'Итого за день' })).toBeVisible();
+    // Old tab links lead to the new blocks.
+    await page.goto('/#/health/workouts');
+    await expect(page).toHaveURL(/#\/training$/);
   });
 
   test('workouts: log one with an exercise, repeat it, see the week totals', async ({ page }) => {

@@ -8,6 +8,6 @@ export const trainingModule: AppModule = {
   path: '/training/*',
   icon: '🏋️',
   group: 'body',
-  summary: 'Программы тренировок и план недели',
+  summary: 'Журнал тренировок с упражнениями и RPE',
   Page: TrainingPage,
 };

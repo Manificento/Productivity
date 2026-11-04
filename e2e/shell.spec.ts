@@ -12,7 +12,7 @@ async function box(locator: Locator) {
 test('Given страница модуля передаёт actions в Page When экран 360 px Then кнопка действий не перекрывается ссылкой «Настройки», обе ≥ 44 px', async ({
   page,
 }) => {
-  for (const path of ['/#/tasks', '/#/habits', '/#/time', '/#/health', '/#/nutrition']) {
+  for (const path of ['/#/tasks', '/#/habits', '/#/time', '/#/health', '/#/nutrition', '/#/training']) {
     await page.goto(path);
     const header = page.locator('section > header').first();
     await expect(header.getByRole('heading', { level: 1 })).toBeVisible();
