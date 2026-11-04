@@ -79,8 +79,9 @@ describe('dayTotals', () => {
     });
   });
 
-  it('учитывает часть записи, начатой накануне', () => {
+  it('запись через полночь делится между днями: каждому дню своя часть', () => {
     const entries = [entry({ start: at('2026-11-01', '23:30'), end: at('2026-11-02', '00:30') })];
+    expect(dayTotals(entries, '2026-11-01', at('2026-11-02', '12:00'))).toEqual({ work: 30 * MIN });
     expect(dayTotals(entries, '2026-11-02', at('2026-11-02', '12:00'))).toEqual({ work: 30 * MIN });
   });
 
@@ -132,6 +133,12 @@ describe('startTimer', () => {
     const startC = at('2026-11-02', '10:00');
     const { finished } = startTimer([a, b], { categoryId: 'sport', source: 'timer' }, startC);
     expect(finished.map((e) => e.end)).toEqual([startC, startC]);
+  });
+
+  it('таймер с началом позже старта нового не получает конец раньше начала', () => {
+    const future = entry({ start: at('2026-11-02', '11:00') });
+    const { finished } = startTimer([future], { categoryId: 'work', source: 'timer' }, at('2026-11-02', '10:00'));
+    expect(finished[0]?.end).toBe(future.start);
   });
 
   it('без идущего таймера ничего не завершается; задача и дата старта переносятся', () => {

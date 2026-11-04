@@ -3,11 +3,11 @@ import { fromDateKey, toDateKey } from '../../../core/dates';
 import type { DateKey, Id, Millis, TimeEntry } from '../../../core/types';
 
 /** Milliseconds per category id. Categories with no time are absent. */
-export type CategoryTotals = Record<Id, number>;
+export type CategoryTotals = Record<Id, Millis>;
 
 export interface DayChunk {
   date: DateKey;
-  ms: number;
+  ms: Millis;
 }
 
 type Interval = Pick<TimeEntry, 'start' | 'end'>;
@@ -58,7 +58,10 @@ export function weekTotals(entries: readonly TimeEntry[], day: DateKey, now: Mil
 export type NewTimer = Pick<TimeEntry, 'categoryId' | 'taskId' | 'source'>;
 
 export interface TimerStart {
-  /** Running entries, now finished at the moment the new timer starts. */
+  /**
+   * Running entries, now finished at the moment the new timer starts (never before their own start).
+   * The data layer must also bump their `updatedAt`.
+   */
   finished: TimeEntry[];
   /** The new running entry (without id and timestamps — the data layer adds them). */
   started: NewTimer & Pick<TimeEntry, 'start' | 'date'>;
@@ -68,7 +71,7 @@ export interface TimerStart {
  * Starting a timer stops every running one at the same moment, so at most one timer runs.
  */
 export function startTimer(entries: readonly TimeEntry[], timer: NewTimer, at: Millis): TimerStart {
-  const finished = entries.filter((e) => e.end === undefined).map((e) => ({ ...e, end: at }));
+  const finished = entries.filter((e) => e.end === undefined).map((e) => ({ ...e, end: Math.max(at, e.start) }));
   const started: TimerStart['started'] = {
     categoryId: timer.categoryId,
     source: timer.source,
