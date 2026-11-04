@@ -1,13 +1,36 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm ci*)",
+      "Bash(npx prettier *)",
+      "Bash(npx vitest *)",
+      "Bash(npx playwright test*)",
+      "Bash(scripts/agent.sh *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git switch *)",
+      "Bash(git fetch *)",
+      "Bash(git rebase *)",
+      "Bash(git push -u origin feat/*)",
+      "Bash(git push origin feat/*)"
+    ],
+    "deny": ["Bash(git push * main*)", "Bash(git push --force*)", "Read(./.env*)"]
+  },
   "hooks": {
     "SessionStart": [
       {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "[ -d node_modules ] || npm install --no-audit --no-fund"
-          }
-        ]
+        "matcher": "startup|resume",
+        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/session-start.sh" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/format.sh" }]
       }
     ]
   }

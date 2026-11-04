@@ -1,0 +1,30 @@
+name: Пользовательская история
+description: Новая функция с критериями приёмки
+labels: ['type:feature']
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: История
+      description: Как <кто>, я хочу <что>, чтобы <зачем>.
+      placeholder: Как студент, я хочу добавить задачу одной строкой, чтобы не тратить время на форму.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Критерии приёмки
+      description: Каждый — Given / When / Then, каждый проверяется тестом.
+      value: |
+        - [ ] **Given** … **When** … **Then** …
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Технические заметки
+      description: 'Файлы, функции, таблицы, ограничения. Строка «Зависит от: #N» — если есть зависимость.'
+  - type: textarea
+    id: out
+    attributes:
+      label: Не входит в задачу

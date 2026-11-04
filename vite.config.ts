@@ -31,6 +31,15 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
     css: false,
+    coverage: {
+      provider: 'v8',
+      // Coverage gates apply to the functional core: pure logic must be well tested (docs/adr/0004-testing-strategy.md).
+      include: ['src/core/**/*.ts', 'src/modules/*/logic/**/*.ts'],
+      exclude: ['**/*.test.ts', 'src/core/types.ts', 'src/core/adaptation/types.ts'],
+      thresholds: { lines: 85, functions: 85, branches: 80, statements: 85 },
+      reporter: ['text-summary', 'html'],
+    },
   },
 });

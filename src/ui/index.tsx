@@ -4,6 +4,9 @@
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
+export { Field, Input, Rating, Segmented, Select, Textarea } from './forms';
+export { Chip, IconButton, Progress, Sheet, Tabs } from './widgets';
+
 export function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <section className="mx-auto w-full max-w-2xl px-4 pb-28 pt-4">
@@ -54,7 +57,7 @@ export function Empty({ children }: { children: ReactNode }) {
 export function ComingSoon({ what }: { what: string }) {
   return (
     <Card>
-      <p className="text-sm text-zinc-500">Модуль «{what}» ещё строится. Его делает отдельная сессия по плану в docs/PLAN.md.</p>
+      <p className="text-sm text-zinc-500">Модуль «{what}» ещё строится — см. задачи в GitHub Issues.</p>
     </Card>
   );
 }
