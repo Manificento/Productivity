@@ -41,7 +41,7 @@ describe('contract C3: tables of the SPEC 0.3 blocks', () => {
     v2.close();
 
     const db = new LifeDB(name);
-    expect(db.verno).toBe(3);
+    expect(db.verno).toBeGreaterThanOrEqual(3);
     expect((await db.tasks.get('t1'))?.title).toBe('старая задача');
     expect((await db.cognitiveTests.get('c1'))?.kind).toBe('pvt');
 
@@ -115,5 +115,32 @@ describe('contract C3: tables of the SPEC 0.3 blocks', () => {
     ]) {
       expect(TABLE_NAMES).toContain(t);
     }
+  });
+});
+
+describe('contract: imported tasks (Dexie v4)', () => {
+  it('Given задача с теми же source и externalId When ищем её Then индекс [source+externalId] есть; поля Task.source? и Task.externalId? необязательны', async () => {
+    const name = `migration-v4-${Math.random()}`;
+    const v3 = new Dexie(name);
+    v3.version(1).stores({ tasks: 'id, projectId, dueDate, priority, completedAt, *tags' });
+    await v3.table('tasks').add({ id: 't1', title: 'старая задача', priority: 4, tags: [] });
+    v3.close();
+
+    const db = new LifeDB(name);
+    expect(db.verno).toBe(4);
+    expect((await db.tasks.get('t1'))?.title).toBe('старая задача');
+    await db.tasks.add({
+      id: 't2',
+      createdAt: 0,
+      updatedAt: 0,
+      title: 'из Todoist',
+      priority: 2,
+      tags: [],
+      source: 'todoist',
+      externalId: '1001',
+    });
+    expect(await db.tasks.where('[source+externalId]').equals(['todoist', '1001']).count()).toBe(1);
+    expect(await db.tasks.where('[source+externalId]').equals(['other', '1001']).count()).toBe(0);
+    db.close();
   });
 });

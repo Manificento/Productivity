@@ -59,7 +59,14 @@ export interface Task extends BaseRecord {
   tags: string[];
   recurrence?: Recurrence;
   completedAt?: Millis;
+  /** Where an imported task came from; absent for tasks created in the app. */
+  source?: TaskSource;
+  /** Id in the source system; with `source` it keys the upsert on re-import (`[source+externalId]`). */
+  externalId?: string;
 }
+
+/** Import sources that `core/logging/importTasks` accepts. */
+export type TaskSource = 'todoist' | 'other';
 
 // ---------- habits ----------
 

@@ -1,9 +1,8 @@
-import { isValid } from 'date-fns';
 import { z } from 'zod';
-import { fromDateKey, toDateKey } from '../dates';
 import { db } from '../db';
 import { newRecord } from '../ids';
 import type { WorkoutLog } from '../types';
+import { DateKeyField } from './fields';
 
 /**
  * The ONE write path for workout records (contract C3, ADR-0007).
@@ -22,10 +21,7 @@ const Exercise = z.object({
 });
 
 export const WorkoutInput = z.object({
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Дата должна быть днём в формате ГГГГ-ММ-ДД')
-    .refine((d) => isValid(fromDateKey(d)) && toDateKey(fromDateKey(d)) === d, 'Такого дня нет в календаре'),
+  date: DateKeyField,
   type: z.string().trim().min(1, 'Выберите тип тренировки'),
   durationMin: z
     .number()

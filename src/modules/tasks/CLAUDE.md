@@ -2,7 +2,10 @@
 
 Метка дорожки: `area:tasks`. Задачи: `scripts/agent.sh next tasks`.
 
-- **Пишет в таблицы:** `projects`, `tasks`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
+- **Пишет в таблицы:** `projects`, `tasks` — напрямую через `data/`. Импорт истории (Todoist, модуль `settings`) пишет в них
+  ТОЛЬКО через `importTasks()` из `src/core/logging/tasks.ts` (ADR-0007, #150): zod-валидация, привязка к существующему проекту по имени,
+  повторный импорт обновляет задачу по `[source+externalId]`. Поля `Task.source?` / `Task.externalId?` модуль не трогает.
+  Правило «одно и то же имя проекта» — `sameProjectName` из `src/core/projectNames.ts`, общее с импортом. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
 - **Суть модуля:** задачи, проекты, повторы, быстрый ввод на русском. Учитывает ёмкость дня и фокус-проект из целей.
 - **Цели дня:** `useDailyTargets(todayKey())` из `src/core/adaptation/useDailyTargets.ts` — только чтение.
 

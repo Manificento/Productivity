@@ -100,13 +100,13 @@ flowchart LR
 
 | Модуль     | Пишет в таблицы                                                                                                                                                       | Читает (кроме своих)                 |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| tasks      | `projects`, `tasks`                                                                                                                                                   | цели дня                             |
+| tasks      | `projects`, `tasks`; импорт истории — только через `core/logging/importTasks`                                                                                         | цели дня                             |
 | habits     | `habits`, `habitLogs`                                                                                                                                                 | цели дня                             |
 | time       | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)                                                                                      | `tasks`, цели дня                    |
 | health     | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`; `workoutLogs` — только через `core/logging/saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
 | today      | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep`                                                                                 | все таблицы (сводка, инсайты)        |
 | cognition  | `cognitiveTests`, `mindSessions`                                                                                                                                      | цели дня                             |
-| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                                                                                                  | все таблицы (экспорт)                |
+| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`; история Todoist — через `importTasks`, Sleep Cycle — через `saveSleep`                          | все таблицы (экспорт)                |
 | nutrition  | `weightLogs`, `settings` (`nutrition.*`); после переноса дневника еды (#107) — `foods`, `mealLogs`                                                                    | `sleepLogs`, `workoutLogs`, цели дня |
 | training   | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                                                                       | `workoutLogs`, цели дня              |
 | meditation | `meditationSessions`                                                                                                                                                  | цели дня                             |
@@ -120,8 +120,10 @@ flowchart LR
 `time.*` — time, `nutrition.*` — nutrition), остальные ключи — модуль `settings`.
 
 Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
-([ADR-0007](adr/0007-shared-write-paths.md)): `saveSleep()` (сон: health и утренний поток today) и `saveWorkout()`
-(тренировки: training — ручная запись и выполнение плана, health — импорт из Health Connect / HealthKit).
+([ADR-0007](adr/0007-shared-write-paths.md)): `saveSleep()` (сон: health и утренний поток today), `saveWorkout()`
+(тренировки: training — ручная запись и выполнение плана, health — импорт из Health Connect / HealthKit) и `importTasks()`
+(задачи и проекты: tasks пишет напрямую, импорт истории из settings — только через него).
+Общее правило имени проекта — `src/core/projectNames.ts`.
 
 Чистое правило, которое нужно двум модулям одинаково, тоже живёт в ядре, а не копируется: расписание привычек
 (`isDue`, неделя с понедельника) — `src/core/habitSchedule.ts`, им считают и «Привычки», и «Привычки: X из Y» на «Сегодня».
