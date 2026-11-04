@@ -31,8 +31,8 @@ export function splitByDay(entry: Interval, now: Millis): DayChunk[] {
   return chunks;
 }
 
-/** Sums time per category over the local days [from, to). */
-function totalsBetween(entries: readonly TimeEntry[], from: Millis, to: Millis, now: Millis): CategoryTotals {
+/** Sums time per category inside [from, to); running timers count up to `now`. */
+export function totalsBetween(entries: readonly TimeEntry[], from: Millis, to: Millis, now: Millis): CategoryTotals {
   const totals: CategoryTotals = {};
   for (const entry of entries) {
     const start = Math.max(entry.start, from);
