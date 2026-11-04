@@ -10,7 +10,7 @@ beforeEach(async () => {
 });
 
 describe('workouts data', () => {
-  it('Given модуль health сохраняет тренировку When через saveWorkout() из core Then запись в workoutLogs с упражнениями', async () => {
+  it('Given модуль training сохраняет тренировку When через saveWorkout() из core Then запись в workoutLogs с упражнениями', async () => {
     const saved = await saveWorkout(
       {
         date: TODAY,

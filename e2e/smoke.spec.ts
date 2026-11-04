@@ -16,8 +16,8 @@ test.describe('smoke', () => {
       await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
     }
     await nav.getByRole('link', { name: /Блоки/ }).click();
-    await page.getByRole('link', { name: /Здоровье/ }).click();
-    await expect(page.getByRole('heading', { name: 'Здоровье', level: 1 })).toBeVisible();
+    await page.getByRole('link', { name: /Сон/ }).click();
+    await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
     await expect(nav.getByRole('link', { name: /Блоки/ })).toHaveAttribute('aria-current', 'page');
   });
 

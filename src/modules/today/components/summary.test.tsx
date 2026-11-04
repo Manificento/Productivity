@@ -225,6 +225,9 @@ describe('Сводка на «Сегодня»', () => {
     const card = await screen.findByRole('region', { name: 'Сон и тренировка' });
     expect(card).toHaveTextContent('7 ч · цель 7,5 ч');
     expect(card).toHaveTextContent('Бег, 30 мин, RPE 6 · предел: любая');
+    // Sleep and workouts are separate blocks (#107).
+    expect(screen.getByRole('link', { name: 'Сон →' })).toHaveAttribute('href', '/health');
+    expect(screen.getByRole('link', { name: 'Тренировки →' })).toHaveAttribute('href', '/training');
   });
 
   it('Given данных блока нет When экран открыт Then короткая подсказка со ссылкой на модуль вместо пустой карточки', async () => {
@@ -236,7 +239,8 @@ describe('Сводка на «Сегодня»', () => {
     expect(screen.getByText('Фокус-сессий сегодня ещё не было.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Запустить' })).toHaveAttribute('href', '/time');
     expect(screen.getByText('Сон и тренировки сегодня не записаны.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Записать' })).toHaveAttribute('href', '/health');
+    expect(screen.getByRole('link', { name: 'Записать сон' })).toHaveAttribute('href', '/health');
+    expect(screen.getByRole('link', { name: 'Записать тренировку' })).toHaveAttribute('href', '/training');
     for (const name of ['Задачи на сегодня', 'Привычки на сегодня', 'Фокус', 'Сон и тренировка']) {
       expect(screen.queryByRole('region', { name })).not.toBeInTheDocument();
     }

@@ -82,10 +82,10 @@ test('экзамен перестраивает режим во всех бло�
     await noHorizontalScroll(page);
   });
 
-  await test.step('Given тот же экзамен When я открываю «Здоровье» Then цель сна 8 ч и ограничение интенсивности', async () => {
+  await test.step('Given тот же экзамен When я открываю «Сон» и «Тренировки» Then цель сна 8 ч и ограничение интенсивности', async () => {
     await page.goto('/#/health');
     await expect(page.getByRole('region', { name: 'Цель сна' })).toContainText('Сегодня: 8 ч');
-    await page.getByRole('link', { name: 'Тренировки' }).click();
+    await page.goto('/#/training');
     await page.getByLabel('RPE (1–10)').selectOption('9');
     await expect(page.getByRole('note', { name: 'Предупреждение об интенсивности' })).toContainText(
       'умеренная интенсивность — RPE до 6',

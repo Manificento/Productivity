@@ -1,18 +1,11 @@
-import { Card, Empty, Page } from '../../ui';
+import { Page } from '../../ui';
+import { WorkoutsTab } from './components/WorkoutsTab';
 
-/** `/training` — the block is not built yet: name, one line of what it will do, and «скоро». */
+/** `/training` — the workout log (moved from «Здоровье», #107). */
 export function TrainingPage() {
   return (
     <Page title="Тренировки">
-      <Card>
-        <Empty>
-          Блок «Тренировки» — скоро.
-          <br />
-          <span className="text-zinc-500 dark:text-zinc-400">
-            Программы и шаблоны, выполнение плана, прогрессия и разгрузка перед важным событием.
-          </span>
-        </Empty>
-      </Card>
+      <WorkoutsTab />
     </Page>
   );
 }

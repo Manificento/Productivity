@@ -26,10 +26,12 @@ flowchart TB
     tasks[tasks]
     habits[habits]
     time[time]
-    health[health]
+    health[health<br/>сон]
+    nutrition[nutrition<br/>дневник еды]
+    training[training<br/>журнал тренировок]
     cognition[cognition<br/>тесты внимания и тренажёры]
     settings[settings]
-    planned[nutrition · training · meditation<br/>notes · progress — каркасы SPEC 0.3]
+    planned[meditation · notes · progress<br/>каркасы SPEC 0.3]
   end
   subgraph kernel[core — общее ядро]
     types[types.ts<br/>доменные типы]
@@ -86,7 +88,9 @@ flowchart LR
   eng --> dt{{DailyTargets}}
   dt --> t[tasks: ёмкость, фокус-проект]
   dt --> tm[time: норма Pomodoro]
-  dt --> h[health: сон, тренировка, еда]
+  dt --> h[health: сон]
+  dt --> tr[training: интенсивность, разгрузка]
+  dt --> nu[nutrition: еда, кофеин, ккал]
   dt --> td[today: цели и причины]
 ```
 
@@ -98,20 +102,20 @@ flowchart LR
 
 ## Владение таблицами
 
-| Модуль     | Пишет в таблицы                                                                                                                                                       | Читает (кроме своих)                 |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| tasks      | `projects`, `tasks`; импорт истории — только через `core/logging/importTasks`                                                                                         | цели дня                             |
-| habits     | `habits`, `habitLogs`                                                                                                                                                 | цели дня                             |
-| time       | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)                                                                                      | `tasks`, цели дня                    |
-| health     | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`; `workoutLogs` — только через `core/logging/saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
-| today      | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep`                                                                                 | все таблицы (сводка, инсайты)        |
-| cognition  | `cognitiveTests`, `mindSessions`                                                                                                                                      | цели дня                             |
-| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`; история Todoist — через `importTasks`, Sleep Cycle — через `saveSleep`                          | все таблицы (экспорт)                |
-| nutrition  | `weightLogs`, `settings` (`nutrition.*`); после переноса дневника еды (#107) — `foods`, `mealLogs`                                                                    | `sleepLogs`, `workoutLogs`, цели дня |
-| training   | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                                                                       | `workoutLogs`, цели дня              |
-| meditation | `meditationSessions`                                                                                                                                                  | цели дня                             |
-| notes      | `notes`                                                                                                                                                               | `projects`, `lifeEvents`             |
-| progress   | `xpEvents`                                                                                                                                                            | все таблицы (только чтение)          |
+| Модуль     | Пишет в таблицы                                                                                                                                  | Читает (кроме своих)                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| tasks      | `projects`, `tasks`; импорт истории — только через `core/logging/importTasks`                                                                    | цели дня                             |
+| habits     | `habits`, `habitLogs`                                                                                                                            | цели дня                             |
+| time       | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)                                                                 | `tasks`, цели дня                    |
+| health     | `sleepLogs` (через `core/logging/saveSleep`); `workoutLogs` — только через `core/logging/saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
+| today      | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep`                                                            | все таблицы (сводка, инсайты)        |
+| cognition  | `cognitiveTests`, `mindSessions`                                                                                                                 | цели дня                             |
+| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`; история Todoist — через `importTasks`, Sleep Cycle — через `saveSleep`     | все таблицы (экспорт)                |
+| nutrition  | `weightLogs`, `settings` (`nutrition.*`), `foods`, `mealLogs` (дневник еды, #107)                                                                | `sleepLogs`, `workoutLogs`, цели дня |
+| training   | `programs`, `plannedSessions`, `workoutLogs` (журнал — только через `core/logging/saveWorkout`, #107)                                            | цели дня                             |
+| meditation | `meditationSessions`                                                                                                                             | цели дня                             |
+| notes      | `notes`                                                                                                                                          | `projects`, `lifeEvents`             |
+| progress   | `xpEvents`                                                                                                                                       | все таблицы (только чтение)          |
 
 Ключ `time.pomodoro.running` = `{ phase, startedAt, endsAt }` (мс) — идущая фаза Pomodoro; ключа нет, когда таймер
 не идёт. Пишет `time`, читают все (например, «Сегодня»); `endsAt <= now` — не идёт.

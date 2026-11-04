@@ -64,8 +64,8 @@ describe('Навигация по 12 блокам', () => {
   it('Given экран «Блоки» When я выбираю модуль Then открывается его маршрут; для незакреплённых подсвечена кнопка «Блоки»', async () => {
     window.location.hash = '#/blocks';
     render(<App />);
-    await userEvent.click(await screen.findByRole('link', { name: /Здоровье/ }));
-    expect(await screen.findByRole('heading', { name: 'Здоровье', level: 1 })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('link', { name: /Сон/ }));
+    expect(await screen.findByRole('heading', { name: 'Сон', level: 1 })).toBeInTheDocument();
     expect(window.location.hash).toBe('#/health');
     expect(within(bottomBar()).getByRole('link', { name: /Блоки/ })).toHaveAttribute('aria-current', 'page');
 

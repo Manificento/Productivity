@@ -5,7 +5,7 @@ import type { DateKey, WorkoutLog } from '../../../core/types';
 
 /**
  * Workouts are WRITTEN only through `saveWorkout()` from `src/core/logging/workout.ts` (ADR-0007):
- * the same path the training block uses. This file only reads and deletes.
+ * the same path health's Health Connect / HealthKit import (M7) uses. This file only reads and deletes.
  */
 
 /** How far back the history list goes. */

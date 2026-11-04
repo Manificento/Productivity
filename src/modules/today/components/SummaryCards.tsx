@@ -167,10 +167,19 @@ function FocusCard({ data, targets, today }: { data: SummaryData; targets: Daily
 
 function HealthCard({ data, targets }: { data: SummaryData; targets: DailyTargets }) {
   if (data.sleepHours === undefined && data.workouts.length === 0) {
+    // Sleep and workouts are separate blocks since #107: one link to each.
     return (
-      <Hint to="/health" linkText="Записать">
-        Сон и тренировки сегодня не записаны.
-      </Hint>
+      <div className="mb-3 rounded-2xl border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+        <p>Сон и тренировки сегодня не записаны.</p>
+        <div className="flex gap-4">
+          <Link to="/health" className={LINK}>
+            Записать сон
+          </Link>
+          <Link to="/training" className={LINK}>
+            Записать тренировку
+          </Link>
+        </div>
+      </div>
     );
   }
   const w = workoutSummary(data.workouts);
@@ -189,9 +198,14 @@ function HealthCard({ data, targets }: { data: SummaryData; targets: DailyTarget
             <span className="text-zinc-500"> · предел: {INTENSITY_LABEL[targets.maxWorkoutIntensity]}</span>
           </dd>
         </dl>
-        <Link to="/health" className={LINK}>
-          Журнал сна и тренировок →
-        </Link>
+        <div className="flex gap-4">
+          <Link to="/health" className={LINK}>
+            Сон →
+          </Link>
+          <Link to="/training" className={LINK}>
+            Тренировки →
+          </Link>
+        </div>
       </Card>
     </section>
   );
