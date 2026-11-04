@@ -4,7 +4,7 @@ import { Button, Card, Field, Rating, Textarea } from '../../../ui';
 import { saveCheckIn, useCheckIn } from '../data/checkIns';
 import { parseCheckIn, type CheckInFormValues } from '../logic/checkIn';
 
-const TITLE = 'Как вы сегодня?';
+const TITLE = 'Самочувствие';
 
 function CheckInForm({ initial, date, onDone }: { initial?: CheckIn; date: DateKey; onDone: () => void }) {
   const [values, setValues] = useState<CheckInFormValues>({

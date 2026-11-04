@@ -29,7 +29,7 @@ afterEach(async () => {
 describe('Чек-ин', () => {
   it('Given чек-ина сегодня нет When я открываю «Сегодня» Then вверху карточка с Rating энергии и фокуса и полем заметки', async () => {
     renderToday();
-    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    const card = await screen.findByRole('region', { name: 'Самочувствие' });
     expect(await within(card).findByRole('radiogroup', { name: 'Энергия' })).toBeInTheDocument();
     expect(within(card).getByRole('radiogroup', { name: 'Фокус' })).toBeInTheDocument();
     expect(within(card).getByLabelText('Заметка')).toBeInTheDocument();
@@ -41,7 +41,7 @@ describe('Чек-ин', () => {
   it('Given я выбираю энергию 2 When сохраняю Then создаётся CheckIn, цели дня показывают «Низкая энергия: нагрузка −20%»', async () => {
     const user = userEvent.setup();
     renderToday();
-    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    const card = await screen.findByRole('region', { name: 'Самочувствие' });
     await user.click(await within(card).findByRole('radio', { name: 'Энергия: 2' }));
     await user.click(within(card).getByRole('radio', { name: 'Фокус: 3' }));
     await user.type(within(card).getByLabelText('Заметка'), 'плохо спал');
@@ -51,13 +51,13 @@ describe('Чек-ин', () => {
     expect(await db.checkIns.toArray()).toEqual([
       expect.objectContaining({ date: '2026-11-04', energy: 2, focus: 3, note: 'плохо спал' }),
     ]);
-    expect(screen.getByRole('region', { name: 'Как вы сегодня?' })).toHaveTextContent('Энергия 2/5 · фокус 3/5');
+    expect(screen.getByRole('region', { name: 'Самочувствие' })).toHaveTextContent('Энергия 2/5 · фокус 3/5');
   });
 
   it('asks to rate both energy and focus before saving', async () => {
     const user = userEvent.setup();
     renderToday();
-    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    const card = await screen.findByRole('region', { name: 'Самочувствие' });
     await user.click(await within(card).findByRole('radio', { name: 'Энергия: 4' }));
     await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
     expect(within(card).getByRole('alert')).toHaveTextContent('Оцените энергию и фокус');
@@ -68,7 +68,7 @@ describe('Чек-ин', () => {
     const user = userEvent.setup();
     await db.checkIns.add({ id: 'c1', date: '2026-11-04', energy: 2, focus: 3, createdAt: 0, updatedAt: 0 });
     renderToday();
-    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    const card = await screen.findByRole('region', { name: 'Самочувствие' });
     expect(await within(card).findByText('Энергия 2/5 · фокус 3/5')).toBeInTheDocument();
 
     await user.click(within(card).getByRole('button', { name: 'Изменить' }));
@@ -84,7 +84,7 @@ describe('Чек-ин', () => {
     const user = userEvent.setup();
     vi.spyOn(db.checkIns, 'add').mockRejectedValueOnce(new Error('quota'));
     renderToday();
-    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    const card = await screen.findByRole('region', { name: 'Самочувствие' });
     await user.click(await within(card).findByRole('radio', { name: 'Энергия: 3' }));
     await user.click(within(card).getByRole('radio', { name: 'Фокус: 3' }));
     await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
@@ -96,7 +96,7 @@ describe('Чек-ин', () => {
     await db.checkIns.add({ id: 'c1', date: '2026-11-04', energy: 2, focus: 3, createdAt: 0, updatedAt: 0 });
     vi.spyOn(db.checkIns, 'put').mockRejectedValueOnce(new Error('locked'));
     renderToday();
-    const card = await screen.findByRole('region', { name: 'Как вы сегодня?' });
+    const card = await screen.findByRole('region', { name: 'Самочувствие' });
     await user.click(await within(card).findByRole('button', { name: 'Изменить' }));
     await user.click(within(card).getByRole('radio', { name: 'Энергия: 5' }));
     await user.click(within(card).getByRole('button', { name: 'Сохранить' }));
