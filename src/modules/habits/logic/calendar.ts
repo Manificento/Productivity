@@ -1,6 +1,6 @@
 import { toDateKey, shiftDateKey } from '../../../core/dates';
 import type { DateKey, Habit, HabitLog } from '../../../core/types';
-import { isScheduled, isWeekly, weeklyQuota, weekStart } from './schedule';
+import { isScheduled, isWeekly, weeklyQuota, weekStart } from '../../../core/habitSchedule';
 import { completionRate, doneInWeek, prepare, streak, type HabitHistory, type Streak } from './streaks';
 
 /**

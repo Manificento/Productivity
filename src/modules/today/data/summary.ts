@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { sleepHours } from '../../../core/adaptation/useDailyTargets';
 import { db } from '../../../core/db';
 import type { DateKey, Habit, HabitLog, Id, Task, TimeEntry, WorkoutLog } from '../../../core/types';
-import { weekStart } from '../logic/summary';
+import { weekStart } from '../../../core/habitSchedule';
 
 /** Raw records of other blocks the «Сегодня» summary reads (read-only). */
 export interface SummaryData {

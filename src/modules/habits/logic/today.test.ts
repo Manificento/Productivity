@@ -46,6 +46,18 @@ describe('todayHabits', () => {
     const { items } = todayHabits([habit('read')], [log('read', '2026-11-02'), log('read', TODAY, false)], TODAY);
     expect(items[0]).toMatchObject({ done: false, streak: { current: 1 } });
   });
+
+  it('Given привычка timesPerWeek уже выполнила недельную цель When считается день Then она в «Не сегодня», если не отмечена сегодня', () => {
+    const once = habit('gym', { schedule: { kind: 'timesPerWeek', timesPerWeek: 1 } });
+    const ids = (r: ReturnType<typeof todayHabits>) => [r.items.map((i) => i.habit.id), r.other.map((h) => h.id)];
+    // The week starts on Monday 2 Nov: Sunday's mark belongs to last week, so the goal is not met yet.
+    expect(ids(todayHabits([once], [log('gym', '2026-11-01')], TODAY))).toEqual([['gym'], []]);
+    // Done on Monday: this week's goal is met, so on Tuesday it is not planned.
+    expect(ids(todayHabits([once], [log('gym', '2026-11-02')], TODAY))).toEqual([[], ['gym']]);
+    // Done today as well: stays in today's list as done.
+    const { items } = todayHabits([once], [log('gym', '2026-11-02'), log('gym', TODAY)], TODAY);
+    expect(items.map((i) => [i.habit.id, i.done])).toEqual([['gym', true]]);
+  });
 });
 
 describe('streakLabel', () => {
