@@ -1,4 +1,4 @@
-import { Link, Route, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import type { DailyTargets, Phase } from '../../core/adaptation/types';
 import { todayKey } from '../../core/dates';
@@ -67,7 +67,9 @@ function TodayHome() {
         to="/today/events"
         className="flex min-h-11 items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-medium shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
-        <span>📅 События</span>
+        <span>
+          <span aria-hidden>📅</span> События
+        </span>
         <span aria-hidden className="text-zinc-400">
           →
         </span>
@@ -86,6 +88,7 @@ export function TodayPage() {
       <Route index element={<TodayHome />} />
       <Route path="today/events" element={<EventsList />} />
       <Route path="today/events/:id" element={<EventDetail />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

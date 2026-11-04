@@ -4,13 +4,13 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import type { LifeEvent } from '../../../core/types';
-import { TodayPage } from '../TodayPage';
+import { todayModule } from '../index';
 
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/*" element={<TodayPage />} />
+        <Route path={todayModule.path} element={<todayModule.Page />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -38,6 +38,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   await Promise.all([db.lifeEvents.clear(), db.projects.clear()]);
 });
 
@@ -160,5 +161,53 @@ describe('События', () => {
   it('links to events from the Today screen', async () => {
     renderAt('/');
     expect(await screen.findByRole('link', { name: /События/ })).toHaveAttribute('href', '/today/events');
+  });
+
+  it('shows an error when saving fails', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(db.lifeEvents, 'add').mockRejectedValueOnce(new Error('quota'));
+    renderAt('/today/events');
+    await user.click(await screen.findByRole('button', { name: /Добавить событие/ }));
+    await user.type(screen.getByLabelText('Название'), 'IELTS');
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить событие');
+    expect(screen.getByRole('dialog', { name: 'Новое событие' })).toBeInTheDocument();
+  });
+
+  it('shows an error when deleting fails', async () => {
+    const user = userEvent.setup();
+    await db.lifeEvents.add(event({}));
+    vi.spyOn(db.lifeEvents, 'delete').mockRejectedValueOnce(new Error('locked'));
+    renderAt('/today/events/e1');
+    await user.click(await screen.findByRole('button', { name: 'Удалить' }));
+    const dialog = screen.getByRole('dialog', { name: 'Удалить событие?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Не удалось удалить событие');
+    expect(await db.lifeEvents.get('e1')).toBeDefined();
+  });
+
+  it('keeps showing a linked project after it is archived', async () => {
+    const user = userEvent.setup();
+    await db.projects.add({ id: 'old', name: 'Старый проект', archived: true, createdAt: 0, updatedAt: 0 });
+    await db.lifeEvents.add(event({ projectId: 'old' }));
+    renderAt('/today/events/e1');
+    expect(await screen.findByText('Старый проект')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Изменить' }));
+    expect(screen.getByLabelText('Проект')).toHaveDisplayValue('Старый проект');
+  });
+
+  it('hides archived projects from the choice for a new event', async () => {
+    const user = userEvent.setup();
+    await db.projects.add({ id: 'old', name: 'Старый проект', archived: true, createdAt: 0, updatedAt: 0 });
+    renderAt('/today/events');
+    await user.click(await screen.findByRole('button', { name: /Добавить событие/ }));
+    const select = await screen.findByLabelText('Проект');
+    await within(select).findByRole('option', { name: 'Английский' });
+    expect(within(select).queryByRole('option', { name: 'Старый проект' })).not.toBeInTheDocument();
+  });
+
+  it('sends unknown addresses back to the Today screen', async () => {
+    renderAt('/nowhere');
+    expect(await screen.findByRole('heading', { name: 'Сегодня' })).toBeInTheDocument();
   });
 });

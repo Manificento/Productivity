@@ -27,6 +27,9 @@ export function EventForm({
   const [saveError, setSaveError] = useState<string>();
   const [saving, setSaving] = useState(false);
 
+  // Archived projects are hidden, except the one the event is already linked to.
+  const projectOptions = projects.filter((p) => !p.archived || p.id === values.projectId);
+
   const set = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((v) => ({ ...v, [key]: value }));
 
@@ -88,12 +91,12 @@ export function EventForm({
       />
       <Field
         label="Проект"
-        hint={projects.length ? 'На него пойдёт фокус в подготовке' : 'Проекты создаются в «Задачах»'}
+        hint={projectOptions.length ? 'На него пойдёт фокус в подготовке' : 'Проекты создаются в «Задачах»'}
       >
         {(id) => (
           <Select id={id} value={values.projectId} onChange={(e) => set('projectId', e.target.value)}>
             <option value="">Без проекта</option>
-            {projects.map((p) => (
+            {projectOptions.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>

@@ -32,7 +32,7 @@ export function useEvent(id: Id): LifeEvent | null | undefined {
   return useLiveQuery(async () => (await db.lifeEvents.get(id)) ?? null, [id]);
 }
 
-/** Active task projects (read-only: the tasks module owns this table). */
+/** All task projects, archived included, so names of linked projects still resolve (read-only: tasks owns it). */
 export function useProjects(): Project[] | undefined {
-  return useLiveQuery(async () => (await db.projects.toArray()).filter((p) => !p.archived), []);
+  return useLiveQuery(() => db.projects.toArray(), []);
 }
