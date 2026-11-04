@@ -10,7 +10,7 @@ import { tasksModule } from '../modules/tasks';
 import { timeModule } from '../modules/time';
 import { todayModule } from '../modules/today';
 import { trainingModule } from '../modules/training';
-import type { AppModule } from './moduleTypes';
+import type { AppModule, ModuleGroup } from './moduleTypes';
 
 /**
  * Registry of all modules. Every module already has a line here,
@@ -24,7 +24,7 @@ export const MODULES: AppModule[] = [
   healthModule,
   cognitionModule,
   settingsModule,
-  // SPEC 0.3 skeletons (contract C3): routes work, hidden from navigation until they have content.
+  // SPEC 0.3 skeletons (contract C3): reached through «Блоки», marked «скоро» (`comingSoon`) until they have content.
   nutritionModule,
   trainingModule,
   meditationModule,
@@ -32,6 +32,19 @@ export const MODULES: AppModule[] = [
   notesModule,
 ];
 
-export const NAV_MODULES = MODULES.filter((m) => m.navOrder !== undefined).sort(
-  (a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0),
-);
+/** Group titles of the «Все блоки» screen, in display order. */
+export const MODULE_GROUPS: Record<ModuleGroup, string> = {
+  plan: 'План',
+  body: 'Тело',
+  mind: 'Ум',
+  knowledge: 'Знания',
+  system: 'Система',
+};
+
+/** «Сегодня» — the hub, always the first tab of the bottom bar. */
+export const HOME_MODULE = MODULES.find((m) => m.path === '/*')!;
+
+/** Up to three pinned tabs after «Сегодня» (`navOrder`); the rest is reached through «Блоки». */
+export const PINNED_MODULES = MODULES.filter((m) => m !== HOME_MODULE && m.navOrder !== undefined)
+  .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
+  .slice(0, 3);

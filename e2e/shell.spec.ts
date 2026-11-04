@@ -81,3 +81,25 @@ test('Given index.html When приложение открыто на телеф�
   await page.goto('/#/tasks');
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', /viewport-fit=cover/);
 });
+
+test('Given 12 модулей When я открываю приложение на 360 px Then нижняя панель: «Сегодня», до трёх закреплённых и «Блоки»; кнопки ≥ 44 px, подписи не обрезаны', async ({
+  page,
+}) => {
+  await page.goto('/#/tasks');
+  const nav = page.getByRole('navigation', { name: 'Модули' });
+  const links = nav.getByRole('link');
+  await expect(links).toHaveText([/Сегодня/, /Задачи/, /Привычки/, /Время/, /Блоки/]);
+  for (const link of await links.all()) {
+    const box = (await link.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    // Not truncated: the label fits its box.
+    expect(await link.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  }
+
+  await nav.getByRole('link', { name: /Блоки/ }).click();
+  await expect(page.getByRole('heading', { name: 'Все блоки', level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Питание/ })).toContainText('скоро');
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

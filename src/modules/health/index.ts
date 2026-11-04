@@ -6,6 +6,7 @@ export const healthModule: AppModule = {
   title: 'Здоровье',
   path: '/health/*',
   icon: '💪',
-  navOrder: 5,
+  group: 'body',
+  summary: 'Сон, питание и тренировки за день',
   Page: HealthPage,
 };

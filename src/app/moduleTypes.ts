@@ -1,5 +1,8 @@
 import type { ComponentType } from 'react';
 
+/** Where a block sits on the «Все блоки» screen. */
+export type ModuleGroup = 'plan' | 'body' | 'mind' | 'knowledge' | 'system';
+
 /**
  * Every feature module exports one manifest from src/modules/<id>/index.ts.
  * The app shell builds routes and navigation from these — modules never edit the shell.
@@ -12,7 +15,16 @@ export interface AppModule {
   path: string;
   /** Emoji icon for the bottom navigation. */
   icon: string;
-  /** Position in the bottom navigation; omit to hide from it. */
+  /** Group on the «Все блоки» screen. */
+  group: ModuleGroup;
+  /** One line in Russian: what the block is for (shown on «Все блоки»). */
+  summary: string;
+  /** A skeleton without content yet: marked «скоро» on «Все блоки». */
+  comingSoon?: boolean;
+  /**
+   * A pinned tab in the bottom bar, in this order (today is always the first tab, up to three more are pinned);
+   * omit to reach the block through «Блоки».
+   */
   navOrder?: number;
   Page: ComponentType;
   /**

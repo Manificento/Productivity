@@ -7,6 +7,8 @@ export const timeModule: AppModule = {
   title: 'Время',
   path: '/time/*',
   icon: '⏱️',
+  group: 'plan',
+  summary: 'Таймер, Pomodoro и баланс времени',
   navOrder: 4,
   Page: TimePage,
   Background: PomodoroBackground,

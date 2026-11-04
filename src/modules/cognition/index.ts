@@ -10,5 +10,7 @@ export const cognitionModule: AppModule = {
   title: 'Тесты',
   path: '/cognition/*',
   icon: '🧠',
+  group: 'mind',
+  summary: 'Тест внимания и тренажёры ума',
   Page: CognitionPage,
 };
