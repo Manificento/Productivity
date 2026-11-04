@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
@@ -124,13 +124,25 @@ describe('food tab', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Назад' }));
     type('Поиск продукта', 'овся');
     fireEvent.click(within(dialog).getByRole('button', { name: /Овсянка/ }));
-    await within(dialog).findByLabelText('Вес, г');
-    await new Promise((r) => setTimeout(r, 50));
+    // «Добавить» is enabled only once we know whether the food is new.
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Добавить' })).toBeEnabled());
     expect(within(dialog).queryByRole('note')).not.toBeInTheDocument();
 
     // Soft: adding still works.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Добавить' }));
     expect(await within(await meal('Обед')).findByText('Овсянка, 100 г')).toBeInTheDocument();
+  });
+
+  it('without noNewFoods a never-logged food gets no warning', async () => {
+    await createFood({ ...bread, name: 'Манго' });
+    renderTab();
+    const dialog = await openAdd('Обед');
+    type('Поиск продукта', 'манго');
+    fireEvent.click(within(dialog).getByRole('button', { name: /Манго/ }));
+    await within(dialog).findByLabelText('Вес, г');
+    expect(within(dialog).getByRole('button', { name: 'Добавить' })).toBeEnabled();
+    // The «new food» lookup resolves within milliseconds; the warning must not show up after it.
+    await expect(within(dialog).findByRole('note', undefined, { timeout: 300 })).rejects.toThrow();
   });
 
   it('Given caffeineCutoff = 14:00 When the food diary is open Then the caffeine cutoff from the day targets is shown', async () => {

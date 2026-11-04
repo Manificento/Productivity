@@ -108,7 +108,10 @@ export function searchFoods(foods: Food[], query: string): Food[] {
   return foods.filter((f) => normalize(f.name).includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 
-/** Up to 10 distinct foods, most recently logged first (later items of a meal are newer). */
+/**
+ * Up to 10 distinct foods, most recently logged first (later items of a meal are newer).
+ * Approximate: items carry no timestamp, so a meal added to later moves all its items ahead.
+ */
 export function recentFoodIds(meals: MealLog[], limit = RECENT_FOODS): string[] {
   const ids: string[] = [];
   const ordered = [...meals].sort((a, b) => b.updatedAt - a.updatedAt);

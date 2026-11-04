@@ -38,7 +38,10 @@ function GramsForm({
 }) {
   const [grams, setGrams] = useState('100');
   const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
   const logged = useHasLoggedFood(food.id);
+  // Before an event, wait until we know whether the food is new, so the warning is never skipped.
+  const checking = noNewFoods && logged === undefined;
   const value = Number(grams.replace(',', '.'));
   const preview = Number.isFinite(value) && value > 0 ? macrosFor(food, value) : undefined;
 
@@ -48,11 +51,13 @@ function GramsForm({
       setError('Укажите вес в граммах');
       return;
     }
+    setSaving(true);
     try {
       await addMealItem(date, kind, { foodId: food.id, grams: value });
       onDone();
     } catch {
       setError('Не удалось добавить — попробуйте ещё раз');
+      setSaving(false);
     }
   }
 
@@ -85,7 +90,7 @@ function GramsForm({
         <Button variant="secondary" className="flex-1" onClick={onBack}>
           Назад
         </Button>
-        <Button type="submit" className="flex-1">
+        <Button type="submit" className="flex-1" disabled={saving || checking}>
           Добавить
         </Button>
       </div>
@@ -178,10 +183,12 @@ export function AddFoodSheet({
               {results.map((f) => (
                 <FoodButton key={f.id} food={f} onPick={setPicked} />
               ))}
-              {results.length === 0 && <p className="py-3 text-sm text-zinc-500">Ничего не нашлось.</p>}
+              {results.length === 0 && <li className="py-3 text-sm text-zinc-500">Ничего не нашлось.</li>}
             </ul>
           )}
-          {foods.length === 0 && <p className="mb-3 text-sm text-zinc-500">Продуктов пока нет — создайте свой.</p>}
+          {foods.length === 0 && query.trim() === '' && (
+            <p className="mb-3 text-sm text-zinc-500">Продуктов пока нет — создайте свой.</p>
+          )}
           <Button variant="secondary" className="w-full" onClick={() => setCreating(true)}>
             Создать свой продукт
           </Button>

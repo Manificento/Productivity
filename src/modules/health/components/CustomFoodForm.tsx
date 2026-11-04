@@ -23,6 +23,7 @@ export function CustomFoodForm({
 }) {
   const [draft, setDraft] = useState<FoodDraft>({ name: initialName, kcal: '', protein: '', fat: '', carbs: '' });
   const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -31,10 +32,12 @@ export function CustomFoodForm({
       setError(parsed.error);
       return;
     }
+    setSaving(true);
     try {
       onCreated(await createFood(parsed.value));
     } catch {
       setError('Не удалось сохранить продукт — попробуйте ещё раз');
+      setSaving(false);
     }
   }
 
@@ -67,7 +70,7 @@ export function CustomFoodForm({
         <Button variant="secondary" className="flex-1" onClick={onCancel}>
           Назад
         </Button>
-        <Button type="submit" className="flex-1">
+        <Button type="submit" className="flex-1" disabled={saving}>
           Создать продукт
         </Button>
       </div>
