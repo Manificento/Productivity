@@ -48,12 +48,6 @@ export function EventsList() {
   const [adding, setAdding] = useState(false);
   const today = todayKey();
 
-  const action = (
-    <Button onClick={() => setAdding(true)} aria-label="Добавить событие">
-      + Добавить
-    </Button>
-  );
-
   let content;
   if (!events) {
     content = <Card>Загрузка…</Card>;
@@ -86,10 +80,13 @@ export function EventsList() {
   }
 
   return (
-    <Page title="События" actions={action}>
+    <Page title="События">
       <Link to="/" className="mb-3 inline-flex min-h-11 items-center text-sm text-indigo-600 dark:text-indigo-400">
         ← Сегодня
       </Link>
+      <Button className="mb-3 w-full" onClick={() => setAdding(true)}>
+        + Добавить событие
+      </Button>
       {content}
       <Sheet open={adding} title="Новое событие" onClose={() => setAdding(false)}>
         <EventForm
