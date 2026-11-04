@@ -23,16 +23,22 @@ export function WorkoutForm({
   today,
   initial,
   onSaved,
+  onChange,
 }: {
   today: DateKey;
   initial: WorkoutDraft;
   onSaved: () => void;
+  /** Any edit (e.g. to hide a stale «сохранено» message). */
+  onChange?: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
 
-  const set = (patch: Partial<WorkoutDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const set = (patch: Partial<WorkoutDraft>) => {
+    setDraft((d) => ({ ...d, ...patch }));
+    onChange?.();
+  };
   const setExercise = (i: number, patch: Partial<ExerciseDraft>) =>
     set({ exercises: draft.exercises.map((e, k) => (k === i ? { ...e, ...patch } : e)) });
   const setSet = (i: number, j: number, patch: Partial<ExerciseDraft['sets'][number]>) =>
@@ -120,6 +126,7 @@ export function WorkoutForm({
                 onChange={(e) => setExercise(i, { name: e.target.value })}
               />
               <IconButton
+                className="shrink-0"
                 label={`Удалить упражнение ${i + 1}`}
                 onClick={() => set({ exercises: draft.exercises.filter((_, k) => k !== i) })}
               >

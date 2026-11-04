@@ -38,13 +38,15 @@ test.describe('health', () => {
   test('workouts: log one with an exercise, repeat it, see the week totals', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-11-04T19:00:00'));
     await page.goto('/#/health/workouts');
-    await expect(page.getByText('Тренировок пока нет')).toBeVisible();
+    await expect(page.getByText('За последние 60 дней тренировок нет — запишите первую')).toBeVisible();
 
     await page.getByLabel('Тип').selectOption('Силовая');
     await page.getByLabel('Длительность, мин').fill('60');
     await page.getByLabel('RPE (1–10)').selectOption('8');
     await page.getByRole('button', { name: '+ Упражнение' }).click();
     await page.getByLabel('Упражнение 1: название').fill('Присед');
+    const remove = await page.getByRole('button', { name: 'Удалить упражнение 1' }).boundingBox();
+    expect(remove?.width).toBeGreaterThanOrEqual(44);
     await page.getByLabel('Упражнение 1, подход 1: повторы').fill('5');
     await page.getByLabel('Упражнение 1, подход 1: вес, кг').fill('100');
     await page.getByRole('button', { name: 'Сохранить тренировку' }).click();
@@ -52,7 +54,7 @@ test.describe('health', () => {
     const history = page.getByRole('list', { name: 'История тренировок' });
     await expect(history.getByText('Присед: 5 × 100 кг')).toBeVisible();
 
-    await history.getByRole('button', { name: 'Повторить' }).click();
+    await history.getByRole('button', { name: /^Повторить/ }).click();
     await expect(page.getByLabel('Упражнение 1: название')).toHaveValue('Присед');
     await page.getByRole('button', { name: 'Сохранить тренировку' }).click();
     await expect(history.getByRole('listitem', { name: /Силовая/ })).toHaveCount(2);

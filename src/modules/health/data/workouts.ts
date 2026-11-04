@@ -3,7 +3,7 @@ import { shiftDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
 import { newRecord } from '../../../core/ids';
 import type { DateKey, WorkoutLog } from '../../../core/types';
-import { weekStart, type WorkoutInput } from '../logic/workouts';
+import type { WorkoutInput } from '../logic/workouts';
 
 /** How far back the history list goes. */
 export const HISTORY_DAYS = 60;
@@ -15,11 +15,11 @@ export async function saveWorkout(input: WorkoutInput, now: number = Date.now())
 }
 
 /**
- * Workouts from the start of the current week or the last 60 days, whichever is earlier,
- * newest first (same day: latest saved first).
+ * Workouts of the last 60 days (this covers the current week too), newest first
+ * (same day: latest saved first).
  */
 export async function loadRecentWorkouts(today: DateKey): Promise<WorkoutLog[]> {
-  const from = [weekStart(today), shiftDateKey(today, -(HISTORY_DAYS - 1))].sort()[0];
+  const from = shiftDateKey(today, -(HISTORY_DAYS - 1));
   const logs = await db.workoutLogs.where('date').aboveOrEqual(from).toArray();
   return logs.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
 }

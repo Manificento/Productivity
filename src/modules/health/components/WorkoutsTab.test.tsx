@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { saveWorkout } from '../data/workouts';
 import { WorkoutsTab } from './WorkoutsTab';
@@ -27,7 +27,7 @@ beforeEach(async () => {
 describe('workouts tab', () => {
   it('Given the workout form When I choose type, duration, RPE 1–10 and save Then the workout appears in the history', async () => {
     renderTab();
-    expect(await screen.findByText(/Тренировок пока нет/)).toBeInTheDocument();
+    expect(await screen.findByText(/За последние 60 дней тренировок нет/)).toBeInTheDocument();
     type('Тип', 'Бег');
     type('Длительность, мин', '45');
     type('RPE (1–10)', '6');
@@ -81,7 +81,7 @@ describe('workouts tab', () => {
       exercises: [{ name: 'Тяга', sets: [{ reps: 5, weightKg: 100 }] }],
     });
     renderTab();
-    fireEvent.click(within(await history()).getByRole('button', { name: 'Повторить' }));
+    fireEvent.click(within(await history()).getByRole('button', { name: 'Повторить: Силовая, 30 октября' }));
 
     expect(screen.getByLabelText('Дата')).toHaveValue(TODAY);
     expect(screen.getByLabelText('Тип')).toHaveValue('Силовая');
@@ -106,9 +106,29 @@ describe('workouts tab', () => {
     expect(stat('Средний RPE')).toHaveTextContent('6,5');
   });
 
+  it('a failed save shows an error', async () => {
+    const add = vi.spyOn(db.workoutLogs, 'add').mockRejectedValueOnce(new Error('quota'));
+    renderTab();
+    type('Длительность, мин', '30');
+    type('RPE (1–10)', '5');
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить тренировку');
+    add.mockRestore();
+  });
+
+  it('editing the form after a save hides the «Тренировка сохранена» message', async () => {
+    renderTab();
+    type('Длительность, мин', '30');
+    type('RPE (1–10)', '5');
+    save();
+    await screen.findByText('Тренировка сохранена');
+    type('Длительность, мин', '40');
+    expect(screen.queryByText('Тренировка сохранена')).not.toBeInTheDocument();
+  });
+
   it('an empty week shows zeros and no average', async () => {
     renderTab();
-    await screen.findByText(/Тренировок пока нет/);
+    await screen.findByText(/тренировок нет/);
     expect(stat('Минуты')).toHaveTextContent('0');
     expect(stat('Средний RPE')).toHaveTextContent('—');
   });

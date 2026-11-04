@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { todayKey } from '../../../core/dates';
 import type { DateKey, WorkoutLog } from '../../../core/types';
 import { Card, Empty } from '../../../ui';
-import { useRecentWorkouts } from '../data/workouts';
+import { HISTORY_DAYS, useRecentWorkouts } from '../data/workouts';
 import { draftFromWorkout, emptyDraft, formatNumber, weekStats } from '../logic/workouts';
 import { WorkoutCard } from './WorkoutCard';
 import { WorkoutForm } from './WorkoutForm';
@@ -58,14 +58,20 @@ export function WorkoutsTab({ today = todayKey() }: { today?: DateKey }) {
             Тренировка сохранена
           </p>
         )}
-        <WorkoutForm key={form.version} today={today} initial={form.initial} onSaved={onSaved} />
+        <WorkoutForm
+          key={form.version}
+          today={today}
+          initial={form.initial}
+          onSaved={onSaved}
+          onChange={() => setSavedNote(false)}
+        />
       </div>
 
       <Card title="История">
         {workouts === undefined ? (
           <Empty>Загрузка…</Empty>
         ) : workouts.length === 0 ? (
-          <Empty>Тренировок пока нет — запишите первую</Empty>
+          <Empty>За последние {HISTORY_DAYS} дней тренировок нет — запишите первую</Empty>
         ) : (
           <ul aria-label="История тренировок">
             {workouts.map((w) => (

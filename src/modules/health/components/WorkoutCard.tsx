@@ -6,20 +6,20 @@ import { Button } from '../../../ui';
 import { formatSets } from '../logic/workouts';
 
 export function WorkoutCard({ workout, onRepeat }: { workout: WorkoutLog; onRepeat: (w: WorkoutLog) => void }) {
+  const day = format(fromDateKey(workout.date), 'd MMMM', { locale: ru });
   return (
     <li
-      aria-label={`${workout.type}, ${format(fromDateKey(workout.date), 'd MMMM', { locale: ru })}`}
+      aria-label={`${workout.type}, ${day}`}
       className="border-b border-zinc-200 py-3 last:border-0 dark:border-zinc-800"
     >
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-medium">{workout.type}</p>
           <p className="text-sm text-zinc-500">
-            {format(fromDateKey(workout.date), 'd MMMM', { locale: ru })} · {workout.durationMin} мин · RPE{' '}
-            {workout.rpe}
+            {day} · {workout.durationMin} мин · RPE {workout.rpe}
           </p>
         </div>
-        <Button variant="secondary" onClick={() => onRepeat(workout)}>
+        <Button variant="secondary" aria-label={`Повторить: ${workout.type}, ${day}`} onClick={() => onRepeat(workout)}>
           Повторить
         </Button>
       </div>

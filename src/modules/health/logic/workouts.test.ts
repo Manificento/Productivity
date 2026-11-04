@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkoutLog } from '../../../core/types';
-import { draftFromWorkout, emptyDraft, formatSets, parseDraft, weekStats, type WorkoutDraft } from './workouts';
+import {
+  draftFromWorkout,
+  emptyDraft,
+  formatSets,
+  parseDraft,
+  weekStart,
+  weekStats,
+  type WorkoutDraft,
+} from './workouts';
 
 const TODAY = '2026-11-04'; // Wednesday
 
@@ -107,6 +115,14 @@ describe('weekStats', () => {
       workout('2026-11-01', 90, 9), // last Sunday — previous week
     ];
     expect(weekStats(logs, TODAY)).toEqual({ minutes: 90, count: 2, avgRpe: 6.5 });
+  });
+
+  it('the week is Monday–Sunday: on Sunday it starts the previous Monday, on Monday it starts that day', () => {
+    expect(weekStart('2026-11-08')).toBe('2026-11-02');
+    expect(weekStart('2026-11-02')).toBe('2026-11-02');
+    const logs = [workout('2026-11-02', 30, 5), workout('2026-11-08', 40, 7), workout('2026-11-09', 50, 9)];
+    expect(weekStats(logs, '2026-11-08')).toEqual({ minutes: 70, count: 2, avgRpe: 6 });
+    expect(weekStats(logs, '2026-11-09')).toEqual({ minutes: 50, count: 1, avgRpe: 9 });
   });
 
   it('no workouts this week: zeros and no average', () => {
