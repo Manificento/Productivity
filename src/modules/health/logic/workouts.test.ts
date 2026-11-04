@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkoutLog } from '../../../core/types';
-import {
-  draftFromWorkout,
-  emptyDraft,
-  formatSets,
-  parseDraft,
-  pluralWorkouts,
-  weekStats,
-  type WorkoutDraft,
-} from './workouts';
+import { draftFromWorkout, emptyDraft, formatSets, parseDraft, weekStats, type WorkoutDraft } from './workouts';
 
 const TODAY = '2026-11-04'; // Wednesday
 
@@ -125,16 +117,5 @@ describe('weekStats', () => {
 describe('formatting', () => {
   it('formatSets lists reps × weight', () => {
     expect(formatSets([{ reps: 10, weightKg: 60 }, { reps: 8 }, { weightKg: 20 }])).toBe('10 × 60 кг, 8 повт., 20 кг');
-  });
-
-  it('pluralWorkouts uses Russian plural forms', () => {
-    expect([1, 2, 5, 11, 21, 0].map(pluralWorkouts)).toEqual([
-      '1 тренировка',
-      '2 тренировки',
-      '5 тренировок',
-      '11 тренировок',
-      '21 тренировка',
-      '0 тренировок',
-    ]);
   });
 });

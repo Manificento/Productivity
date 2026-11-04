@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('health: sleep', () => {
+test.describe('health', () => {
   test('log last night, update it, and see it in the 14-day chart', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
     await page.goto('/#/health');
@@ -29,9 +29,38 @@ test.describe('health: sleep', () => {
     await page.goto('/#/health');
     await page.getByRole('link', { name: 'Тренировки' }).click();
     await expect(page).toHaveURL(/#\/health\/workouts$/);
-    await expect(page.getByText('Модуль «Тренировки» ещё строится')).toBeVisible();
+    await expect(page.getByText('Новая тренировка')).toBeVisible();
     await page.getByRole('link', { name: 'Еда' }).click();
     await expect(page).toHaveURL(/#\/health\/food$/);
     await expect(page.getByText('Модуль «Еда» ещё строится')).toBeVisible();
+  });
+
+  test('workouts: log one with an exercise, repeat it, see the week totals', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T19:00:00'));
+    await page.goto('/#/health/workouts');
+    await expect(page.getByText('Тренировок пока нет')).toBeVisible();
+
+    await page.getByLabel('Тип').selectOption('Силовая');
+    await page.getByLabel('Длительность, мин').fill('60');
+    await page.getByLabel('RPE (1–10)').selectOption('8');
+    await page.getByRole('button', { name: '+ Упражнение' }).click();
+    await page.getByLabel('Упражнение 1: название').fill('Присед');
+    await page.getByLabel('Упражнение 1, подход 1: повторы').fill('5');
+    await page.getByLabel('Упражнение 1, подход 1: вес, кг').fill('100');
+    await page.getByRole('button', { name: 'Сохранить тренировку' }).click();
+
+    const history = page.getByRole('list', { name: 'История тренировок' });
+    await expect(history.getByText('Присед: 5 × 100 кг')).toBeVisible();
+
+    await history.getByRole('button', { name: 'Повторить' }).click();
+    await expect(page.getByLabel('Упражнение 1: название')).toHaveValue('Присед');
+    await page.getByRole('button', { name: 'Сохранить тренировку' }).click();
+    await expect(history.getByRole('listitem', { name: /Силовая/ })).toHaveCount(2);
+
+    await expect(page.getByText('Минуты').locator('xpath=following-sibling::dd[1]')).toHaveText('120');
+    await expect(page.getByText('Средний RPE').locator('xpath=following-sibling::dd[1]')).toHaveText('8');
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

@@ -140,16 +140,3 @@ export function formatSets(sets: { reps?: number; weightKg?: number }[]): string
 export function formatNumber(n: number): string {
   return n.toString().replace('.', ',');
 }
-
-/** 1 тренировка, 2 тренировки, 5 тренировок. */
-export function pluralWorkouts(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  const word =
-    mod10 === 1 && mod100 !== 11
-      ? 'тренировка'
-      : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
-        ? 'тренировки'
-        : 'тренировок';
-  return `${n} ${word}`;
-}
