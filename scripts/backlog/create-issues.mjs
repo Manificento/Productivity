@@ -21,7 +21,23 @@ const UPDATE = new Set(
 );
 
 const LABELS = [
-  ...['core', 'tasks', 'habits', 'time', 'health', 'today', 'cognition', 'settings', 'infra'].map((a) => ({
+  ...[
+    'core',
+    'tasks',
+    'habits',
+    'time',
+    'health',
+    'today',
+    'cognition',
+    'settings',
+    'infra',
+    // SPEC 0.3
+    'nutrition',
+    'training',
+    'meditation',
+    'notes',
+    'progress',
+  ].map((a) => ({
     name: `area:${a}`,
     color: '1d76db',
     description: `Lane: ${a}`,
@@ -48,9 +64,19 @@ function gh(args, input) {
   });
 }
 
+/**
+ * Reads every page by explicit `page=N`. `gh api --paginate` follows the Link header, which points at
+ * `repositories/{id}/…` URLs — the proxy in Claude Code cloud sessions rejects those (HTTP 403).
+ */
 function paged(path) {
   if (DRY) return [];
-  return JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', path], { encoding: 'utf8' })).flat();
+  const perPage = Number(/per_page=(\d+)/.exec(path)?.[1] ?? 30);
+  const all = [];
+  for (let page = 1; ; page++) {
+    const chunk = JSON.parse(execFileSync('gh', ['api', `${path}&page=${page}`], { encoding: 'utf8' }));
+    all.push(...chunk);
+    if (chunk.length < perPage) return all;
+  }
 }
 
 function sleep(ms) {
@@ -85,7 +111,11 @@ function labelsFor(item) {
 }
 
 function bodyFor(item, numbers) {
-  const deps = (item.deps ?? []).map((k) => `#${numbers.get(k) ?? `<${k}>`}`);
+  const deps = [
+    ...(item.deps ?? []).map((k) => `#${numbers.get(k) ?? `<${k}>`}`),
+    // Issues that were not created from the backlog (e.g. filed by an agent), by number.
+    ...(item.depIssues ?? []).map((n) => `#${n}`),
+  ];
   return [
     '## История',
     item.story,

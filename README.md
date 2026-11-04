@@ -30,7 +30,9 @@ npm run e2e        # сквозные тесты в Chrome на экране т�
 
 ## Как работают агенты
 
-Работа — это GitHub Issues по дорожкам (`area:tasks`, `area:habits`, `area:time`, `area:health`, `area:today`).
+Работа — это GitHub Issues по дорожкам: `area:tasks`, `area:habits`, `area:time`, `area:health`, `area:today`,
+`area:cognition`, `area:settings`, `area:infra`, а с [SPEC 0.3](docs/SPEC.md) — `area:nutrition`, `area:training`,
+`area:meditation`, `area:notes`, `area:progress`.
 Облачная сессия Claude Code получает команду `/lane tasks` и сама проходит дорожку:
 issue → ветка → тесты и код → `npm run check` → PR → CI → независимое ревью → squash-слияние.
 Подробности — [docs/process.md](docs/process.md).

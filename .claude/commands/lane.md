@@ -1,6 +1,6 @@
 ---
 description: Work autonomously through every ready issue of one or more lanes, in order, until they are empty
-argument-hint: <area> [<area> …] (tasks | habits | time | health | today | cognition | settings | infra)
+argument-hint: <area> [<area> …] (tasks | habits | time | health | today | cognition | settings | infra | nutrition | training | meditation | notes | progress)
 ---
 
 Lanes for this session, in order: **$ARGUMENTS**. Finish the first lane, then move to the next one.

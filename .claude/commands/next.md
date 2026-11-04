@@ -1,6 +1,6 @@
 ---
 description: Take the next ready issue in a lane and deliver it end to end (TDD → PR → CI → review → merge)
-argument-hint: <area> (tasks | habits | time | health | today | settings | core | infra) or an issue number
+argument-hint: <area> (tasks | habits | time | health | today | cognition | settings | core | infra | nutrition | training | meditation | notes | progress) or an issue number
 ---
 
 Deliver exactly one issue. Lane or issue: **$ARGUMENTS**
