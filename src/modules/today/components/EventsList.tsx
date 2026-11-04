@@ -94,7 +94,7 @@ export function EventsList() {
         <EventForm
           initial={emptyEventForm(today)}
           projects={projects}
-          preview={baseline && { baseline, today }}
+          preview={baseline && { baseline, today, others: events ?? [] }}
           onSubmit={async (fields) => {
             await createEvent(fields);
             setAdding(false);

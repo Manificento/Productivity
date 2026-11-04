@@ -4,7 +4,7 @@ import { todayKey } from '../../../core/dates';
 import type { LifeEvent, Project } from '../../../core/types';
 import { Button, Card, Empty, Page, Sheet } from '../../../ui';
 import { useBaseline } from '../data/baseline';
-import { deleteEvent, updateEvent, useEvent, useProjects } from '../data/events';
+import { deleteEvent, updateEvent, useEvent, useEvents, useProjects } from '../data/events';
 import {
   daysLabel,
   EVENT_TYPE_LABEL,
@@ -100,6 +100,7 @@ export function EventDetail() {
   const event = useEvent(id);
   const projects = useProjects() ?? [];
   const baseline = useBaseline();
+  const allEvents = useEvents();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -121,6 +122,8 @@ export function EventDetail() {
     );
   }
 
+  const others = (allEvents ?? []).filter((e) => e.id !== id);
+
   async function remove() {
     try {
       await deleteEvent(id);
@@ -137,7 +140,7 @@ export function EventDetail() {
       {baseline && (
         <section aria-label="Как изменятся следующие 10 дней">
           <Card title="Следующие 10 дней">
-            <PlanPreview event={event} baseline={baseline} today={todayKey()} />
+            <PlanPreview event={event} others={others} baseline={baseline} today={todayKey()} />
           </Card>
         </section>
       )}
@@ -154,7 +157,7 @@ export function EventDetail() {
         <EventForm
           initial={eventToForm(event)}
           projects={projects}
-          preview={baseline && { baseline, today: todayKey() }}
+          preview={baseline && { baseline, today: todayKey(), others }}
           onSubmit={async (fields) => {
             await updateEvent(id, fields);
             setEditing(false);

@@ -11,12 +11,19 @@ export type PreviewRow = Pick<
 export const PREVIEW_DAYS = 10;
 
 /**
- * How one event reshapes the next days, starting today. Only the pure engine is used,
- * so it works for an unsaved form as well as for a stored event.
+ * The next days starting today, as they will be with `event` (possibly unsaved) next to the user's
+ * other events — a more important event still drives the days it covers. Only the pure engine is used.
  */
-export function previewDays(event: LifeEvent, baseline: Baseline, today: DateKey, days = PREVIEW_DAYS): PreviewRow[] {
+export function previewDays(
+  event: LifeEvent,
+  others: LifeEvent[],
+  baseline: Baseline,
+  today: DateKey,
+  days = PREVIEW_DAYS,
+): PreviewRow[] {
+  const events = [...others.filter((e) => e.id !== event.id), event];
   return Array.from({ length: days }, (_, i) => {
-    const t = computeDailyTargets(shiftDateKey(today, i), { baseline, events: [event] });
+    const t = computeDailyTargets(shiftDateKey(today, i), { baseline, events });
     return {
       date: t.date,
       phase: t.phase,

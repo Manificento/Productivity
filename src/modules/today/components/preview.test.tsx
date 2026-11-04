@@ -85,10 +85,35 @@ describe('Предпросмотр 10 дней', () => {
     renderAt('/today/events');
     await user.click(await screen.findByRole('button', { name: /Добавить событие/ }));
     const dialog = screen.getByRole('dialog', { name: 'Новое событие' });
-    expect(await within(dialog).findByRole('table', { name: 'План на 10 дней' })).toBeInTheDocument();
+    await user.clear(within(dialog).getByLabelText('Дата'));
+    await user.type(within(dialog).getByLabelText('Дата'), '2026-11-08');
+    const table = await within(dialog).findByRole('table', { name: 'План на 10 дней' });
+    // Important by default: +2 sessions; IELTS (critical) drives the overlapping days with +3.
+    expect(focusColumn(table)[0]).toBe('7');
+    await user.click(within(dialog).getByRole('radio', { name: 'Критичное' }));
+    await user.clear(within(dialog).getByLabelText('Дата'));
+    await user.type(within(dialog).getByLabelText('Дата'), '2026-11-06');
+    // The new critical event is nearer, so it drives today: 4 + 3 sessions, and its taper day shows 2.
+    expect(focusColumn(within(dialog).getByRole('table', { name: 'План на 10 дней' })).slice(0, 2)).toEqual(['7', '2']);
 
     await user.clear(within(dialog).getByLabelText('Дней подготовки'));
     expect(within(dialog).queryByRole('table')).not.toBeInTheDocument();
     expect(within(dialog).getByText('Укажите дату и дни подготовки, чтобы увидеть план.')).toBeInTheDocument();
+  });
+
+  it('says so in one line when the event does not change the next 10 days', async () => {
+    await db.lifeEvents.put({
+      id: 'e1',
+      title: 'IELTS',
+      type: 'exam',
+      date: '2026-12-20',
+      importance: 3,
+      prepDays: 7,
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    renderAt('/today/events/e1');
+    expect(await screen.findByText('Ближайшие 10 дней идут в обычном режиме.')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 });

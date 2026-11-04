@@ -16,7 +16,7 @@ const ielts: LifeEvent = {
 
 describe('previewDays', () => {
   it('Given событие через 5 дней When я открываю его Then вижу таблицу на 10 дней: фаза, ёмкость, сон, тренировка, фокус-сессии', () => {
-    const rows = previewDays(ielts, DEFAULT_BASELINE, '2026-11-04');
+    const rows = previewDays(ielts, [], DEFAULT_BASELINE, '2026-11-04');
     expect(rows).toHaveLength(10);
     expect(rows.map((r) => r.date)).toEqual([
       '2026-11-04',
@@ -59,15 +59,27 @@ describe('previewDays', () => {
   });
 
   it('Given я меняю важность или дни подготовки Then предпросмотр пересчитывается', () => {
-    const before = previewDays(ielts, DEFAULT_BASELINE, '2026-11-04');
-    const after = previewDays({ ...ielts, importance: 1, prepDays: 2 }, DEFAULT_BASELINE, '2026-11-04');
+    const before = previewDays(ielts, [], DEFAULT_BASELINE, '2026-11-04');
+    const after = previewDays({ ...ielts, importance: 1, prepDays: 2 }, [], DEFAULT_BASELINE, '2026-11-04');
     expect(before[0].focusPomodoros).toBe(7);
     expect(after[0]).toMatchObject({ phase: 'normal', focusPomodoros: 4 });
     expect(after[3]).toMatchObject({ phase: 'prep', focusPomodoros: 5 });
   });
 
+  it('shows the plan that will really happen when a more important event overlaps', () => {
+    const deadline: LifeEvent = { ...ielts, id: 'd', title: 'Дедлайн', date: '2026-11-07', importance: 1, prepDays: 2 };
+    const rows = previewDays(deadline, [ielts], DEFAULT_BASELINE, '2026-11-04');
+    // On the deadline day IELTS preparation still drives the day.
+    expect(rows[3]).toMatchObject({ date: '2026-11-07', phase: 'prep', focusPomodoros: 7 });
+  });
+
+  it('replaces the stored version of the event being edited', () => {
+    const rows = previewDays({ ...ielts, importance: 1 }, [ielts], DEFAULT_BASELINE, '2026-11-04');
+    expect(rows[0].focusPomodoros).toBe(5);
+  });
+
   it('uses the user’s baseline', () => {
-    const rows = previewDays(ielts, { ...DEFAULT_BASELINE, taskCapacityMin: 300 }, '2026-11-04');
+    const rows = previewDays(ielts, [], { ...DEFAULT_BASELINE, taskCapacityMin: 300 }, '2026-11-04');
     expect(rows[9].taskCapacityMin).toBe(300);
   });
 });

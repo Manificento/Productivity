@@ -29,9 +29,37 @@ const PHASE_ROW: Record<Phase, string> = {
   recovery: 'bg-emerald-50 dark:bg-emerald-950/40',
 };
 
-/** «Как изменятся следующие 10 дней» — targets per day for one (possibly unsaved) event. */
-export function PlanPreview({ event, baseline, today }: { event: LifeEvent; baseline: Baseline; today: DateKey }) {
-  const rows = previewDays(event, baseline, today);
+const PHASE_FULL: Record<Phase, string> = {
+  normal: 'обычный день',
+  prep: 'подготовка',
+  taper: 'разгрузка',
+  event: 'день события',
+  recovery: 'восстановление',
+};
+
+const INTENSITY_FULL: Record<WorkoutIntensity, string> = {
+  rest: 'отдых',
+  light: 'лёгкая',
+  moderate: 'умеренная',
+  hard: 'любая',
+};
+
+/** «Как изменятся следующие 10 дней» — targets per day with one (possibly unsaved) event among the others. */
+export function PlanPreview({
+  event,
+  others,
+  baseline,
+  today,
+}: {
+  event: LifeEvent;
+  others: LifeEvent[];
+  baseline: Baseline;
+  today: DateKey;
+}) {
+  const rows = previewDays(event, others, baseline, today);
+  if (rows.every((r) => r.phase === 'normal')) {
+    return <p className="text-sm text-zinc-500">Ближайшие 10 дней идут в обычном режиме.</p>;
+  }
   return (
     <div className="-mx-1 overflow-x-auto">
       <table aria-label="План на 10 дней" className="w-full border-collapse text-xs">
@@ -50,7 +78,9 @@ export function PlanPreview({ event, baseline, today }: { event: LifeEvent; base
               Сон
             </th>
             <th scope="col" className="px-1 py-1 font-medium">
-              Трен.
+              <abbr title="Тренировка" className="no-underline">
+                Трен.
+              </abbr>
             </th>
             <th scope="col" className="px-1 py-1 font-medium">
               Фокус
@@ -63,12 +93,20 @@ export function PlanPreview({ event, baseline, today }: { event: LifeEvent; base
               <th scope="row" className="whitespace-nowrap px-1 py-1.5 text-left font-medium">
                 {format(fromDateKey(r.date), 'd MMM', { locale: ru })}
               </th>
-              <td className="px-1 py-1.5">{PHASE_SHORT[r.phase]}</td>
+              <td className="px-1 py-1.5">
+                <abbr title={PHASE_FULL[r.phase]} className="no-underline">
+                  {PHASE_SHORT[r.phase]}
+                </abbr>
+              </td>
               <td className="whitespace-nowrap px-1 py-1.5">{formatCapacity(r.taskCapacityMin)}</td>
               <td className="whitespace-nowrap px-1 py-1.5">
                 {r.sleepHours.toLocaleString('ru-RU', { maximumFractionDigits: 1 })} ч
               </td>
-              <td className="px-1 py-1.5">{INTENSITY_SHORT[r.maxWorkoutIntensity]}</td>
+              <td className="px-1 py-1.5">
+                <abbr title={INTENSITY_FULL[r.maxWorkoutIntensity]} className="no-underline">
+                  {INTENSITY_SHORT[r.maxWorkoutIntensity]}
+                </abbr>
+              </td>
               <td className="px-1 py-1.5">{r.focusPomodoros}</td>
             </tr>
           ))}
