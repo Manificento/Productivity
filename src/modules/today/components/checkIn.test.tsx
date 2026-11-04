@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { todayModule } from '../index';
 import { ONBOARDING_DONE_KEY } from '../data/onboarding';
+import { applyAsyncTimeout } from '../../../test/async';
+
+// Full screens with live queries: wait up to the shared timeout, not the default 1 s (#169).
+applyAsyncTimeout();
 
 // These tests open «Сегодня»: the first-run onboarding (#41) is already done.
 beforeEach(async () => {
