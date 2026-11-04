@@ -8,7 +8,7 @@ test.describe('health', () => {
     await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
     await page.goto('/#/health');
     await expect(page.getByLabel('День подъёма')).toHaveValue('2026-11-04');
-    await expect(page.getByRole('link', { name: 'Сон' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
     await expect(page.getByLabel('Отбой', { exact: true })).toHaveValue('23:30');
     await expect(page.getByLabel('Подъём', { exact: true })).toHaveValue('07:30');
     await expect(page.getByText('Записей пока нет')).toBeVisible();
@@ -28,19 +28,24 @@ test.describe('health', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 
-  test('tabs lead to food and workouts', async ({ page }) => {
+  test('Given модуль health When я открываю /health Then только сон; дневник еды — в /nutrition, журнал тренировок — в /training', async ({
+    page,
+  }) => {
     await page.goto('/#/health');
-    await page.getByRole('link', { name: 'Тренировки' }).click();
-    await expect(page).toHaveURL(/#\/health\/workouts$/);
+    await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Разделы' })).toHaveCount(0);
+    await page.goto('/#/training');
     await expect(page.getByText('Новая тренировка')).toBeVisible();
-    await page.getByRole('link', { name: 'Еда' }).click();
-    await expect(page).toHaveURL(/#\/health\/food$/);
+    await page.goto('/#/nutrition');
     await expect(page.getByRole('region', { name: 'Итого за день' })).toBeVisible();
+    // Old tab links lead to the new blocks.
+    await page.goto('/#/health/workouts');
+    await expect(page).toHaveURL(/#\/training$/);
   });
 
   test('workouts: log one with an exercise, repeat it, see the week totals', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-11-04T19:00:00'));
-    await page.goto('/#/health/workouts');
+    await page.goto('/#/training');
     await expect(page.getByText('За последние 60 дней тренировок нет — запишите первую')).toBeVisible();
 
     await page.getByLabel('Тип').selectOption('Силовая');
@@ -78,7 +83,7 @@ test.describe('health', () => {
     await expect(page.getByText('Прошлая ночь: 5 ч')).toBeVisible();
     await expect(page.getByText('(−2,5 ч)')).toBeVisible();
 
-    await page.getByRole('link', { name: 'Тренировки' }).click();
+    await page.goto('/#/training');
     await page.getByLabel('RPE (1–10)').selectOption('7');
     const warning = page.getByRole('note', { name: 'Предупреждение об интенсивности' });
     await expect(warning).toContainText('RPE до 4');
@@ -88,7 +93,7 @@ test.describe('health', () => {
   test('food diary: create a product, add 150 g to lunch, see totals, re-add from recent', async ({ page }) => {
     await page.route(OFF_ROUTE, (route) => route.fulfill({ json: { products: [] } }));
     await page.clock.setFixedTime(new Date('2026-11-04T13:00:00+05:00'));
-    await page.goto('/#/health/food');
+    await page.goto('/#/nutrition');
     await expect(page.getByText(/Кофеин — до/)).toBeVisible();
 
     await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
@@ -139,7 +144,7 @@ test.describe('health', () => {
         },
       }),
     );
-    await page.goto('/#/health/food');
+    await page.goto('/#/nutrition');
     await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Поиск продукта').fill('гречка');
@@ -167,7 +172,7 @@ test.describe('health', () => {
     await page.route(OFF_ROUTE, (route) =>
       route.fulfill({ status: 503, contentType: 'text/html', body: 'Too many requests' }),
     );
-    await page.goto('/#/health/food');
+    await page.goto('/#/nutrition');
     await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
     await page.getByRole('dialog').getByLabel('Поиск продукта').fill('гречка');
     await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Open Food Facts сейчас не отвечает');
@@ -186,7 +191,7 @@ test.describe('health', () => {
     await expect(page.getByText('Записей пока нет')).toBeVisible();
 
     // Food: add 100 g of a product, change it to 150 g, then delete it.
-    await page.goto('/#/health/food');
+    await page.goto('/#/nutrition');
     await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Поиск продукта').fill('Хлеб');
@@ -211,7 +216,7 @@ test.describe('health', () => {
     await expect(page.getByRole('region', { name: 'Итого за день' })).toContainText('0 ккал');
 
     // Workouts: log one, then delete it.
-    await page.goto('/#/health/workouts');
+    await page.goto('/#/training');
     await page.getByLabel('Тип').selectOption('Бег');
     await page.getByLabel('Длительность, мин').fill('30');
     await page.getByLabel('RPE (1–10)').selectOption('5');

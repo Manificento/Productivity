@@ -8,12 +8,17 @@ test.describe('smoke', () => {
     await expect(page.getByText(/Цели дня/)).toBeVisible();
   });
 
-  test('bottom navigation reaches every module', async ({ page }) => {
+  test('bottom navigation reaches the pinned blocks, and «Блоки» every other one', async ({ page }) => {
     await skipOnboarding(page);
-    for (const name of ['Задачи', 'Привычки', 'Время', 'Здоровье']) {
-      await page.getByRole('link', { name: new RegExp(name) }).click();
-      await expect(page.getByRole('heading', { name })).toBeVisible();
+    const nav = page.getByRole('navigation', { name: 'Модули' });
+    for (const name of ['Задачи', 'Привычки', 'Время']) {
+      await nav.getByRole('link', { name: new RegExp(name) }).click();
+      await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
     }
+    await nav.getByRole('link', { name: /Блоки/ }).click();
+    await page.getByRole('link', { name: /Сон/ }).click();
+    await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Блоки/ })).toHaveAttribute('aria-current', 'page');
   });
 
   test('settings offer data export', async ({ page }) => {

@@ -14,13 +14,14 @@ import {
 
 const INTENSITIES = Object.entries(INTENSITY_LABEL) as [WorkoutIntensity, string][];
 
-type NumberField = 'taskCapacityMin' | 'sleepHours' | 'focusPomodoros' | 'meditationMin';
+type NumberField = 'taskCapacityMin' | 'sleepHours' | 'focusPomodoros' | 'meditationMin' | 'mindTrainingMin';
 
 const NUMBER_FIELDS: { key: NumberField; label: string; hint: string; step?: string }[] = [
   { key: 'taskCapacityMin', label: 'Ёмкость дня, мин', hint: 'Сколько минут задач в обычный день, до 960' },
   { key: 'sleepHours', label: 'Сон, ч', hint: 'От 4 до 12 часов, шаг полчаса', step: '0.5' },
   { key: 'focusPomodoros', label: 'Фокус-сессии', hint: 'Помидоров в день' },
   { key: 'meditationMin', label: 'Медитация, мин', hint: 'От 0 до 120' },
+  { key: 'mindTrainingMin', label: 'Тренажёры ума, мин', hint: 'n-back, Струп, таблицы Шульте; от 0 до 60' },
 ];
 
 interface Feedback {
@@ -92,6 +93,11 @@ function BaselineForm({
           <Field label="Отбой" error={errors.bedtime}>
             {(id) => (
               <Input id={id} type="time" value={values.bedtime} onChange={(e) => set('bedtime', e.target.value)} />
+            )}
+          </Field>
+          <Field label="Подъём" error={errors.wakeTime}>
+            {(id) => (
+              <Input id={id} type="time" value={values.wakeTime} onChange={(e) => set('wakeTime', e.target.value)} />
             )}
           </Field>
           <Field label="Кофеин до" error={errors.caffeineCutoff}>

@@ -1,18 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
-import { newRecord } from '../../../core/ids';
 import type { DateKey, WorkoutLog } from '../../../core/types';
-import type { WorkoutInput } from '../logic/workouts';
+
+/**
+ * Workouts are WRITTEN only through `saveWorkout()` from `src/core/logging/workout.ts` (ADR-0007):
+ * the same path health's Health Connect / HealthKit import (M7) uses. This file only reads and deletes.
+ */
 
 /** How far back the history list goes. */
 export const HISTORY_DAYS = 60;
-
-export async function saveWorkout(input: WorkoutInput, now: number = Date.now()): Promise<WorkoutLog> {
-  const record: WorkoutLog = newRecord(input, now);
-  await db.workoutLogs.add(record);
-  return record;
-}
 
 export async function deleteWorkout(id: string): Promise<void> {
   await db.workoutLogs.delete(id);

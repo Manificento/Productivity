@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
@@ -143,6 +143,80 @@ describe('Сводка на «Сегодня»', () => {
     expect(await screen.findByText('⏱ Идёт таймер · Учёба, с 11:15')).toBeInTheDocument();
   });
 
+  it('Given идёт Pomodoro-сессия (не секундомер) When я открываю «Сегодня» Then карточка «Фокус» показывает идущую сессию и сколько осталось', async () => {
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 12 * 60_000, endsAt: now + 13 * 60_000 },
+    });
+    renderToday();
+    const card = await screen.findByRole('region', { name: 'Фокус' });
+    expect(card).toHaveTextContent('Идёт Pomodoro · фокус, осталось 13:00');
+    expect(card).not.toHaveTextContent('Идёт таймер');
+  });
+
+  it('Given идёт Pomodoro When проходит минута Then «осталось» уменьшается', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(new Date(2026, 10, 4, 12, 0));
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 12 * 60_000, endsAt: now + 13 * 60_000 },
+    });
+    renderToday();
+    expect(await screen.findByText(/осталось 13:00/)).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(screen.getByText(/осталось 12:00/)).toBeInTheDocument();
+  });
+
+  it('Given Pomodoro с истёкшим endsAt Then «Идёт Pomodoro» не показывается', async () => {
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 30 * 60_000, endsAt: now - 5 * 60_000 },
+    });
+    renderToday();
+    expect(await screen.findByText('Фокус-сессий сегодня ещё не было.')).toBeInTheDocument();
+    expect(screen.queryByText(/Идёт Pomodoro/)).not.toBeInTheDocument();
+  });
+
+  it('Given сессия закончилась, пока открыт «Сегодня» When она записана Then «Фокус: X из Y» увеличивается без перехода на «Время»', async () => {
+    await db.settings.put({ key: 'adaptation.baseline', value: { focusPomodoros: 6 } });
+    await db.timeCategories.add({ id: 'study', name: 'Учёба', archived: false, ...base });
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 24 * 60_000, endsAt: now + 60_000 },
+    });
+    renderToday();
+    const card = await screen.findByRole('region', { name: 'Фокус' });
+    expect(card).toHaveTextContent('Идёт Pomodoro');
+    expect(card).toHaveTextContent('Фокус: 0 из 6');
+
+    // «Время» (a background component) records the session and moves the mirror to the break phase.
+    await db.timeEntries.add({
+      id: 'p1',
+      categoryId: 'study',
+      start: now - 25 * 60_000,
+      end: now,
+      date: today,
+      source: 'pomodoro',
+      ...base,
+    });
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'shortBreak', startedAt: now, endsAt: now + 5 * 60_000 },
+    });
+    await waitFor(() => {
+      const c = screen.getByRole('region', { name: 'Фокус' });
+      expect(c).toHaveTextContent('Фокус: 1 из 6');
+      expect(c).toHaveTextContent('Идёт Pomodoro · короткий перерыв');
+    });
+  });
+
   it('Given сон прошлой ночи и тренировки сегодня When экран открыт Then факт против цели', async () => {
     const at = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
     await db.sleepLogs.add({ id: 's', date: today, bedtime: at(3, 23), wakeTime: at(4, 6), quality: 3, ...base });
@@ -151,6 +225,9 @@ describe('Сводка на «Сегодня»', () => {
     const card = await screen.findByRole('region', { name: 'Сон и тренировка' });
     expect(card).toHaveTextContent('7 ч · цель 7,5 ч');
     expect(card).toHaveTextContent('Бег, 30 мин, RPE 6 · предел: любая');
+    // Sleep and workouts are separate blocks (#107).
+    expect(screen.getByRole('link', { name: 'Сон →' })).toHaveAttribute('href', '/health');
+    expect(screen.getByRole('link', { name: 'Тренировки →' })).toHaveAttribute('href', '/training');
   });
 
   it('Given данных блока нет When экран открыт Then короткая подсказка со ссылкой на модуль вместо пустой карточки', async () => {
@@ -162,7 +239,8 @@ describe('Сводка на «Сегодня»', () => {
     expect(screen.getByText('Фокус-сессий сегодня ещё не было.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Запустить' })).toHaveAttribute('href', '/time');
     expect(screen.getByText('Сон и тренировки сегодня не записаны.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Записать' })).toHaveAttribute('href', '/health');
+    expect(screen.getByRole('link', { name: 'Записать сон' })).toHaveAttribute('href', '/health');
+    expect(screen.getByRole('link', { name: 'Записать тренировку' })).toHaveAttribute('href', '/training');
     for (const name of ['Задачи на сегодня', 'Привычки на сегодня', 'Фокус', 'Сон и тренировка']) {
       expect(screen.queryByRole('region', { name })).not.toBeInTheDocument();
     }

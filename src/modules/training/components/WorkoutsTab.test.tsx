@@ -2,8 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
-import { saveWorkout } from '../data/workouts';
+import { saveWorkout } from '../../../core/logging/workout';
 import { WorkoutsTab } from './WorkoutsTab';
+
+// Keep the real implementation, but record calls: the form must write through the shared core path.
+vi.mock('../../../core/logging/workout', { spy: true });
 
 const TODAY = '2026-11-04'; // Wednesday
 
@@ -21,11 +24,12 @@ const history = () => screen.findByRole('list', { name: 'История трен
 const stat = (label: string) => screen.getByText(label).nextElementSibling;
 
 beforeEach(async () => {
+  vi.mocked(saveWorkout).mockClear();
   await db.workoutLogs.clear();
 });
 
 describe('workouts tab', () => {
-  it('Given the workout form When I choose type, duration, RPE 1–10 and save Then the workout appears in the history', async () => {
+  it('Given the workout form When I choose type, duration, RPE 1–10 and save Then the workout is saved through saveWorkout() from core and appears in the history', async () => {
     renderTab();
     expect(await screen.findByText(/За последние 60 дней тренировок нет/)).toBeInTheDocument();
     type('Тип', 'Бег');
@@ -34,6 +38,8 @@ describe('workouts tab', () => {
     save();
 
     const item = within(await history()).getByRole('listitem', { name: /Бег, 4 ноября/ });
+    expect(saveWorkout).toHaveBeenCalledTimes(1);
+    expect(saveWorkout).toHaveBeenCalledWith({ date: TODAY, type: 'Бег', durationMin: 45, rpe: 6 });
     expect(item).toHaveTextContent('45 мин · RPE 6');
     expect(await screen.findByRole('status')).toHaveTextContent('Тренировка сохранена');
     expect(screen.getByLabelText('Длительность, мин')).toHaveValue('');

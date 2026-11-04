@@ -18,6 +18,8 @@ export interface BaselineFormValues {
   focusPomodoros: string;
   meditationMin: string;
   caffeineCutoff: string;
+  wakeTime: string;
+  mindTrainingMin: string;
 }
 
 export function baselineToForm(b: Baseline): BaselineFormValues {
@@ -29,6 +31,8 @@ export function baselineToForm(b: Baseline): BaselineFormValues {
     focusPomodoros: String(b.focusPomodoros),
     meditationMin: String(b.meditationMin),
     caffeineCutoff: b.caffeineCutoff,
+    wakeTime: b.wakeTime,
+    mindTrainingMin: String(b.mindTrainingMin),
   };
 }
 
@@ -57,6 +61,10 @@ const schema = z.object({
     z.number().int('От 0 до 120 минут').min(0, 'От 0 до 120 минут').max(120, 'От 0 до 120 минут'),
   ),
   caffeineCutoff: time,
+  wakeTime: time,
+  mindTrainingMin: num('От 0 до 60 минут').pipe(
+    z.number().int('От 0 до 60 минут').min(0, 'От 0 до 60 минут').max(60, 'От 0 до 60 минут'),
+  ),
 });
 
 export type BaselineFormErrors = Partial<Record<keyof BaselineFormValues, string>>;

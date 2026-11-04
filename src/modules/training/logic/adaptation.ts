@@ -15,14 +15,6 @@ export function maxRpe(intensity: WorkoutIntensity): number {
   return MAX_RPE[intensity];
 }
 
-/** '−1,5 ч' / '+0,5 ч' / '0 ч' — signed, one decimal, Russian comma, typographic minus. */
-export function formatHoursDiff(hours: number): string {
-  const rounded = Math.round(hours * 10) / 10;
-  if (rounded === 0) return '0 ч';
-  const abs = Math.abs(rounded).toString().replace('.', ',');
-  return `${rounded < 0 ? '−' : '+'}${abs} ч`;
-}
-
 export interface IntensityWarning {
   limit: number;
   label: string;

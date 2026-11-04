@@ -2,9 +2,12 @@
 
 Метка дорожки: `area:settings`. Задачи: `scripts/agent.sh next settings`.
 
-- **Пишет в таблицы:** `settings` (кроме ключей `adaptation.*` и `time.*`); импорт заменяет все таблицы через `core/backup`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
-- **Суть модуля:** настройки, резервная копия, тема, демо-данные.
-- **Демо-данные:** `logic/demo.ts` (чистая сборка 14 дней всех блоков + IELTS через 5 дней) → `data/demo.ts` загружает их через `importAll`, сохраняя строки `settings` пользователя.
+- **Пишет в таблицы:** `settings` (кроме ключей `adaptation.*`, `time.*` и `nutrition.*` — они принадлежат модулям today, time и nutrition); импорт заменяет все таблицы через `core/backup`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
+- **Суть модуля:** настройки, резервная копия, тема, демо-данные, установка PWA, импорт истории (#43).
+- **Импорт истории:** задачи и проекты из Todoist — ТОЛЬКО через `importTasks({ projects, tasks }, { source: 'todoist' })` из
+  `src/core/logging/tasks.ts` (парсер CSV — чистая функция в `logic/`, выдаёт `ImportTask[]` с `row` для сообщений об ошибках);
+  ночи из Sleep Cycle — через `saveSleep()`. В `tasks` и `projects` напрямую не писать.
+- **Демо-данные:** `logic/demo.ts` (чистая сборка 14 дней всех блоков + IELTS через 5 дней) → `data/demo.ts` загружает их через `importAll`, сохраняя строки `settings` пользователя. Таблицы каркасов SPEC 0.3 (`weightLogs`, `programs`, …) демо пока не заполняет — они очищаются; наполнять их — отдельные issues этой дорожки по мере роста блоков.
 - **Установка PWA:** `components/InstallPromptListener` — `Background` модуля (оболочка монтирует на всех страницах) ловит `beforeinstallprompt`; кнопка «Установить» — в `InstallCard`, только если браузер предложил установку.
 - **Цели дня:** `useDailyTargets(todayKey())` из `src/core/adaptation/useDailyTargets.ts` — только чтение.
 

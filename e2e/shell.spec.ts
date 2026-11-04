@@ -12,7 +12,7 @@ async function box(locator: Locator) {
 test('Given страница модуля передаёт actions в Page When экран 360 px Then кнопка действий не перекрывается ссылкой «Настройки», обе ≥ 44 px', async ({
   page,
 }) => {
-  for (const path of ['/#/tasks', '/#/habits', '/#/time', '/#/health']) {
+  for (const path of ['/#/tasks', '/#/habits', '/#/time', '/#/health', '/#/nutrition', '/#/training']) {
     await page.goto(path);
     const header = page.locator('section > header').first();
     await expect(header.getByRole('heading', { level: 1 })).toBeVisible();
@@ -44,7 +44,7 @@ test('Given страница модуля передаёт actions в Page When 
 });
 
 test('Given любой экран с Tabs When он отображается на 360 px Then высота каждой вкладки ≥ 44 px', async ({ page }) => {
-  for (const path of ['/#/tasks', '/#/time', '/#/health']) {
+  for (const path of ['/#/tasks', '/#/time']) {
     await page.goto(path);
     const tabs = page.getByRole('navigation', { name: 'Разделы' }).getByRole('link');
     await expect(tabs.first()).toBeVisible();
@@ -80,4 +80,27 @@ test('Given index.html When приложение открыто на телеф�
 }) => {
   await page.goto('/#/tasks');
   await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', /viewport-fit=cover/);
+});
+
+test('Given 12 модулей When я открываю приложение на 360 px Then нижняя панель: «Сегодня», до трёх закреплённых и «Блоки»; кнопки ≥ 44 px, подписи не обрезаны', async ({
+  page,
+}) => {
+  await page.goto('/#/tasks');
+  const nav = page.getByRole('navigation', { name: 'Модули' });
+  const links = nav.getByRole('link');
+  await expect(links).toHaveText([/Сегодня/, /Задачи/, /Привычки/, /Время/, /Блоки/]);
+  for (const link of await links.all()) {
+    const box = (await link.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    // Not truncated: the label fits its box.
+    expect(await link.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  }
+
+  await nav.getByRole('link', { name: /Блоки/ }).click();
+  await expect(page.getByRole('heading', { name: 'Все блоки', level: 1 })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Медитация/ })).toContainText('скоро');
+  await expect(page.getByRole('link', { name: /Питание/ })).not.toContainText('скоро');
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
 });

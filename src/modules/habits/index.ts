@@ -6,6 +6,8 @@ export const habitsModule: AppModule = {
   title: 'Привычки',
   path: '/habits/*',
   icon: '🔁',
+  group: 'plan',
+  summary: 'Привычки по расписанию, серии и календарь',
   navOrder: 3,
   Page: HabitsPage,
 };

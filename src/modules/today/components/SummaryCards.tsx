@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { DailyTargets } from '../../../core/adaptation/types';
 import type { DateKey } from '../../../core/types';
@@ -7,7 +7,16 @@ import { Card, Progress } from '../../../ui';
 import { useEvent } from '../data/events';
 import { useSummaryData, type SummaryData } from '../data/summary';
 import { INTENSITY_LABEL } from '../logic/baseline';
-import { eventBanner, focusSummary, habitsSummary, tasksSummary, workoutSummary } from '../logic/summary';
+import {
+  POMODORO_PHASE_LABEL,
+  eventBanner,
+  focusSummary,
+  habitsSummary,
+  parseRunningPomodoro,
+  pomodoroLeft,
+  tasksSummary,
+  workoutSummary,
+} from '../logic/summary';
 
 const LINK = 'inline-flex min-h-11 items-center text-sm font-medium text-indigo-600 dark:text-indigo-400';
 
@@ -102,14 +111,28 @@ function HabitsCard({ data, today }: { data: SummaryData; today: DateKey }) {
   );
 }
 
+/** Re-renders every second while `active`; callers read the clock during render, so there is no stale first frame. */
+function useTick(active: boolean): void {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+}
+
 function FocusCard({ data, targets, today }: { data: SummaryData; targets: DailyTargets; today: DateKey }) {
   const s = focusSummary(data.timeEntries, today);
-  if (targets.focusPomodoros === 0 && !s.running) {
+  const now = Date.now();
+  const pomodoro = parseRunningPomodoro(data.pomodoroRunning, now);
+  // Ticks only while a phase is really running: a stale key (endsAt passed) stops the timer.
+  useTick(pomodoro !== undefined);
+  if (targets.focusPomodoros === 0 && !s.running && !pomodoro) {
     return (
       <p className="mb-3 px-1 text-sm text-zinc-500">Сегодня без фокус-сессий — по плану отдых от глубокой работы.</p>
     );
   }
-  if (!s.running && s.sessions === 0) {
+  if (!s.running && !pomodoro && s.sessions === 0) {
     return (
       <Hint to="/time" linkText="Запустить">
         Фокус-сессий сегодня ещё не было.
@@ -123,6 +146,11 @@ function FocusCard({ data, targets, today }: { data: SummaryData; targets: Daily
           <p className="mb-2 text-sm font-medium">
             ⏱ Идёт таймер · {data.categories[s.running.categoryId] ?? 'без категории'}, с{' '}
             {format(s.running.start, 'HH:mm')}
+          </p>
+        )}
+        {pomodoro && (
+          <p className="mb-2 text-sm font-medium">
+            🍅 Идёт Pomodoro · {POMODORO_PHASE_LABEL[pomodoro.phase]}, осталось {pomodoroLeft(pomodoro.endsAt, now)}
           </p>
         )}
         <p className="mb-2 text-sm">
@@ -139,10 +167,19 @@ function FocusCard({ data, targets, today }: { data: SummaryData; targets: Daily
 
 function HealthCard({ data, targets }: { data: SummaryData; targets: DailyTargets }) {
   if (data.sleepHours === undefined && data.workouts.length === 0) {
+    // Sleep and workouts are separate blocks since #107: one link to each.
     return (
-      <Hint to="/health" linkText="Записать">
-        Сон и тренировки сегодня не записаны.
-      </Hint>
+      <div className="mb-3 rounded-2xl border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+        <p>Сон и тренировки сегодня не записаны.</p>
+        <div className="flex gap-4">
+          <Link to="/health" className={LINK}>
+            Записать сон
+          </Link>
+          <Link to="/training" className={LINK}>
+            Записать тренировку
+          </Link>
+        </div>
+      </div>
     );
   }
   const w = workoutSummary(data.workouts);
@@ -161,9 +198,14 @@ function HealthCard({ data, targets }: { data: SummaryData; targets: DailyTarget
             <span className="text-zinc-500"> · предел: {INTENSITY_LABEL[targets.maxWorkoutIntensity]}</span>
           </dd>
         </dl>
-        <Link to="/health" className={LINK}>
-          Журнал сна и тренировок →
-        </Link>
+        <div className="flex gap-4">
+          <Link to="/health" className={LINK}>
+            Сон →
+          </Link>
+          <Link to="/training" className={LINK}>
+            Тренировки →
+          </Link>
+        </div>
       </Card>
     </section>
   );

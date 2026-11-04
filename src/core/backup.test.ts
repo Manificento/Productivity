@@ -44,3 +44,21 @@ describe('backup', () => {
     await expect(importAll({ ...backup, version: 999 })).rejects.toThrow();
   });
 });
+
+describe('backup of the SPEC 0.3 tables (contract C3)', () => {
+  it('Given записи в weightLogs, notes и xpEvents When экспорт → очистка → импорт Then они восстановлены', async () => {
+    await db.weightLogs.add(newRecord({ date: '2026-11-04', kg: 72.4 }));
+    await db.notes.add(newRecord({ title: 'План', body: '# План', linkIds: ['2026-11-04'] }));
+    await db.xpEvents.add(newRecord({ date: '2026-11-04', source: 'quest' as const, questId: 'q1', amount: 10 }));
+
+    const backup = JSON.parse(JSON.stringify(await exportAll()));
+    expect(backup.tables.weightLogs).toHaveLength(1);
+    expect(Object.keys(backup.tables).sort()).toEqual([...TABLE_NAMES].sort());
+
+    await Promise.all(TABLE_NAMES.map((n) => db.table(n).clear()));
+    await importAll(backup);
+    expect((await db.weightLogs.toArray())[0].kg).toBe(72.4);
+    expect((await db.notes.toArray())[0].title).toBe('План');
+    expect((await db.xpEvents.toArray())[0].amount).toBe(10);
+  });
+});

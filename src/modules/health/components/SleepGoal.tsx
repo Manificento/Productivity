@@ -3,8 +3,7 @@ import { shiftDateKey } from '../../../core/dates';
 import { sleepHours } from '../../../core/logging/sleepTime';
 import type { DateKey, SleepLog } from '../../../core/types';
 import { Card } from '../../../ui';
-import { formatHoursDiff } from '../logic/adaptation';
-import { formatHours } from '../logic/sleep';
+import { formatHours, formatHoursDiff } from '../logic/sleep';
 
 /**
  * Tonight's sleep goal from the adaptation layer, and how last night compared with ITS goal.

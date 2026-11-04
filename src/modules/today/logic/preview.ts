@@ -5,7 +5,16 @@ import type { DateKey, LifeEvent } from '../../../core/types';
 
 export type PreviewRow = Pick<
   DailyTargets,
-  'date' | 'phase' | 'taskCapacityMin' | 'sleepHours' | 'maxWorkoutIntensity' | 'focusPomodoros'
+  | 'date'
+  | 'phase'
+  | 'taskCapacityMin'
+  | 'sleepHours'
+  | 'maxWorkoutIntensity'
+  | 'focusPomodoros'
+  | 'habitsMode'
+  | 'meditationKind'
+  | 'mindTrainingMin'
+  | 'deload'
 >;
 
 export const PREVIEW_DAYS = 10;
@@ -31,6 +40,10 @@ export function previewDays(
       sleepHours: t.sleepHours,
       maxWorkoutIntensity: t.maxWorkoutIntensity,
       focusPomodoros: t.focusPomodoros,
+      habitsMode: t.habitsMode,
+      meditationKind: t.meditationKind,
+      mindTrainingMin: t.mindTrainingMin,
+      deload: t.deload,
     };
   });
 }

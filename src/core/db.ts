@@ -7,13 +7,20 @@ import type {
   HabitLog,
   LifeEvent,
   MealLog,
+  MeditationSession,
+  MindSession,
+  Note,
+  PlannedSession,
+  Program,
   Project,
   Setting,
   SleepLog,
   Task,
   TimeCategory,
   TimeEntry,
+  WeightLog,
   WorkoutLog,
+  XpEvent,
 } from './types';
 
 /**
@@ -39,6 +46,13 @@ export class LifeDB extends Dexie {
   cognitiveTests!: EntityTable<CognitiveTest, 'id'>;
   lifeEvents!: EntityTable<LifeEvent, 'id'>;
   settings!: EntityTable<Setting, 'key'>;
+  weightLogs!: EntityTable<WeightLog, 'id'>;
+  programs!: EntityTable<Program, 'id'>;
+  plannedSessions!: EntityTable<PlannedSession, 'id'>;
+  meditationSessions!: EntityTable<MeditationSession, 'id'>;
+  mindSessions!: EntityTable<MindSession, 'id'>;
+  notes!: EntityTable<Note, 'id'>;
+  xpEvents!: EntityTable<XpEvent, 'id'>;
 
   constructor(name = 'lifeos') {
     super(name);
@@ -61,6 +75,21 @@ export class LifeDB extends Dexie {
     this.version(2).stores({
       cognitiveTests: 'id, date, kind, [kind+date]',
     });
+    // v3 (contract C3, SPEC 0.3 §5.6): tables of the nutrition, training, meditation, cognition
+    // (mind trainers), notes and progress blocks.
+    this.version(3).stores({
+      weightLogs: 'id, &date',
+      programs: 'id',
+      plannedSessions: 'id, &[programId+date], date',
+      meditationSessions: 'id, date',
+      mindSessions: 'id, date, kind',
+      notes: 'id, updatedAt, *linkIds',
+      xpEvents: 'id, date, source',
+    });
+    // v4 (contract #150): re-import of tasks finds them by source + external id.
+    this.version(4).stores({
+      tasks: 'id, projectId, dueDate, priority, completedAt, *tags, [source+externalId]',
+    });
   }
 }
 
@@ -82,6 +111,13 @@ export const TABLE_NAMES = [
   'cognitiveTests',
   'lifeEvents',
   'settings',
+  'weightLogs',
+  'programs',
+  'plannedSessions',
+  'meditationSessions',
+  'mindSessions',
+  'notes',
+  'xpEvents',
 ] as const;
 
 export type TableName = (typeof TABLE_NAMES)[number];

@@ -59,7 +59,14 @@ export interface Task extends BaseRecord {
   tags: string[];
   recurrence?: Recurrence;
   completedAt?: Millis;
+  /** Where an imported task came from; absent for tasks created in the app. */
+  source?: TaskSource;
+  /** Id in the source system; with `source` it keys the upsert on re-import (`[source+externalId]`). */
+  externalId?: string;
 }
+
+/** Import sources that `core/logging/importTasks` accepts. */
+export type TaskSource = 'todoist' | 'other';
 
 // ---------- habits ----------
 
@@ -76,6 +83,8 @@ export interface Habit extends BaseRecord {
   schedule: HabitSchedule;
   archived: boolean;
   color?: string;
+  /** Kept on days with `DailyTargets.habitsMode = 'essential'` (event day). Default false. */
+  essential?: boolean;
 }
 
 export interface HabitLog extends BaseRecord {
@@ -200,6 +209,119 @@ export interface LifeEvent extends BaseRecord {
   projectId?: Id;
   /** Days of preparation before the event. Default 7. */
   prepDays: number;
+}
+
+// ---------- nutrition (SPEC 0.3, 5.6) ----------
+
+/** One body-weight measurement per day (`date` is unique). Owner: nutrition. */
+export interface WeightLog extends BaseRecord {
+  date: DateKey;
+  /** Body weight, kilograms. */
+  kg: number;
+}
+
+// ---------- training (SPEC 0.3, 5.6) ----------
+
+/** One exercise of a program day or of a planned session. */
+export interface ProgramExercise {
+  name: string;
+  /** Number of sets. */
+  sets: number;
+  /** Repetitions per set; omitted for time- or distance-based work. */
+  reps?: number;
+  weightKg?: number;
+  /** Target rate of perceived exertion, 1–10. */
+  rpeTarget?: number;
+}
+
+/** A day of a program: which weekday and what to do. */
+export interface ProgramDay {
+  /** 0 = Sunday … 6 = Saturday. */
+  weekday: number;
+  exercises: ProgramExercise[];
+}
+
+/** A training program / template the user follows. Owner: training. */
+export interface Program extends BaseRecord {
+  name: string;
+  archived: boolean;
+  days: ProgramDay[];
+  /** Plan length in weeks. Default 4. */
+  weeks: number;
+}
+
+export type PlannedSessionStatus = 'planned' | 'done' | 'skipped';
+
+/**
+ * A program day scheduled on a calendar day (`[programId+date]` is unique). `exercises` is a copy
+ * for that day, so later edits of the program do not rewrite history. Owner: training.
+ */
+export interface PlannedSession extends BaseRecord {
+  programId: Id;
+  date: DateKey;
+  exercises: ProgramExercise[];
+  status: PlannedSessionStatus;
+  /** The `workoutLogs` record written (through `saveWorkout`) when the session was done. */
+  workoutLogId?: Id;
+}
+
+// ---------- meditation (SPEC 0.3, 5.6) ----------
+
+export type MeditationKind = 'breathing' | 'focus' | 'sleep' | 'body';
+
+/** One meditation / breathing session. Owner: meditation. */
+export interface MeditationSession extends BaseRecord {
+  date: DateKey;
+  startedAt: Millis;
+  durationMin: number;
+  kind: MeditationKind;
+  /** Breathing pattern for kind = 'breathing', e.g. '4-7-8' or 'box'. */
+  pattern?: string;
+  /** False when the session was stopped early. */
+  completed: boolean;
+}
+
+// ---------- cognition: mind trainers (SPEC 0.3, 5.6) ----------
+
+export type MindSessionKind = 'nback' | 'stroop' | 'schulte';
+
+/** One run of a mind trainer (n-back, Stroop, Schulte table). Owner: cognition. */
+export interface MindSession extends BaseRecord {
+  date: DateKey;
+  kind: MindSessionKind;
+  durationMs: number;
+  /** Share of correct answers, 0–100. */
+  accuracyPct: number;
+  /** Difficulty level; for n-back — the n. */
+  level?: number;
+  /** Mean reaction time of correct answers, ms. */
+  meanRtMs?: number;
+  errors?: number;
+}
+
+// ---------- notes (SPEC 0.3, 5.6) ----------
+
+/** A markdown page linked to projects, events or days. Owner: notes. */
+export interface Note extends BaseRecord {
+  title: string;
+  /** Markdown. */
+  body: string;
+  /** Multi-entry index: ids of projects or life events, or `DateKey`s of days this note is about. */
+  linkIds: string[];
+  pinned?: boolean;
+}
+
+// ---------- progress (SPEC 0.3, 5.6) ----------
+
+export type XpSource = 'quest';
+
+/** Experience points earned on a day. Owner: progress. */
+export interface XpEvent extends BaseRecord {
+  date: DateKey;
+  source: XpSource;
+  /** The daily quest that granted the points. */
+  questId: Id;
+  amount: number;
 }
 
 // ---------- settings ----------

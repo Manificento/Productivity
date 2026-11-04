@@ -68,7 +68,7 @@ describe('Pomodoro: норма фокус-сессий из адаптации',
     await focusSession('11:00');
     await focusSession('12:00', 5); // stopped early — not a full session
     // a longer focus setting does not rewrite sessions already done
-    localStorage.setItem('lifeos.time.pomodoro.settings', JSON.stringify({ workMin: 60 }));
+    await db.settings.put({ key: 'time.pomodoro', value: { workMin: 60 } });
     render(<Pomodoro />);
 
     expect(await screen.findByText('3 из 7')).toBeInTheDocument();
