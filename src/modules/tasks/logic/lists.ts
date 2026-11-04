@@ -1,3 +1,4 @@
+import { toDateKey } from '../../../core/dates';
 import type { DateKey, Id, Task } from '../../../core/types';
 
 /**
@@ -73,4 +74,17 @@ export function projectList(tasks: Task[], projectId: Id, today: DateKey): Task[
     tasks.filter((t) => isActive(t) && t.projectId === projectId),
     today,
   );
+}
+
+/** Archive: completed tasks grouped by the local day they were completed, newest day and task first. */
+export function completedGroups(tasks: Task[]): DayGroup[] {
+  const byDay = new Map<DateKey, Task[]>();
+  const done = tasks
+    .filter((t) => t.completedAt !== undefined)
+    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  for (const t of done) {
+    const day = toDateKey(t.completedAt ?? 0);
+    byDay.set(day, [...(byDay.get(day) ?? []), t]);
+  }
+  return [...byDay.entries()].map(([date, list]) => ({ date, tasks: list }));
 }

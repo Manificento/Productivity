@@ -1,14 +1,14 @@
-import { todayKey } from '../../../core/dates';
 import { useTasksData } from '../data/useTasksData';
 import { inboxList } from '../logic/lists';
 import { AddTaskForm } from './AddTaskForm';
 import { ListBody } from './ListBody';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
+import { useToday } from './useToday';
 
 export function InboxView() {
   const data = useTasksData();
-  const today = todayKey();
+  const today = useToday();
   const { actions, ui } = useTaskActions();
   return (
     <>

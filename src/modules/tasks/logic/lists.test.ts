@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../../../core/types';
-import { compareTasks, inboxList, isOverdue, projectList, todayList, upcomingGroups } from './lists';
+import { compareTasks, completedGroups, inboxList, isOverdue, projectList, todayList, upcomingGroups } from './lists';
 
 const TODAY = '2026-11-04';
 
@@ -81,6 +81,20 @@ describe('lists', () => {
     expect(ids(projectList([...ALL, ...study, task('other', { projectId: 'work' })], 'study', TODAY))).toEqual([
       's1',
       's2',
+    ]);
+  });
+
+  it('Given задачи, выполненные вчера и неделю назад When я открываю архив выполненных Then вижу их, сгруппированными по дню выполнения, новые сверху', () => {
+    const at = (d: number, h: number) => new Date(2026, 10, d, h, 0).getTime();
+    const list = [
+      task('week-ago', { completedAt: new Date(2026, 9, 28, 9, 0).getTime() }),
+      task('yesterday-morning', { completedAt: at(3, 9) }),
+      task('yesterday-evening', { completedAt: at(3, 21) }),
+      task('open'),
+    ];
+    expect(completedGroups(list).map((g) => ({ date: g.date, ids: ids(g.tasks) }))).toEqual([
+      { date: '2026-11-03', ids: ['yesterday-evening', 'yesterday-morning'] },
+      { date: '2026-10-28', ids: ['week-ago'] },
     ]);
   });
 });

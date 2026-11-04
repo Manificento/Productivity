@@ -140,6 +140,11 @@ export async function deleteTask(id: Id): Promise<void> {
   await db.tasks.delete(id);
 }
 
+/** Live list of completed tasks, read through the completedAt index; undefined while loading. */
+export function useCompletedTasks(): Task[] | undefined {
+  return useLiveQuery(() => db.tasks.where('completedAt').above(0).toArray(), []);
+}
+
 /** Live list of all tasks; undefined while loading. */
 export function useAllTasks(): Task[] | undefined {
   return useLiveQuery(() => db.tasks.toArray(), []);
