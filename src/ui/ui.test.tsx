@@ -38,7 +38,7 @@ describe('UI kit', () => {
     }
   });
 
-  it('Segmented options are at least 44 px tall (min-h-11)', () => {
+  it('Given Segmented When он отображается Then высота каждого варианта ≥ 44 px (min-h-11)', () => {
     render(
       <Segmented
         label="Приоритет"
