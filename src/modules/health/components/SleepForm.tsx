@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { shiftDateKey } from '../../../core/dates';
 import { sleepHours, sleepWindow } from '../../../core/logging/sleepTime';
-import type { DateKey } from '../../../core/types';
+import type { DateKey, SleepLog } from '../../../core/types';
 import { Button, Card, Field, Input, Rating } from '../../../ui';
 import { logSleep } from '../data/sleep';
+import { DeleteSleep } from './DeleteSleep';
 import { CHART_DAYS, DEFAULT_BEDTIME, DEFAULT_QUALITY, DEFAULT_WAKE, formatHours } from '../logic/sleep';
 
 function previewHours(wakeDay: DateKey, bedtime: string, wake: string): number | undefined {
@@ -15,7 +16,7 @@ function previewHours(wakeDay: DateKey, bedtime: string, wake: string): number |
 }
 
 /** Log last night: defaults to bed yesterday 23:30, up today 07:30. */
-export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (day: DateKey) => boolean }) {
+export function SleepForm({ today, recordFor }: { today: DateKey; recordFor: (day: DateKey) => SleepLog | undefined }) {
   const [wakeDay, setWakeDay] = useState(today);
   const [bedtime, setBedtime] = useState(DEFAULT_BEDTIME);
   const [wake, setWake] = useState(DEFAULT_WAKE);
@@ -31,6 +32,7 @@ export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (da
   };
 
   const hours = previewHours(wakeDay, bedtime, wake);
+  const record = recordFor(wakeDay);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -80,7 +82,7 @@ export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (da
         />
         <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
           Длительность: <strong>{hours === undefined ? '—' : formatHours(hours)}</strong>
-          {hasRecord(wakeDay) && ' · запись за этот день уже есть, сохранение её обновит'}
+          {record && ' · запись за этот день уже есть, сохранение её обновит'}
         </p>
         {error && (
           <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
@@ -96,6 +98,7 @@ export function SleepForm({ today, hasRecord }: { today: DateKey; hasRecord: (da
           Сохранить сон
         </Button>
       </form>
+      {record && <DeleteSleep log={record} onDeleted={() => setSaved(undefined)} />}
     </Card>
   );
 }
