@@ -41,3 +41,15 @@ test('Given страница модуля передаёт actions в Page When 
     expect(hit).toBe('Действие');
   }
 });
+
+test('Given любой экран с Tabs When он отображается на 360 px Then высота каждой вкладки ≥ 44 px', async ({ page }) => {
+  for (const path of ['/#/tasks', '/#/time', '/#/health']) {
+    await page.goto(path);
+    const tabs = page.getByRole('navigation', { name: 'Разделы' }).getByRole('link');
+    await expect(tabs.first()).toBeVisible();
+    for (const tab of await tabs.all()) {
+      const b = await tab.boundingBox();
+      expect(b?.height, `${path}: ${await tab.textContent()}`).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
