@@ -80,6 +80,13 @@ describe('nextDueDate', () => {
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 0 }, '2027-01-31')).toBe('2027-02-28');
     expect(nextDueDate({ kind: 'monthly', dayOfMonth: 40 }, '2027-02-28')).toBe('2027-03-28');
   });
+
+  it('Given задача «каждые 3 дня» When я её выполняю Then следующая — через 3 дня от срока', () => {
+    expect(nextDueDate({ kind: 'everyNDays', interval: 3 }, '2026-11-29')).toBe('2026-12-02');
+    expect(nextDueDate({ kind: 'everyNDays' }, '2026-11-04')).toBe('2026-11-05');
+    expect(nextDueDate({ kind: 'everyNDays', interval: Number.NaN }, '2026-11-04')).toBe('2026-11-05');
+    expect(nextDueDate({ kind: 'everyNDays', interval: 2.7 }, '2026-11-04')).toBe('2026-11-06');
+  });
 });
 
 describe('nextOccurrence', () => {
