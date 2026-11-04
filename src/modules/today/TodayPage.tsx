@@ -4,6 +4,7 @@ import type { DailyTargets, Phase } from '../../core/adaptation/types';
 import { todayKey } from '../../core/dates';
 import type { WorkoutIntensity } from '../../core/types';
 import { Card, Page } from '../../ui';
+import { CheckInCard } from './components/CheckInCard';
 import { EventDetail } from './components/EventDetail';
 import { EventsList } from './components/EventsList';
 
@@ -59,9 +60,11 @@ export function TargetsCard({ t }: { t: DailyTargets }) {
 }
 
 function TodayHome() {
-  const targets = useDailyTargets(todayKey());
+  const today = todayKey();
+  const targets = useDailyTargets(today);
   return (
     <Page title="Сегодня">
+      <CheckInCard date={today} />
       {targets ? <TargetsCard t={targets} /> : <Card>Загрузка…</Card>}
       <Link
         to="/today/events"
