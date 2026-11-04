@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { computeDailyTargets } from '../../../core/adaptation/engine';
+import { DEFAULT_BASELINE } from '../../../core/adaptation/rules';
+import type { LifeEvent } from '../../../core/types';
 import { formatHoursDiff, intensityWarning, maxRpe } from './adaptation';
 
 describe('formatHoursDiff', () => {
@@ -22,38 +25,34 @@ describe('maxRpe', () => {
 });
 
 describe('intensityWarning', () => {
-  const reasons = [
-    'Подготовка к «Экзамен»: +3 фокус-сессии',
-    'Сон прошлой ночью 5.0 ч: нагрузка −20%, тренировка не выше лёгкой',
-  ];
+  // Real engine output, so a change of the core wording or caps shows up here.
+  const shortSleep = computeDailyTargets('2026-11-04', { baseline: DEFAULT_BASELINE, events: [], lastSleepHours: 5 });
 
   it('Given maxWorkoutIntensity = light When I choose RPE 7 Then a soft warning carries the reason from `reasons`', () => {
-    expect(intensityWarning(7, { maxWorkoutIntensity: 'light', reasons })).toEqual({
-      limit: 4,
-      label: 'лёгкая',
-      reasons: ['Сон прошлой ночью 5.0 ч: нагрузка −20%, тренировка не выше лёгкой'],
-    });
+    expect(shortSleep.maxWorkoutIntensity).toBe('light');
+    expect(intensityWarning(7, shortSleep)).toEqual({ limit: 4, label: 'лёгкая', reasons: shortSleep.reasons });
+    expect(shortSleep.reasons.join(' ')).toMatch(/тренировка не выше лёгкой/);
   });
 
   it('no warning at or below the ceiling, or before an RPE is chosen', () => {
-    expect(intensityWarning(4, { maxWorkoutIntensity: 'light', reasons })).toBeUndefined();
-    expect(intensityWarning(undefined, { maxWorkoutIntensity: 'light', reasons })).toBeUndefined();
-    expect(intensityWarning(10, { maxWorkoutIntensity: 'hard', reasons })).toBeUndefined();
+    expect(intensityWarning(4, shortSleep)).toBeUndefined();
+    expect(intensityWarning(undefined, shortSleep)).toBeUndefined();
+    expect(intensityWarning(10, { maxWorkoutIntensity: 'hard', reasons: [] })).toBeUndefined();
   });
 
-  it('rest: any workout gets a warning', () => {
-    expect(
-      intensityWarning(1, { maxWorkoutIntensity: 'rest', reasons: ['Сегодня «Экзамен»: без тренировки'] }),
-    ).toEqual({
-      limit: 0,
-      label: 'отдых',
-      reasons: ['Сегодня «Экзамен»: без тренировки'],
-    });
-  });
-
-  it('when no reason mentions workouts, all reasons of the day are shown', () => {
-    const taper = ['Завтра «Экзамен»: разгрузочный день', 'Отбой на 30 минут раньше'];
-    expect(intensityWarning(6, { maxWorkoutIntensity: 'light', reasons: taper })?.reasons).toEqual(taper);
+  it('rest (event day): any workout gets a warning with the day’s reasons', () => {
+    const exam: LifeEvent = {
+      id: 'e',
+      createdAt: 0,
+      updatedAt: 0,
+      title: 'Экзамен',
+      type: 'exam',
+      date: '2026-11-04',
+      importance: 3,
+      prepDays: 7,
+    };
+    const eventDay = computeDailyTargets('2026-11-04', { baseline: DEFAULT_BASELINE, events: [exam] });
+    expect(intensityWarning(1, eventDay)).toEqual({ limit: 0, label: 'отдых', reasons: eventDay.reasons });
   });
 
   it('a lowered baseline without adjustments says so', () => {

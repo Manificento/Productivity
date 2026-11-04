@@ -30,8 +30,8 @@ export interface IntensityWarning {
 }
 
 /**
- * Soft warning when the chosen RPE is above what today's targets allow.
- * Explains it with the day's reasons that mention workouts (or all of them, if none does).
+ * Soft warning when the chosen RPE is above what today's targets allow, explained with the
+ * day's reasons (all of them: the engine's wording is not a contract, so we don't filter it).
  */
 export function intensityWarning(
   rpe: number | undefined,
@@ -39,12 +39,6 @@ export function intensityWarning(
 ): IntensityWarning | undefined {
   const limit = maxRpe(targets.maxWorkoutIntensity);
   if (rpe === undefined || rpe <= limit) return undefined;
-  const aboutWorkouts = targets.reasons.filter((r) => /тренировк/i.test(r));
-  const reasons =
-    aboutWorkouts.length > 0
-      ? aboutWorkouts
-      : targets.reasons.length > 0
-        ? targets.reasons
-        : ['Так задано в вашем обычном режиме'];
+  const reasons = targets.reasons.length > 0 ? targets.reasons : ['Так задано в вашем обычном режиме'];
   return { limit, label: INTENSITY_LABEL[targets.maxWorkoutIntensity], reasons };
 }
