@@ -28,7 +28,7 @@ describe('PVT rule', () => {
     );
   });
 
-  it('just under 20 % slower, or no test today, changes nothing', () => {
+  it('на 20 % медленнее не дотягивает или теста сегодня не было — цели не меняются', () => {
     const base = computeDailyTargets('2026-11-04', ctx());
     const slightly = computeDailyTargets(
       '2026-11-04',
@@ -38,6 +38,18 @@ describe('PVT rule', () => {
     expect(slightly.taskCapacityMin).toBe(base.taskCapacityMin);
     const noTestToday = computeDailyTargets('2026-11-04', ctx({ recentPvtMediansMs: [400, ...history] }));
     expect(noTestToday.reasons.some((r) => r.startsWith('Внимание ниже нормы'))).toBe(false);
+    expect(noTestToday.caffeineCutoff).toBe(base.caffeineCutoff);
+    expect(noTestToday.taskCapacityMin).toBe(base.taskCapacityMin);
+  });
+
+  it('ранняя отсечка не уходит за полночь, а при нулевой ёмкости причина не обещает −10 %', () => {
+    const early = { ...DEFAULT_BASELINE, caffeineCutoff: '01:00', taskCapacityMin: 0 };
+    const t = computeDailyTargets(
+      '2026-11-04',
+      ctx({ baseline: early, recentPvtMediansMs: [360, ...history], todayPvtMedianMs: 360 }),
+    );
+    expect(t.caffeineCutoff).toBe('00:00');
+    expect(t.reasons).toContain('Внимание ниже нормы: тест 360 мс против обычных 300 мс — кофеин до 00:00');
   });
 
   it('Given < 7 результатов When считаются цели Then правило не срабатывает', () => {

@@ -53,10 +53,11 @@ export async function loadAdaptationContext(date: DateKey): Promise<AdaptationCo
   const baseline: Baseline = { ...DEFAULT_BASELINE, ...((baselineSetting?.value as Partial<Baseline>) ?? {}) };
   const parsedExpenditure = expenditureSchema.safeParse(expenditure?.value);
   const parsedGoal = goalSchema.safeParse(goal?.value);
-  const pvtMedians = pvtRuns
-    .sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt)
-    .map((run) => run.medianRtMs)
-    .filter((m) => Number.isFinite(m));
+  // Valid runs only (an imported backup may carry 0 or NaN), most recent first.
+  const validPvt = pvtRuns
+    .filter((run) => Number.isFinite(run.medianRtMs) && run.medianRtMs > 0)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.startedAt - a.startedAt);
+  const pvtMedians = validPvt.map((run) => run.medianRtMs);
   return {
     baseline,
     events,
@@ -69,7 +70,8 @@ export async function loadAdaptationContext(date: DateKey): Promise<AdaptationCo
     // The latest weight, however old: the nutrition module decides when to ask for a new one.
     weightKg: weight && Number.isFinite(weight.kg) && weight.kg > 0 ? weight.kg : undefined,
     recentPvtMediansMs: pvtMedians,
-    todayPvtMedianMs: pvtRuns.find((run) => run.date === date && Number.isFinite(run.medianRtMs))?.medianRtMs,
+    // The latest run of the day: a retake replaces the earlier result.
+    todayPvtMedianMs: validPvt.find((run) => run.date === date)?.medianRtMs,
     // `durationMin` is the time actually spent, so sessions stopped early count too.
     meditationMinYesterday: yesterdayMeditation.reduce((sum, m) => sum + m.durationMin, 0),
   };

@@ -262,15 +262,18 @@ export const CONDITION_RULES: ConditionRule[] = [
       );
     },
     apply: (t, ctx) => {
-      const cutoff = shiftTime(t.caffeineCutoff, -120);
+      // Two hours earlier, but never past midnight backwards (01:00 must not become 23:00).
+      const cutoff = t.caffeineCutoff < '02:00' ? '00:00' : shiftTime(t.caffeineCutoff, -120);
+      const capacity = roundCapacity(t.taskCapacityMin * 0.9);
       const norm = Math.round(pvtNorm(ctx.recentPvtMediansMs ?? [])!);
+      const lowered = capacity < t.taskCapacityMin;
       return {
         ...t,
         caffeineCutoff: cutoff,
-        taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.9),
+        taskCapacityMin: capacity,
         reasons: [
           ...t.reasons,
-          `Внимание ниже нормы: тест ${Math.round(ctx.todayPvtMedianMs!)} мс против обычных ${norm} мс — кофеин до ${cutoff}, нагрузка −10%`,
+          `Внимание ниже нормы: тест ${Math.round(ctx.todayPvtMedianMs!)} мс против обычных ${norm} мс — кофеин до ${cutoff}${lowered ? ', нагрузка −10%' : ''}`,
         ],
       };
     },
