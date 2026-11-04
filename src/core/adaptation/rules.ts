@@ -1,5 +1,6 @@
-import type { WorkoutIntensity } from '../types';
-import type { Baseline, ConditionRule, DailyTargets, PhaseRule } from './types';
+import { daysBetween } from '../dates';
+import type { DateKey, WorkoutIntensity } from '../types';
+import type { AdaptationContext, Baseline, ConditionRule, DailyTargets, PhaseRule } from './types';
 
 export const DEFAULT_BASELINE: Baseline = {
   taskCapacityMin: 360,
@@ -105,6 +106,20 @@ export const PHASE_RULES: PhaseRule[] = [
   },
 ];
 
+const SLEEP_DEBT_NIGHTS = 3;
+const SLEEP_DEBT_HOURS = 6.5;
+const HARD_RPE = 8;
+
+/** Events from today up to 3 days ahead, soonest first (for the overload rule). */
+function upcomingWithin3Days(ctx: AdaptationContext, date: DateKey) {
+  return ctx.events
+    .filter((e) => {
+      const d = daysBetween(date, e.date);
+      return d >= 0 && d <= 3;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export const CONDITION_RULES: ConditionRule[] = [
   {
     id: 'short-sleep',
@@ -126,6 +141,41 @@ export const CONDITION_RULES: ConditionRule[] = [
       ...t,
       taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.8),
       reasons: [...t.reasons, 'Низкая энергия в чек-ине: нагрузка −20%'],
+    }),
+  },
+  {
+    id: 'overload',
+    when: (ctx, date) => upcomingWithin3Days(ctx, date).length >= 2,
+    apply: (t, ctx) => ({
+      ...t,
+      taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.9),
+      reasons: [
+        ...t.reasons,
+        `Два события за 3 дня (${upcomingWithin3Days(ctx, t.date)
+          .map((e) => `«${e.title}»`)
+          .join(', ')}): ёмкость −10%`,
+      ],
+    }),
+  },
+  {
+    id: 'sleep-debt',
+    when: (ctx) => {
+      const nights = ctx.recentSleepHours?.slice(0, SLEEP_DEBT_NIGHTS) ?? [];
+      return nights.length === SLEEP_DEBT_NIGHTS && nights.every((h) => h !== undefined && h < SLEEP_DEBT_HOURS);
+    },
+    apply: (t) => ({
+      ...t,
+      bedtime: shiftTime(t.bedtime, -30),
+      reasons: [...t.reasons, 'Три ночи подряд меньше 6,5 ч сна: отбой на 30 минут раньше'],
+    }),
+  },
+  {
+    id: 'hard-workout-yesterday',
+    when: (ctx) => ctx.yesterdayMaxRpe !== undefined && ctx.yesterdayMaxRpe >= HARD_RPE,
+    apply: (t, ctx) => ({
+      ...t,
+      maxWorkoutIntensity: capIntensity(t.maxWorkoutIntensity, 'moderate'),
+      reasons: [...t.reasons, `Вчера тяжёлая тренировка (RPE ${ctx.yesterdayMaxRpe}): сегодня не выше умеренной`],
     }),
   },
 ];
