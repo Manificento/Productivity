@@ -24,6 +24,9 @@ components/     компоненты модуля (+ *.test.tsx)
   так сложилось до контракта #58. Теперь модуль может писать ключи `settings` `time.*`: перенос длительностей
   в `time.pomodoro` (чтобы они попадали в резервную копию) — issue #101. Состояние таймера — данные устройства,
   оно остаётся в `localStorage`.
+- **`settings` `time.pomodoro.running`** = `{ phase: 'work'|'shortBreak'|'longBreak', startedAt, endsAt }` (мс, epoch) —
+  зеркало идущей фазы для других экранов (#68). Пишет `pomodoroRuntime.commit` (старт, смена фазы, стоп) и обработчик
+  `storage` (другая вкладка); когда таймер не идёт — ключ удалён. Читать можно всем, писать — только `time`.
 - **Таймер Pomodoro — один на страницу** (`components/pomodoroRuntime.ts`): его держит `PomodoroBackground`
   (`Background` в манифесте, оболочка монтирует на всех страницах, #59), а `usePomodoro` на экранах «Времени»
   читает тот же таймер через `useSyncExternalStore`. Поэтому сессия записывается и сигналит и в других модулях.

@@ -104,6 +104,9 @@ flowchart LR
 | cognition | `cognitiveTests`                                                                      |
 | settings  | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                  |
 
+Ключ `time.pomodoro.running` = `{ phase, startedAt, endsAt }` (мс) — идущая фаза Pomodoro; ключа нет, когда таймер
+не идёт. Пишет `time`, читают все (например, «Сегодня»).
+
 Таблица `settings` делится по префиксу ключа: модуль пишет только свои ключи `<модуль>.*` (`adaptation.*` — today,
 `time.*` — time, `nutrition.*` — nutrition после SPEC 0.3), остальные ключи — модуль `settings`.
 

@@ -4,6 +4,7 @@ import {
   POMODORO_STATE_KEY,
   savePomodoroSettings,
   savePomodoroState,
+  syncRunningSetting,
 } from '../data/pomodoroStore';
 import { addFocusRecords, stopRunningTimers } from '../data/timeStore';
 import {
@@ -62,6 +63,7 @@ function emit(patch: Partial<PomodoroSnapshot>): void {
 
 function commit(next: PomodoroState): void {
   savePomodoroState(next);
+  void syncRunningSetting(next);
   emit({ state: next });
 }
 
@@ -114,7 +116,10 @@ function run(): () => void {
   };
   // Another open tab changed the timer: follow it instead of keeping a stale copy.
   const onStorage = (e: StorageEvent) => {
-    if (e.key === POMODORO_STATE_KEY) emit({ state: loadPomodoroState() });
+    if (e.key !== POMODORO_STATE_KEY) return;
+    const state = loadPomodoroState();
+    void syncRunningSetting(state);
+    emit({ state });
   };
   const first = setTimeout(tick, 0);
   const id = setInterval(tick, 1000);
