@@ -24,7 +24,7 @@ export const MODULES: AppModule[] = [
   healthModule,
   cognitionModule,
   settingsModule,
-  // SPEC 0.3 skeletons (contract C3): routes work, hidden from navigation until they have content.
+  // SPEC 0.3 skeletons (contract C3): reached through «Блоки», marked «скоро» (`comingSoon`) until they have content.
   nutritionModule,
   trainingModule,
   meditationModule,

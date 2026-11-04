@@ -5,8 +5,9 @@ import type { AppModule } from './moduleTypes';
 
 /** The module whose route is open: today owns only `/` and `/today/…` (its route is the catch-all `/*`). */
 function activeModule(pathname: string): AppModule | undefined {
-  if (pathname === '/' || pathname.startsWith('/today')) return HOME_MODULE;
-  return MODULES.find((m) => m !== HOME_MODULE && pathname.startsWith(rootPath(m.path)));
+  const under = (root: string) => pathname === root || pathname.startsWith(`${root}/`);
+  if (pathname === '/' || under('/today')) return HOME_MODULE;
+  return MODULES.find((m) => m !== HOME_MODULE && under(rootPath(m.path)));
 }
 
 function NavItem({ to, icon, label, active }: { to: string; icon: string; label: string; active: boolean }) {

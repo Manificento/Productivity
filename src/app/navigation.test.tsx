@@ -21,6 +21,13 @@ describe('Навигация по 12 блокам', () => {
     }
     // Pinned by default: tasks, habits, time (today is the hub and always first).
     expect(PINNED_MODULES.map((m) => m.id)).toEqual(['tasks', 'habits', 'time']);
+    // A fourth pin would be dropped silently by the bar: only these have navOrder.
+    expect(MODULES.filter((m) => m.navOrder !== undefined).map((m) => m.id)).toEqual([
+      'today',
+      'tasks',
+      'habits',
+      'time',
+    ]);
   });
 
   it('Given 12 модулей When я открываю приложение Then нижняя панель: «Сегодня», до трёх закреплённых и «Блоки»', async () => {
