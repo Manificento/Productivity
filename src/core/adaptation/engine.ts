@@ -44,7 +44,7 @@ export function computeDailyTargets(date: DateKey, ctx: AdaptationContext): Dail
   }
 
   for (const rule of CONDITION_RULES) {
-    if (rule.when(ctx)) t = rule.apply(t, ctx);
+    if (rule.when(ctx, date)) t = rule.apply(t, ctx);
   }
 
   return t;

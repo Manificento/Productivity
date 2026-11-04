@@ -48,6 +48,13 @@ export interface AdaptationContext {
   /** Hours slept the night before `date` (the SleepLog with date = `date`). */
   lastSleepHours?: number;
   checkIn?: CheckIn;
+  /**
+   * Hours slept on the nights that ended on `date`, `date − 1`, `date − 2` (most recent first);
+   * `undefined` where a night was not logged.
+   */
+  recentSleepHours?: (number | undefined)[];
+  /** Highest RPE among the workouts logged the day before `date`. */
+  yesterdayMaxRpe?: number;
 }
 
 /** A declarative adjustment applied when its phase is active. */
@@ -59,6 +66,7 @@ export interface PhaseRule {
 /** A declarative adjustment driven by logged data (sleep, check-in, …). */
 export interface ConditionRule {
   id: string;
-  when: (ctx: AdaptationContext) => boolean;
+  /** `date` is the day the targets are computed for. */
+  when: (ctx: AdaptationContext, date: DateKey) => boolean;
   apply: (t: DailyTargets, ctx: AdaptationContext) => DailyTargets;
 }
