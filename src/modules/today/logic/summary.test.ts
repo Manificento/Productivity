@@ -105,7 +105,7 @@ describe('habitsSummary', () => {
     expect(habitsSummary(habits, logs, today)).toEqual({ done: 3, total: 5 });
   });
 
-  it('counts a times-per-week habit while the weekly goal is not met yet, or if done today', () => {
+  it('Given привычка timesPerWeek уже выполнила недельную цель When считается день Then она не входит в «X из Y», если не отмечена сегодня', () => {
     const weekly = habit({ id: 'w', schedule: { kind: 'timesPerWeek', timesPerWeek: 2 } });
     // Monday 2 Nov starts the week.
     expect(habitsSummary([weekly], [log('w', '2026-11-02')], today)).toEqual({ done: 0, total: 1 });

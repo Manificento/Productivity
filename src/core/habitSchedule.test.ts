@@ -67,10 +67,11 @@ describe('helpers', () => {
 });
 
 describe('isDue', () => {
-  it('Given правило «привычка запланирована на день» When оно в src/core Then daily — всегда, weekdays — по дням недели', () => {
+  it('Given правило «привычка запланирована на день» When оно в src/core Then daily — всегда, weekdays — по дням недели, timesPerWeek — пока цель недели не выполнена', () => {
     expect(isDue({ kind: 'daily' }, [], today)).toBe(true);
     expect(isDue({ kind: 'weekdays', weekdays: [3] }, [], today)).toBe(true);
     expect(isDue({ kind: 'weekdays', weekdays: [1, 5] }, [], today)).toBe(false);
+    expect(isDue({ kind: 'timesPerWeek', timesPerWeek: 1 }, [], today)).toBe(true);
   });
 
   it('Given привычка timesPerWeek уже выполнила недельную цель When считается день Then она не запланирована, если не отмечена сегодня', () => {

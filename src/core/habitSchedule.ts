@@ -42,7 +42,7 @@ export function weeklyQuota(schedule: HabitSchedule): number {
 
 /**
  * Whether the habit belongs to `day`'s list («Привычки на сегодня», «Привычки: X из Y»).
- * `logs` are this habit's logs. A «N раз в неделю» habit is due while this week's goal (days done
+ * `logs` must be this habit's logs only (other habits' marks would count toward its goal). A «N раз в неделю» habit is due while this week's goal (days done
  * Monday … `day`) is not met yet; once met, it is due only if it was also done on `day` itself.
  */
 export function isDue(schedule: HabitSchedule, logs: readonly HabitLog[], day: DateKey): boolean {

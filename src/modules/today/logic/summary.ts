@@ -55,7 +55,9 @@ export function tasksSummary(tasks: Task[], today: DateKey, focusProjectId: Id |
 /** «Привычки: done из total» for habits scheduled today. `logs` should cover the current week. */
 export function habitsSummary(habits: Habit[], logs: HabitLog[], today: DateKey): { done: number; total: number } {
   // Same rule as the «Привычки» screen: the shared `isDue` from src/core.
-  const own = (h: Habit) => logs.filter((l) => l.habitId === h.id);
+  const byHabit = new Map<string, HabitLog[]>();
+  for (const l of logs) byHabit.set(l.habitId, [...(byHabit.get(l.habitId) ?? []), l]);
+  const own = (h: Habit) => byHabit.get(h.id) ?? [];
   const due = habits.filter((h) => !h.archived && isDue(h.schedule, own(h), today));
   return { done: due.filter((h) => doneDays(own(h)).has(today)).length, total: due.length };
 }
