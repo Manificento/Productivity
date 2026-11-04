@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { LifeEvent } from '../../../core/types';
-import { daysLabel, eventTimeline, parseEventForm, splitEvents, type EventFormValues } from './events';
+import {
+  daysLabel,
+  emptyEventForm,
+  eventTimeline,
+  eventToForm,
+  formatRange,
+  parseEventForm,
+  splitEvents,
+  type EventFormValues,
+} from './events';
 
 function ev(over: Partial<LifeEvent> = {}): LifeEvent {
   return {
@@ -157,5 +166,33 @@ describe('parseEventForm', () => {
     expect(parseEventForm(form({ prepDays: '2.5' })).ok).toBe(false);
     expect(parseEventForm(form({ prepDays: '61' })).ok).toBe(false);
     expect(parseEventForm(form({ prepDays: '60' })).ok).toBe(true);
+  });
+});
+
+describe('form values', () => {
+  it('starts a new event as an important exam with 7 days of preparation', () => {
+    expect(emptyEventForm('2026-11-04')).toEqual(form({ title: '', date: '2026-11-04', importance: 2 }));
+  });
+
+  it('round-trips an event through the form', () => {
+    const e = ev({ time: '09:30', projectId: 'p1' });
+    const r = parseEventForm(eventToForm(e));
+    expect(r.ok && r.data).toEqual({
+      title: e.title,
+      type: e.type,
+      date: e.date,
+      time: '09:30',
+      importance: e.importance,
+      projectId: 'p1',
+      prepDays: e.prepDays,
+    });
+    expect(eventToForm(ev())).toMatchObject({ time: '', projectId: '' });
+  });
+});
+
+describe('formatRange', () => {
+  it('formats days in Russian', () => {
+    expect(formatRange('2026-11-09', '2026-11-09')).toBe('9 ноября');
+    expect(formatRange('2026-11-02', '2026-11-07')).toBe('2 ноября – 7 ноября');
   });
 });

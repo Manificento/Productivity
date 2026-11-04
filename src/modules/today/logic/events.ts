@@ -1,6 +1,8 @@
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { z } from 'zod';
 import { phaseFor } from '../../../core/adaptation/engine';
-import { daysBetween, shiftDateKey } from '../../../core/dates';
+import { daysBetween, fromDateKey, shiftDateKey } from '../../../core/dates';
 import type { DateKey, LifeEvent, LifeEventType } from '../../../core/types';
 
 export const EVENT_TYPE_LABEL: Record<LifeEventType, string> = {
@@ -165,4 +167,14 @@ export function daysLabel(daysUntil: number): string {
   if (daysUntil === -1) return 'вчера';
   const n = Math.abs(daysUntil);
   return daysUntil > 0 ? `через ${n} ${pluralDays(n)}` : `${n} ${pluralDays(n)} назад`;
+}
+
+/** «9 ноября». */
+export function formatDay(key: DateKey): string {
+  return format(fromDateKey(key), 'd MMMM', { locale: ru });
+}
+
+/** «2 ноября – 7 ноября», or a single day. */
+export function formatRange(from: DateKey, to: DateKey): string {
+  return from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`;
 }
