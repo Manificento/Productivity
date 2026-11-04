@@ -41,7 +41,7 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: Omit<TaskDraft
             <Input
               id={id}
               value={title}
-              placeholder="Например: купить молоко"
+              placeholder="Что нужно сделать?"
               autoComplete="off"
               aria-invalid={error ? true : undefined}
               onChange={(e) => {
