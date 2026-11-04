@@ -8,7 +8,10 @@ function rootPath(path: string): string {
 
 function BottomNav() {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
+    <nav
+      aria-label="Модули"
+      className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95"
+    >
       <ul className="mx-auto flex max-w-2xl justify-around">
         {NAV_MODULES.map((m) => (
           <li key={m.id}>

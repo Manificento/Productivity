@@ -25,6 +25,13 @@ describe('App shell', () => {
     }
   });
 
+  it('Given альбомная ориентация с вырезом сбоку When открыт любой экран Then нижняя навигация учитывает safe-area-inset-left/right', async () => {
+    await db.settings.put({ key: 'adaptation.onboardingDone', value: true });
+    render(<App />);
+    const nav = await screen.findByRole('navigation', { name: 'Модули' });
+    expect(nav).toHaveClass('pl-[env(safe-area-inset-left)]', 'pr-[env(safe-area-inset-right)]');
+  });
+
   // Filled in by #41, which builds the onboarding screen (#84 allows it to edit this test).
   it.todo('opens the onboarding screen «Какое у тебя ближайшее важное событие?» at / on an empty DB');
 });

@@ -38,6 +38,22 @@ describe('UI kit', () => {
     expect(within(header).getByRole('button', { name: 'Добавить' })).toBeInTheDocument();
   });
 
+  it('Given альбомная ориентация с вырезом сбоку When открыт любой экран Then боковые отступы Page и Sheet учитывают safe-area-inset-left/right', () => {
+    render(
+      <MemoryRouter>
+        <Page title="Задачи">
+          <Sheet open title="Новая задача" onClose={() => {}}>
+            <p>форма</p>
+          </Sheet>
+        </Page>
+      </MemoryRouter>,
+    );
+    // jsdom has no layout or env(): the insets are checked via their Tailwind classes.
+    const sides = ['pl-[max(1rem,env(safe-area-inset-left))]', 'pr-[max(1rem,env(safe-area-inset-right))]'];
+    expect(screen.getByRole('banner').closest('section')).toHaveClass(...sides);
+    expect(screen.getByRole('dialog', { name: 'Новая задача' })).toHaveClass(...sides);
+  });
+
   it('Given экран «Настройки» When он открыт Then ⚙️ в шапке не показывается', () => {
     render(
       <MemoryRouter initialEntries={['/settings']}>
