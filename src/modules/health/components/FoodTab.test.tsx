@@ -168,4 +168,75 @@ describe('food tab', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Укажите вес в граммах');
     expect(await db.mealLogs.count()).toBe(0);
   });
+
+  it('Given a meal item When I delete it (with confirmation) Then it disappears and the meal and day totals are recalculated', async () => {
+    const b = await createFood(bread);
+    await addMealItem(TODAY, 'lunch', { foodId: b.id, grams: 100 });
+    await addMealItem(TODAY, 'lunch', { foodId: b.id, grams: 50 });
+    renderTab();
+    const lunch = await meal('Обед');
+    expect(await meal('Итого за день')).toHaveTextContent('375 ккал');
+
+    fireEvent.click(await within(lunch).findByRole('button', { name: 'Изменить: Хлеб, 50 г' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+    // Nothing is removed until the deletion is confirmed.
+    expect(screen.getByRole('dialog')).toHaveTextContent('Удалить «Хлеб, 50 г» из «Обед»?');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отмена' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(within(lunch).queryByText('Хлеб, 50 г')).not.toBeInTheDocument());
+    expect(lunch).toHaveTextContent('Хлеб, 100 г');
+    expect(lunch).toHaveTextContent('Итого: 250 ккал · Б 10 · Ж 5 · У 40');
+    expect(await meal('Итого за день')).toHaveTextContent('250 ккал · Б 10 · Ж 5 · У 40');
+  });
+
+  it('Given a meal item When I delete the only item Then the meal is empty again', async () => {
+    const b = await createFood(bread);
+    await addMealItem(TODAY, 'dinner', { foodId: b.id, grams: 100 });
+    renderTab();
+    fireEvent.click(await within(await meal('Ужин')).findByRole('button', { name: 'Изменить: Хлеб, 100 г' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+    expect(await within(await meal('Ужин')).findByText('Пока пусто')).toBeInTheDocument();
+    expect(await meal('Итого за день')).toHaveTextContent('0 ккал');
+  });
+
+  it('Given a meal item When I change its weight Then the totals are recalculated', async () => {
+    const b = await createFood(bread);
+    await addMealItem(TODAY, 'lunch', { foodId: b.id, grams: 100 });
+    renderTab();
+    const lunch = await meal('Обед');
+    fireEvent.click(await within(lunch).findByRole('button', { name: 'Изменить: Хлеб, 100 г' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText('Вес, г')).toHaveValue('100');
+
+    type('Вес, г', '0');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Укажите вес в граммах');
+
+    type('Вес, г', '150');
+    expect(dialog).toHaveTextContent('375 ккал');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+
+    expect(await within(lunch).findByText('Хлеб, 150 г')).toBeInTheDocument();
+    expect(lunch).toHaveTextContent('Итого: 375 ккал · Б 15 · Ж 7,5 · У 60');
+    expect(await meal('Итого за день')).toHaveTextContent('375 ккал · Б 15 · Ж 7,5 · У 60');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('a failed weight change shows an error and keeps the sheet open', async () => {
+    const b = await createFood(bread);
+    await addMealItem(TODAY, 'lunch', { foodId: b.id, grams: 100 });
+    renderTab();
+    fireEvent.click(await within(await meal('Обед')).findByRole('button', { name: 'Изменить: Хлеб, 100 г' }));
+    const put = vi.spyOn(db.mealLogs, 'put').mockRejectedValueOnce(new Error('quota'));
+    type('Вес, г', '120');
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+      'Не удалось сохранить — попробуйте ещё раз',
+    );
+    put.mockRestore();
+  });
 });

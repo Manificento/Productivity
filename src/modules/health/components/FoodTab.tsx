@@ -14,6 +14,7 @@ import {
   type MealKind,
 } from '../logic/nutrition';
 import { AddFoodSheet } from './AddFoodSheet';
+import { MealItemSheet, type MealItemRef } from './MealItemSheet';
 
 function MacrosLine({ m }: { m: Macros }) {
   return (
@@ -30,6 +31,7 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
   const recentMeals = useRecentMeals(today);
   const targets = useDailyTargets(today);
   const [adding, setAdding] = useState<MealKind>();
+  const [editing, setEditing] = useState<MealItemRef>();
 
   if (!foods || !meals || !recentMeals) return <Empty>Загрузка…</Empty>;
 
@@ -59,7 +61,17 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
       </section>
 
       {MEAL_KINDS.map(({ kind, label }) => {
-        const items = meals.filter((m) => m.kind === kind).flatMap((m) => m.items);
+        const items: MealItemRef[] = meals
+          .filter((m) => m.kind === kind)
+          .flatMap((m) =>
+            m.items.map((it, index) => ({
+              mealId: m.id,
+              index,
+              grams: it.grams,
+              food: byId.get(it.foodId),
+              mealLabel: label,
+            })),
+          );
         return (
           <section key={kind} aria-label={label}>
             <Card title={label}>
@@ -67,17 +79,22 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
                 <p className="mb-2 text-sm text-zinc-500">Пока пусто</p>
               ) : (
                 <>
-                  <ul className="mb-2 space-y-1 text-sm">
-                    {items.map((item, i) => {
-                      const food = byId.get(item.foodId);
+                  <ul className="-mx-2 mb-2 text-sm">
+                    {items.map((item) => {
+                      const text = `${item.food?.name ?? 'Удалённый продукт'}, ${formatGrams(item.grams)} г`;
                       return (
-                        <li key={i} className="flex justify-between gap-2">
-                          <span>
-                            {food?.name ?? 'Удалённый продукт'}, {formatGrams(item.grams)} г
-                          </span>
-                          <span className="shrink-0 tabular-nums text-zinc-500">
-                            {food ? `${formatGrams(macrosFor(food, item.grams).kcal)} ккал` : '—'}
-                          </span>
+                        <li key={`${item.mealId}/${item.index}`}>
+                          <button
+                            type="button"
+                            aria-label={`Изменить: ${text}`}
+                            onClick={() => setEditing(item)}
+                            className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          >
+                            <span>{text}</span>
+                            <span className="shrink-0 tabular-nums text-zinc-500">
+                              {item.food ? `${formatGrams(macrosFor(item.food, item.grams).kcal)} ккал` : '—'}
+                            </span>
+                          </button>
                         </li>
                       );
                     })}
@@ -103,6 +120,7 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
         noNewFoods={targets?.noNewFoods ?? false}
         onClose={() => setAdding(undefined)}
       />
+      <MealItemSheet item={editing} onClose={() => setEditing(undefined)} />
     </>
   );
 }
