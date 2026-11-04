@@ -12,7 +12,7 @@ export const NOW = new Date(2026, 10, 4, 12, 0).getTime();
 export const TODAY = '2026-11-04';
 
 /** Fixes the clock (only Date, so userEvent and Dexie timers keep working) and empties the module's tables. */
-export function useTasksTestEnv(): void {
+export function setupTasksTestEnv(): void {
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);

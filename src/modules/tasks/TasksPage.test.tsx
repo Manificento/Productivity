@@ -2,9 +2,9 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
-import { findSection, NOW, renderTasks, section, seedTask, TODAY, useTasksTestEnv } from './testing';
+import { findSection, NOW, renderTasks, section, seedTask, TODAY, setupTasksTestEnv } from './testing';
 
-useTasksTestEnv();
+setupTasksTestEnv();
 
 describe('TasksPage', () => {
   it('Given пустой список When я ввожу «Купить молоко» в поле и нажимаю «Добавить» Then задача появляется во «Входящих» с приоритетом 4', async () => {

@@ -2,9 +2,9 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { findSection, renderTasks, section, seedProject, seedTask, TODAY, useTasksTestEnv } from '../testing';
+import { findSection, renderTasks, section, seedProject, seedTask, TODAY, setupTasksTestEnv } from '../testing';
 
-useTasksTestEnv();
+setupTasksTestEnv();
 
 async function seedByDate() {
   await seedTask('Вчерашняя', { dueDate: '2026-11-03' });
