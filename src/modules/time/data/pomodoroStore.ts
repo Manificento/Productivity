@@ -3,9 +3,9 @@ import { db } from '../../../core/db';
 import { restoreSettings, restoreState, type PomodoroSettings, type PomodoroState } from '../logic/pomodoro';
 
 /*
- * Pomodoro settings and the live timer state live in localStorage, not in Dexie: the timer state is per-device
- * UI state. Only a mirror of the running phase goes to the `settings` table (`time.pomodoro.running`, see
- * `syncRunningSetting`). Finished focus sessions are written to `timeEntries` like any other time.
+ * Pomodoro durations live in `settings` (`time.pomodoro`, part of the backup); the live timer state stays in
+ * localStorage as per-device data. A mirror of the running phase also goes to `settings`
+ * (`time.pomodoro.running`, see `syncRunningSetting`). Finished focus sessions go to `timeEntries`.
  */
 /** Legacy location of the durations (before #101); migrated into `settings` on first load. */
 const LEGACY_SETTINGS_KEY = 'lifeos.time.pomodoro.settings';
@@ -52,20 +52,29 @@ export async function loadPomodoroSettings(): Promise<PomodoroSettings> {
 export const savePomodoroSettings = (s: PomodoroSettings): Promise<unknown> =>
   db.settings.put({ key: SETTINGS_KEY, value: s });
 
-/** Calls `onChange` with the current durations and again whenever they change (save, backup import). */
-export function watchPomodoroSettings(onChange: (s: PomodoroSettings) => void): () => void {
+/**
+ * Calls `onChange` with the current durations and again whenever they change (save, backup import).
+ * If the first read fails, `onError` is called and live updates still start.
+ */
+export function watchPomodoroSettings(onChange: (s: PomodoroSettings) => void, onError: () => void): () => void {
   let active = true;
   let sub: { unsubscribe(): void } | undefined;
-  void loadPomodoroSettings().then(
+  const subscribe = () => {
+    if (!active) return;
+    sub = liveQuery(() => db.settings.get(SETTINGS_KEY)).subscribe({
+      next: (rec) => active && onChange(restoreSettings(rec?.value)),
+      error: () => active && onError(),
+    });
+  };
+  loadPomodoroSettings().then(
     (first) => {
-      if (!active) return;
-      onChange(first);
-      sub = liveQuery(() => db.settings.get(SETTINGS_KEY)).subscribe({
-        next: (rec) => active && onChange(restoreSettings(rec?.value)),
-        error: () => undefined,
-      });
+      if (active) onChange(first);
+      subscribe();
     },
-    () => undefined,
+    () => {
+      if (active) onError();
+      subscribe();
+    },
   );
   return () => {
     active = false;

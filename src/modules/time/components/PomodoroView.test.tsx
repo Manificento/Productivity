@@ -148,7 +148,10 @@ describe('PomodoroView', () => {
     await waitFor(async () => expect((await db.settings.get('time.pomodoro'))?.value).toMatchObject({ workMin: 50 }));
     expect(localStorage.getItem('lifeos.time.pomodoro.settings')).toBeNull();
     const backup = await exportAll();
-    expect(JSON.stringify(backup)).toContain('time.pomodoro');
+    expect(backup.tables.settings).toContainEqual({
+      key: 'time.pomodoro',
+      value: expect.objectContaining({ workMin: 50 }),
+    });
   });
 
   it('Given длительности лежат в localStorage и нет time.pomodoro When открываю «Время» Then значение переносится в settings, старый ключ удалён, таймер показывает мои длительности', async () => {
@@ -175,6 +178,48 @@ describe('PomodoroView', () => {
     });
     render(<Pomodoro />);
     expect(await screen.findByRole('button', { name: 'Длительности: 30 / 7 / 20 мин' })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await startFocus(user);
+    expect(within(screen.getByRole('timer', { name: 'Pomodoro' })).getByText('30:00')).toBeInTheDocument();
+  });
+
+  it('Given фаза кончилась, пока приложение было закрыто When оно открывается Then следующая фаза строится по сохранённым длительностям, а не по умолчанию', async () => {
+    await db.settings.put({
+      key: 'time.pomodoro',
+      value: { workMin: 50, shortBreakMin: 10, longBreakMin: 15, sessionsBeforeLongBreak: 3 },
+    });
+    const categoryId = (await listCategories())[0]!.id;
+    const startedAt = NOW - 30 * MIN;
+    localStorage.setItem(
+      'lifeos.time.pomodoro.state',
+      JSON.stringify({
+        status: 'running',
+        phase: 'work',
+        startedAt,
+        endsAt: NOW - 5 * MIN,
+        completedWork: 0,
+        target: { categoryId },
+      }),
+    );
+    render(<Pomodoro />);
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('lifeos.time.pomodoro.state') ?? '{}');
+      expect(saved).toMatchObject({ phase: 'shortBreak', startedAt: NOW - 5 * MIN, endsAt: NOW + 5 * MIN });
+    });
+  });
+
+  it('сохранить длительности не удалось: показана ошибка, прежние значения остаются', async () => {
+    const user = userEvent.setup();
+    render(<Pomodoro />);
+    await user.click(await screen.findByRole('button', { name: /^Длительности/ }));
+    const put = vi.spyOn(db.settings, 'put').mockRejectedValue(new Error('quota'));
+    const dialog = screen.getByRole('dialog', { name: 'Настройки Pomodoro' });
+    await user.clear(within(dialog).getByLabelText('Фокус, мин'));
+    await user.type(within(dialog).getByLabelText('Фокус, мин'), '50');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    expect(await screen.findByText(/Не удалось сохранить длительности/)).toBeInTheDocument();
+    put.mockRestore();
+    expect(screen.getByRole('button', { name: 'Длительности: 25 / 5 / 15 мин' })).toBeInTheDocument();
   });
 
   it('неверная длительность — ошибка у поля, настройки не меняются', async () => {
