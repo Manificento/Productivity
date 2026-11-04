@@ -13,3 +13,8 @@ export function validateProjectName(name: string, projects: Project[], selfId?: 
 export function activeProjects(projects: Project[]): Project[] {
   return projects.filter((p) => !p.archived).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
+
+/** The active project with this name, ignoring case and surrounding spaces. */
+export function findActiveProject(projects: Project[], name: string): Project | undefined {
+  return projects.find((p) => !p.archived && sameName(p.name, name));
+}

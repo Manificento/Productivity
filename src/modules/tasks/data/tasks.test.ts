@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { addTask, deleteTask, toggleTask } from './tasks';
+import { addQuickTask, addTask, deleteTask, toggleTask } from './tasks';
 
 beforeEach(async () => {
-  await db.tasks.clear();
+  await Promise.all([db.tasks.clear(), db.projects.clear()]);
 });
 
 describe('tasks data', () => {
@@ -43,5 +43,31 @@ describe('tasks data', () => {
     const id = await addTask({ title: 'Купить молоко' });
     await deleteTask(id);
     expect(await db.tasks.get(id)).toBeUndefined();
+  });
+
+  it('Given проекта «учёба» нет When я сохраняю задачу Then проект создаётся (сравнение без учёта регистра), задача привязана к нему', async () => {
+    const id = await addQuickTask({ title: 'конспект', projectName: 'учёба', priority: 1, tags: [] }, 1000);
+    const [project] = await db.projects.toArray();
+    expect(project).toMatchObject({ name: 'учёба', archived: false });
+    expect(await db.tasks.get(id)).toMatchObject({ title: 'конспект', projectId: project.id, priority: 1 });
+    expect(await db.tasks.get(id)).not.toHaveProperty('projectName');
+  });
+
+  it('Given проект «Учёба» уже есть When я пишу «#учёба» Then новый проект не создаётся', async () => {
+    await db.projects.add({ id: 'study', name: 'Учёба', archived: false, createdAt: 0, updatedAt: 0 });
+    const id = await addQuickTask({ title: 'конспект', projectName: 'учёба', priority: 4, tags: [] });
+    expect(await db.projects.count()).toBe(1);
+    expect((await db.tasks.get(id))?.projectId).toBe('study');
+  });
+
+  it('addQuickTask without a project keeps the default project and creates none', async () => {
+    const id = await addQuickTask({ title: 'конспект', projectId: 'p', priority: 4, tags: [] });
+    expect((await db.tasks.get(id))?.projectId).toBe('p');
+    expect(await db.projects.count()).toBe(0);
+  });
+
+  it('addQuickTask with an empty title creates nothing', async () => {
+    await expect(addQuickTask({ title: ' ', projectName: 'учёба', priority: 4, tags: [] })).rejects.toThrow();
+    expect(await db.projects.count()).toBe(0);
   });
 });

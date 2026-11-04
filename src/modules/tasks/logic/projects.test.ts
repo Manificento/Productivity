@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Project } from '../../../core/types';
-import { activeProjects, validateProjectName } from './projects';
+import { activeProjects, findActiveProject, validateProjectName } from './projects';
 
 function project(id: string, name: string, archived = false): Project {
   return { id, name, archived, createdAt: 0, updatedAt: 0 };
@@ -23,5 +23,11 @@ describe('projects logic', () => {
   it('lists active projects by name', () => {
     const list = [project('b', 'Работа'), project('x', 'Старое', true), project('a', 'Английский')];
     expect(activeProjects(list).map((p) => p.id)).toEqual(['a', 'b']);
+  });
+
+  it('finds an active project by name ignoring case, skipping archived ones', () => {
+    const list = [project('old', 'Учёба', true), project('p', 'Учёба')];
+    expect(findActiveProject(list, ' учёба ')?.id).toBe('p');
+    expect(findActiveProject([project('old', 'Учёба', true)], 'учёба')).toBeUndefined();
   });
 });
