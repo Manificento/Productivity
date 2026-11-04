@@ -74,6 +74,9 @@ describe('PomodoroBackground', () => {
     });
     expect(await screen.findByText(/^Перерыв · сессия/)).toBeInTheDocument();
     await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
+    // Give a second timer (the bug this guards against) a tick to record and signal too.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 1100)));
+    expect(await db.timeEntries.count()).toBe(1);
     expect(vibrate).toHaveBeenCalledTimes(1);
   });
 });

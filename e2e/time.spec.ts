@@ -77,31 +77,31 @@ test.describe('pomodoro', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
-});
 
-test('Given идёт фокус-сессия When я перехожу в другой модуль и сессия заканчивается Then звучит сигнал и создаётся запись', async ({
-  page,
-}) => {
-  // Count vibrations: the signal's observable part in a headless browser.
-  await page.addInitScript(() => {
-    const w = window as unknown as { vibrations: number };
-    w.vibrations = 0;
-    Object.defineProperty(navigator, 'vibrate', { value: () => ++w.vibrations > 0, configurable: true });
+  test('Given идёт фокус-сессия When я перехожу в другой модуль и сессия заканчивается Then звучит сигнал и создаётся запись', async ({
+    page,
+  }) => {
+    // Count vibrations: the signal's observable part in a headless browser.
+    await page.addInitScript(() => {
+      const w = window as unknown as { vibrations: number };
+      w.vibrations = 0;
+      Object.defineProperty(navigator, 'vibrate', { value: () => ++w.vibrations > 0, configurable: true });
+    });
+    await page.clock.install({ time: new Date('2026-11-02T09:00:00+05:00') });
+    await page.goto('/#/time/pomodoro');
+    await page.getByRole('button', { name: 'Добавить стартовый набор' }).click();
+    await page.getByRole('button', { name: 'Начать фокус' }).click();
+    await expect(page.getByRole('timer', { name: 'Pomodoro' })).toContainText('Фокус · сессия 1 из 4');
+
+    await page.getByRole('link', { name: /Задачи/ }).click();
+    await expect(page.getByRole('heading', { name: 'Задачи', level: 1 })).toBeVisible();
+    await page.clock.fastForward('25:01');
+    await expect.poll(() => page.evaluate(() => (window as unknown as { vibrations: number }).vibrations)).toBe(1);
+
+    await page.getByRole('link', { name: /Время/ }).click();
+    await page.getByRole('link', { name: 'Pomodoro' }).click();
+    await expect(page.getByText('1 из 4', { exact: true })).toBeVisible();
   });
-  await page.clock.install({ time: new Date('2026-11-02T09:00:00+05:00') });
-  await page.goto('/#/time/pomodoro');
-  await page.getByRole('button', { name: 'Добавить стартовый набор' }).click();
-  await page.getByRole('button', { name: 'Начать фокус' }).click();
-  await expect(page.getByRole('timer', { name: 'Pomodoro' })).toContainText('Фокус · сессия 1 из 4');
-
-  await page.getByRole('link', { name: /Задачи/ }).click();
-  await expect(page.getByRole('heading', { name: 'Задачи', level: 1 })).toBeVisible();
-  await page.clock.fastForward('25:01');
-  await expect.poll(() => page.evaluate(() => (window as unknown as { vibrations: number }).vibrations)).toBe(1);
-
-  await page.getByRole('link', { name: /Время/ }).click();
-  await page.getByRole('link', { name: 'Pomodoro' }).click();
-  await expect(page.getByText('1 из 4', { exact: true })).toBeVisible();
 });
 
 test.describe('balance', () => {

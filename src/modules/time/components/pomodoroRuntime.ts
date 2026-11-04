@@ -68,6 +68,8 @@ function commit(next: PomodoroState): void {
 function tick(): void {
   const t = Date.now();
   const { state: base, settings } = getPomodoro();
+  // Idle and nobody shows the clock (only the background is attached): nothing to do this second.
+  if (base.status === 'idle' && listeners.size === 0) return;
   if (busy) {
     emit({ now: t });
     return;
