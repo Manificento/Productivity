@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
 import { newRecord } from '../../../core/ids';
-import { doneDays } from '../logic/schedule';
+import { doneDays } from '../../../core/habitSchedule';
 import { archiveHabit, createHabit, toggleHabit, updateHabit } from './habitStore';
 
 beforeEach(async () => {
