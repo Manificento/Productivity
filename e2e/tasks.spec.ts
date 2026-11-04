@@ -104,12 +104,13 @@ test.describe('day capacity', () => {
     await page.clock.setFixedTime(new Date(2026, 10, 4, 12, 0));
     await page.goto('/#/tasks');
     const field = page.getByLabel('Новая задача');
-    await field.fill('Курсовая ~4ч');
-    await page.getByRole('button', { name: 'Добавить' }).click();
-    await field.fill('Отчёт ~3ч');
-    await page.getByRole('button', { name: 'Добавить' }).click();
-    await field.fill('Позвонить');
-    await page.getByRole('button', { name: 'Добавить' }).click();
+    // The field clears after the task is saved; typing the next one before that would be wiped (#160).
+    for (const line of ['Курсовая ~4ч', 'Отчёт ~3ч', 'Позвонить']) {
+      await field.fill(line);
+      await page.getByRole('button', { name: 'Добавить' }).click();
+      await expect(field).toHaveValue('');
+    }
+    await expect(page.getByRole('region', { name: 'Сегодня', exact: true }).getByRole('listitem')).toHaveCount(3);
 
     await expect(page.getByText('450 из 360 мин')).toBeVisible();
     await expect(page.getByText('План больше ёмкости дня')).toBeVisible();
