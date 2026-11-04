@@ -32,6 +32,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // Run in a non-UTC zone so bugs like toISOString().slice(0, 10) for local days fail in CI.
+    env: { TZ: 'Asia/Almaty' },
     css: false,
     coverage: {
       provider: 'v8',

@@ -16,7 +16,10 @@ export const SleepInput = z
     wakeTime: z.number().int(),
     quality: z.number().int().min(1).max(5),
   })
-  .refine((s) => s.wakeTime > s.bedtime, { message: 'Подъём должен быть позже отбоя' })
+  .refine((s) => s.wakeTime >= s.bedtime, { message: 'Подъём должен быть позже отбоя' })
+  .refine((s) => s.wakeTime < s.bedtime || sleepHours(s) >= 0.25, {
+    message: 'Сон короче 15 минут — проверьте время',
+  })
   .refine((s) => sleepHours(s) <= 16, { message: 'Сон длиннее 16 часов — проверьте время' });
 
 export type SleepInput = z.infer<typeof SleepInput>;
@@ -39,4 +42,12 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
     await db.sleepLogs.add(created);
     return created;
   });
+}
+
+/**
+ * Removes a sleep record. Use when an edit moves a night to another wake-up day:
+ * `deleteSleep(old.id)` then `saveSleep(newValues)`, inside one user action.
+ */
+export async function deleteSleep(id: string): Promise<void> {
+  await db.sleepLogs.delete(id);
 }

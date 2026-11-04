@@ -1,9 +1,13 @@
 import { fromDateKey, shiftDateKey } from '../dates';
 import type { DateKey, Millis } from '../types';
 
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 /** Local time 'HH:mm' on a given day → epoch ms. */
 export function atLocalTime(day: DateKey, hhmm: string): Millis {
-  const [h, m] = hhmm.split(':').map(Number);
+  const match = HHMM.exec(hhmm);
+  if (!match) throw new Error(`Время должно быть в формате ЧЧ:ММ, получено «${hhmm}»`);
+  const [h, m] = [Number(match[1]), Number(match[2])];
   const d = fromDateKey(day);
   d.setHours(h, m, 0, 0);
   return d.getTime();
@@ -21,7 +25,7 @@ export function sleepWindow(
 ): { bedtime: Millis; wakeTime: Millis } {
   const wakeTime = atLocalTime(wakeDay, wakeHHmm);
   const sameDayBed = atLocalTime(wakeDay, bedtimeHHmm);
-  const bedtime = sameDayBed < wakeTime ? sameDayBed : atLocalTime(shiftDateKey(wakeDay, -1), bedtimeHHmm);
+  const bedtime = sameDayBed <= wakeTime ? sameDayBed : atLocalTime(shiftDateKey(wakeDay, -1), bedtimeHHmm);
   return { bedtime, wakeTime };
 }
 
