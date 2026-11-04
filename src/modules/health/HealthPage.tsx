@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { ComingSoon, Page, Tabs } from '../../ui';
+import { Page, Tabs } from '../../ui';
+import { FoodTab } from './components/FoodTab';
 import { SleepTab } from './components/SleepTab';
 import { WorkoutsTab } from './components/WorkoutsTab';
 
@@ -15,7 +16,7 @@ export function HealthPage() {
       />
       <Routes>
         <Route index element={<SleepTab />} />
-        <Route path="food" element={<ComingSoon what="Еда" />} />
+        <Route path="food" element={<FoodTab />} />
         <Route path="workouts" element={<WorkoutsTab />} />
         <Route path="*" element={<Navigate to="/health" replace />} />
       </Routes>
