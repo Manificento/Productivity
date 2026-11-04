@@ -216,7 +216,10 @@ describe('parseQuickAdd', () => {
         recurrence: { kind: 'weekly', weekdays: [5] },
         dueDate: '2026-11-06',
       });
-      expect(parse('every monday отчёт')).toMatchObject({ title: 'отчёт', recurrence: { kind: 'weekly', weekdays: [1] } });
+      expect(parse('every monday отчёт')).toMatchObject({
+        title: 'отчёт',
+        recurrence: { kind: 'weekly', weekdays: [1] },
+      });
     });
 
     it('«в следующий понедельник» is the nearest Monday', () => {
