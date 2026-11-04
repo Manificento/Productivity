@@ -76,7 +76,7 @@ test.describe('pomodoro', () => {
 });
 
 test.describe('balance', () => {
-  test('empty state links to the timer; a manual entry shows up as a bar', async ({ page }) => {
+  test('empty state links to the timer; a running timer shows up as a bar', async ({ page }) => {
     await page.goto('/#/time/balance');
     await page.getByRole('link', { name: 'Открыть таймер' }).click();
     await page.getByRole('button', { name: 'Добавить стартовый набор' }).click();
@@ -85,7 +85,7 @@ test.describe('balance', () => {
 
     await page.getByRole('link', { name: 'Баланс' }).click();
     const week = page.getByRole('list', { name: 'Неделя по категориям' });
-    await expect(week.getByRole('listitem', { name: 'Учёба' })).toBeVisible();
+    await expect(week.getByRole('listitem').filter({ hasText: 'Учёба' })).toBeVisible();
     await expect(week.locator('svg rect[data-testid="bar"]')).toHaveCount(1);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);

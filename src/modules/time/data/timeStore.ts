@@ -119,13 +119,16 @@ export function useAllCategories(): TimeCategory[] | undefined {
   return useLiveQuery(() => db.timeCategories.toArray(), []);
 }
 
-/** Entries that may overlap [from, …): started at most a week before `from`, plus running ones. */
-export function useEntriesSince(from: Millis): TimeEntry[] | undefined {
+/**
+ * Entries that may overlap [from, …): those started from one day before `from`
+ * (so an entry crossing midnight into `from` is included), plus running ones.
+ */
+export function useEntriesOverlapping(from: Millis): TimeEntry[] | undefined {
   return useLiveQuery(async () => {
     const [recent, running] = await Promise.all([
       db.timeEntries
         .where('start')
-        .aboveOrEqual(from - 7 * 24 * 3_600_000)
+        .aboveOrEqual(from - 24 * 3_600_000)
         .toArray(),
       runningEntries(),
     ]);

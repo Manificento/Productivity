@@ -12,7 +12,7 @@ export function BarList({ label, rows, showDelta }: { label: string; rows: Balan
         const width = (r.ms / max) * 100;
         const delta = formatDelta(r.deltaMs);
         return (
-          <li key={r.categoryId} aria-label={r.name}>
+          <li key={r.categoryId}>
             <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
               <span className="truncate font-medium">{r.name}</span>
               <span className="shrink-0 tabular-nums text-zinc-600 dark:text-zinc-400">

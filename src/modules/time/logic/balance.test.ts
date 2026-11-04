@@ -101,6 +101,23 @@ describe('balance', () => {
     expect(b.hasPreviousWeek).toBe(true);
   });
 
+  it('есть прошлая неделя, понедельник утром: изменение показывается, даже если прошлый понедельник был пуст', () => {
+    const monday = at('2026-11-09', '12:00');
+    const entries = [
+      entry('work', at('2026-11-03', '09:00'), at('2026-11-03', '12:00')), // last Tue
+      entry('work', at('2026-11-09', '09:00'), at('2026-11-09', '10:00')), // this Mon
+    ];
+    const b = balance(entries, categories, '2026-11-09', monday);
+    expect(b.hasPreviousWeek).toBe(true);
+    expect(b.week.map((r) => [r.name, r.deltaMs])).toEqual([['Работа', H]]);
+  });
+
+  it('понедельник утром, на этой неделе пусто, прошлая неделя есть: строк нет, но прошлая неделя отмечена', () => {
+    const entries = [entry('work', at('2026-11-03', '09:00'), at('2026-11-03', '12:00'))];
+    const b = balance(entries, categories, '2026-11-09', at('2026-11-09', '08:00'));
+    expect(b).toMatchObject({ week: [], weekTotal: 0, hasPreviousWeek: true });
+  });
+
   it('прошлой недели нет: изменение не показывается', () => {
     const entries = [entry('work', at('2026-11-02', '09:00'), at('2026-11-02', '10:00'))];
     const b = balance(entries, categories, '2026-11-05', now);

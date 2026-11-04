@@ -26,6 +26,19 @@ async function addEntry(name: string, day: string, from: string, to: string) {
   );
 }
 
+const names = (list: HTMLElement) =>
+  within(list)
+    .getAllByRole('listitem')
+    .map((li) => li.querySelector('span')?.textContent);
+
+const item = (list: HTMLElement, name: string) => {
+  const li = within(list)
+    .getAllByRole('listitem')
+    .find((el) => el.querySelector('span')?.textContent === name);
+  if (!li) throw new Error(`no row ${name}`);
+  return li;
+};
+
 function renderBalance() {
   return render(
     <MemoryRouter initialEntries={['/time/balance']}>
@@ -55,16 +68,12 @@ describe('BalanceView', () => {
     renderBalance();
 
     const day = await screen.findByRole('list', { name: 'Сегодня по категориям' });
-    expect(
-      within(day)
-        .getAllByRole('listitem')
-        .map((li) => li.getAttribute('aria-label')),
-    ).toEqual(['Учёба']);
+    expect(names(day)).toEqual(['Учёба']);
     expect(within(day).getByText('1 ч 30 мин')).toBeInTheDocument();
 
     const week = screen.getByRole('list', { name: 'Неделя по категориям' });
     const items = within(week).getAllByRole('listitem');
-    expect(items.map((li) => li.getAttribute('aria-label'))).toEqual(['Работа', 'Учёба']);
+    expect(names(week)).toEqual(['Работа', 'Учёба']);
     const bars = items.map((li) => li.querySelector('svg rect[data-testid="bar"]'));
     expect(bars.map((b) => b?.getAttribute('width'))).toEqual(['100', '50']);
     expect(screen.getByText('Неделя · 4 ч 30 мин')).toBeInTheDocument();
@@ -79,9 +88,17 @@ describe('BalanceView', () => {
     renderBalance();
 
     const week = await screen.findByRole('list', { name: 'Неделя по категориям' });
-    expect(within(within(week).getByRole('listitem', { name: 'Работа' })).getByText('+1 ч 20 мин')).toBeInTheDocument();
-    expect(within(within(week).getByRole('listitem', { name: 'Учёба' })).getByText('−40 мин')).toBeInTheDocument();
-    expect(screen.getByText('Изменение — к тем же дням прошлой недели.')).toBeInTheDocument();
+    expect(within(item(week, 'Работа')).getByText('+1 ч 20 мин')).toBeInTheDocument();
+    expect(within(item(week, 'Учёба')).getByText('−40 мин')).toBeInTheDocument();
+    expect(screen.getByText('Изменение — к тому же моменту прошлой недели.')).toBeInTheDocument();
+  });
+
+  it('есть прошлая неделя, понедельник утром и на этой неделе пусто: не «записей нет», а пустая неделя', async () => {
+    vi.setSystemTime(atLocalTime('2026-11-09', '08:00'));
+    await addEntry('Работа', '2026-11-03', '09:00', '12:00');
+    renderBalance();
+    expect(await screen.findByText('На этой неделе записей пока нет.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Открыть таймер' })).not.toBeInTheDocument();
   });
 
   it('прошлой недели нет: изменения не показываются', async () => {

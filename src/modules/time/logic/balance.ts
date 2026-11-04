@@ -4,7 +4,6 @@ import type { DateKey, Id, Millis, TimeCategory, TimeEntry } from '../../../core
 import { dayTotals, totalsBetween, type CategoryTotals } from './totals';
 
 const MIN = 60_000;
-const WEEK = 7 * 24 * 60 * MIN;
 
 /** '1 ч 20 мин', '45 мин', '0 мин' (rounded down to whole minutes). */
 export function formatHoursMinutes(ms: Millis): string {
@@ -31,7 +30,7 @@ export interface BalanceRow {
   name: string;
   color: string | undefined;
   ms: Millis;
-  /** This week minus the same days of last week. Only meaningful when `hasPreviousWeek`. */
+  /** This week minus last week up to the same moment. Only meaningful when `hasPreviousWeek`. */
   deltaMs: Millis;
 }
 
@@ -40,6 +39,7 @@ export interface Balance {
   week: BalanceRow[];
   dayTotal: Millis;
   weekTotal: Millis;
+  /** Anything was recorded last week (the whole week, not only up to the same moment). */
   hasPreviousWeek: boolean;
 }
 
@@ -58,9 +58,12 @@ export function balance(
 ): Balance {
   const monday = weekStartMs(day);
   const weekEnd = addDays(monday, 7).getTime();
+  // Calendar arithmetic (not −168 h), so a DST switch between the weeks does not shift the window.
+  const prevMonday = addDays(monday, -7).getTime();
+  const comparableEnd = Math.max(prevMonday, addDays(Math.min(now, weekEnd), -7).getTime());
   const week = totalsBetween(entries, monday, weekEnd, now);
-  const comparableEnd = Math.min(now, weekEnd) - WEEK;
-  const previous = totalsBetween(entries, monday - WEEK, Math.max(monday - WEEK, comparableEnd), now);
+  const previous = totalsBetween(entries, prevMonday, comparableEnd, now);
+  const wholePrevious = totalsBetween(entries, prevMonday, monday, now);
   const today = dayTotals(entries, day, now);
   const byId = new Map(categories.map((c) => [c.id, c]));
 
@@ -87,6 +90,6 @@ export function balance(
     week: rows(week, true),
     dayTotal: sum(today),
     weekTotal: sum(week),
-    hasPreviousWeek: sum(previous) > 0,
+    hasPreviousWeek: sum(wholePrevious) > 0,
   };
 }
