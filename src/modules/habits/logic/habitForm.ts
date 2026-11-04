@@ -37,7 +37,9 @@ export function parseHabitForm(input: HabitFormInput): HabitFormResult {
 
   let schedule: HabitSchedule;
   if (input.kind === 'weekdays') {
-    const days = [...new Set(input.weekdays)].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6).sort();
+    const days = [...new Set(input.weekdays)]
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+      .sort((a, b) => a - b);
     if (days.length === 0) return { ok: false, field: 'weekdays', error: 'Выберите хотя бы один день' };
     schedule = { kind: 'weekdays', weekdays: days };
   } else if (input.kind === 'timesPerWeek') {

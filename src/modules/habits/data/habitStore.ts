@@ -39,7 +39,8 @@ export async function toggleHabit(habitId: Id, date: DateKey, now: Millis = Date
       await db.habitLogs.add(newRecord({ habitId, date, done: true }, now));
       return true;
     }
-    const latest = existing.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
+    // Same tie-break as doneDays (the later one wins), so the tap flips the mark that is shown.
+    const latest = existing.reduce((a, b) => (b.updatedAt >= a.updatedAt ? b : a));
     const done = !latest.done;
     await db.habitLogs.update(latest.id, touch({ done }, now));
     // Older duplicates (e.g. from an import) would only confuse later readers.

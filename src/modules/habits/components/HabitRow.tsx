@@ -26,7 +26,8 @@ export function HabitRow({ item, onToggle, onEdit }: { item: TodayHabit; onToggl
         <span className={`truncate font-medium ${done ? 'text-zinc-500 line-through' : ''}`}>{habit.name}</span>
         <span className="text-xs text-zinc-500">{describeSchedule(habit.schedule)}</span>
       </button>
-      <span className="shrink-0 text-sm font-semibold tabular-nums" aria-label={`Серия: ${item.streak.current}`}>
+      <span className="shrink-0 text-sm font-semibold tabular-nums">
+        <span className="sr-only">Серия: </span>
         {streakLabel(item.streak)}
       </span>
     </li>

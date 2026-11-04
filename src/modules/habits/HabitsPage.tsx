@@ -29,9 +29,10 @@ export function HabitsPage() {
   const hasActive = items.length + other.length > 0;
   const close = () => setEditing(undefined);
 
+  // The day on screen, not the clock at tap time: a page left open past midnight marks what it shows.
   async function toggle(id: string) {
     try {
-      await toggleHabit(id, todayKey());
+      await toggleHabit(id, today);
       setError(undefined);
     } catch {
       setError('Не удалось сохранить отметку. Попробуйте ещё раз');

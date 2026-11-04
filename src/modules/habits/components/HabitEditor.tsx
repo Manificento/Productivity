@@ -80,7 +80,7 @@ export function HabitEditor({
 
       {values.kind === 'weekdays' && (
         <div className="mb-3">
-          <div role="group" aria-label="Дни недели" className="flex gap-1">
+          <div role="group" aria-label="Дни недели" className="flex gap-0.5">
             {WEEKDAYS.map((w) => {
               const on = values.weekdays.includes(w.day);
               return (

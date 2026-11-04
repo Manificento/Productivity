@@ -149,4 +149,17 @@ describe('HabitsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить отметку');
     spy.mockRestore();
   });
+
+  it('ошибка сохранения в редакторе: сообщение, окно остаётся открытым', async () => {
+    const spy = vi.spyOn(db.habits, 'add').mockRejectedValue(new Error('disk full'));
+    const user = userEvent.setup();
+    render(<HabitsPage />);
+    await user.click(await screen.findByRole('button', { name: '+ Привычка' }));
+    const dialog = screen.getByRole('dialog', { name: 'Новая привычка' });
+    await user.type(within(dialog).getByLabelText('Название'), 'Йога');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Не удалось сохранить. Попробуйте ещё раз');
+    expect(screen.getByRole('dialog', { name: 'Новая привычка' })).toBeInTheDocument();
+    spy.mockRestore();
+  });
 });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
 import { newRecord } from '../../../core/ids';
+import { doneDays } from '../logic/schedule';
 import { archiveHabit, createHabit, toggleHabit, updateHabit } from './habitStore';
 
 beforeEach(async () => {
@@ -24,6 +25,15 @@ describe('habitStore', () => {
     ]);
     expect(await toggleHabit('h1', '2026-11-03', 5)).toBe(true);
     expect(await db.habitLogs.count()).toBe(1);
+  });
+
+  it('дубликаты с одинаковым updatedAt: переключается та отметка, что видна (последняя)', async () => {
+    await db.habitLogs.bulkAdd([
+      newRecord({ habitId: 'h2', date: '2026-11-03', done: false }, 1),
+      newRecord({ habitId: 'h2', date: '2026-11-03', done: true }, 1),
+    ]);
+    const shown = doneDays(await db.habitLogs.toArray()).has('2026-11-03');
+    expect(await toggleHabit('h2', '2026-11-03', 5)).toBe(!shown);
   });
 
   it('создание, изменение расписания целиком и архив', async () => {
