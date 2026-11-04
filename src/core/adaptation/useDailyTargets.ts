@@ -69,6 +69,7 @@ export async function loadAdaptationContext(date: DateKey): Promise<AdaptationCo
     // The latest weight, however old: the nutrition module decides when to ask for a new one.
     weightKg: weight && Number.isFinite(weight.kg) && weight.kg > 0 ? weight.kg : undefined,
     recentPvtMediansMs: pvtMedians,
+    todayPvtMedianMs: pvtRuns.find((run) => run.date === date && Number.isFinite(run.medianRtMs))?.medianRtMs,
     // `durationMin` is the time actually spent, so sessions stopped early count too.
     meditationMinYesterday: yesterdayMeditation.reduce((sum, m) => sum + m.durationMin, 0),
   };

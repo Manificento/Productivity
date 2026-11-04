@@ -172,6 +172,19 @@ function upcomingWithin3Days(ctx: AdaptationContext, date: DateKey) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** A personal PVT norm needs this many runs in 14 days. */
+const PVT_MIN_RUNS = 7;
+/** Today's median this much slower than the norm counts as low attention. */
+const PVT_SLOWER_SHARE = 0.2;
+
+/** Personal PVT norm: the median of the run medians of 14 days; undefined with fewer than 7 runs. */
+export function pvtNorm(mediansMs: readonly number[]): number | undefined {
+  if (mediansMs.length < PVT_MIN_RUNS) return undefined;
+  const sorted = [...mediansMs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 export const CONDITION_RULES: ConditionRule[] = [
   {
     id: 'short-sleep',
@@ -235,6 +248,30 @@ export const CONDITION_RULES: ConditionRule[] = [
         ...t,
         maxWorkoutIntensity: capped,
         reasons: [...t.reasons, `Вчера тяжёлая тренировка (RPE ${ctx.yesterdayMaxRpe}): сегодня не выше умеренной`],
+      };
+    },
+  },
+  {
+    id: 'low-attention',
+    when: (ctx) => {
+      const norm = pvtNorm(ctx.recentPvtMediansMs ?? []);
+      return (
+        norm !== undefined &&
+        ctx.todayPvtMedianMs !== undefined &&
+        ctx.todayPvtMedianMs >= norm * (1 + PVT_SLOWER_SHARE)
+      );
+    },
+    apply: (t, ctx) => {
+      const cutoff = shiftTime(t.caffeineCutoff, -120);
+      const norm = Math.round(pvtNorm(ctx.recentPvtMediansMs ?? [])!);
+      return {
+        ...t,
+        caffeineCutoff: cutoff,
+        taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.9),
+        reasons: [
+          ...t.reasons,
+          `Внимание ниже нормы: тест ${Math.round(ctx.todayPvtMedianMs!)} мс против обычных ${norm} мс — кофеин до ${cutoff}, нагрузка −10%`,
+        ],
       };
     },
   },

@@ -95,6 +95,7 @@ describe('loadDailyTargets', () => {
       nutritionGoal: { kind: 'lose', ratePct: 0.5 },
       weightKg: 80,
       recentPvtMediansMs: [270, 320, 300],
+      todayPvtMedianMs: 270,
       meditationMinYesterday: 15,
     });
     expect((await loadDailyTargets('2026-11-04')).kcal).toBe(2060);
