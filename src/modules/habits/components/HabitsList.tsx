@@ -4,7 +4,8 @@ import { todayKey } from '../../../core/dates';
 import { Button, Card, Empty, Page, Sheet } from '../../../ui';
 import { HabitEditor } from './HabitEditor';
 import { HabitRow } from './HabitRow';
-import { createHabit, toggleHabit, useHabitLogs, useHabits } from '../data/habitStore';
+import { StarterHabits } from './StarterHabits';
+import { createHabit, createHabits, toggleHabit, useHabitLogs, useHabits } from '../data/habitStore';
 import { describeSchedule } from '../logic/habitForm';
 import { todayHabits } from '../logic/today';
 
@@ -41,11 +42,12 @@ export function HabitsList() {
   return (
     <Page title="Привычки">
       {!hasActive ? (
-        <Card>
+        <>
           <p className="mb-3 text-center text-sm text-zinc-500">
-            Привычек пока нет. Добавьте первую — например, зарядку или чтение.
+            Привычек пока нет. Выберите из набора ниже или создайте свою.
           </p>
-        </Card>
+          <StarterHabits onAdd={(list) => createHabits(list)} />
+        </>
       ) : (
         <>
           {items.length > 0 ? (
