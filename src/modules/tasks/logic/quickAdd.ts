@@ -272,6 +272,10 @@ export function withImpliedDates(p: ParsedTask, baseDate: DateKey): ParsedTask {
     if (out.recurrence.kind === 'weekly' && !out.recurrence.weekdays) {
       out.recurrence = { kind: 'weekly', weekdays: [getDay(fromDateKey(out.dueDate))] };
     }
+    // The start date's day anchors a monthly repeat, so «31-го» returns to the month's end after February.
+    if (out.recurrence.kind === 'monthly' && out.recurrence.dayOfMonth === undefined) {
+      out.recurrence = { ...out.recurrence, dayOfMonth: fromDateKey(out.dueDate).getDate() };
+    }
   }
   out.dueDate ??= baseDate;
   return out;
