@@ -1,6 +1,6 @@
-import { startOfWeek } from 'date-fns';
 import type { Phase } from '../../../core/adaptation/types';
-import { daysBetween, fromDateKey, toDateKey } from '../../../core/dates';
+import { daysBetween } from '../../../core/dates';
+import { doneDays, isDue } from '../../../core/habitSchedule';
 import type { DateKey, Habit, HabitLog, Id, LifeEvent, Task, TimeEntry, WorkoutLog } from '../../../core/types';
 import { daysLabel } from './events';
 
@@ -52,30 +52,12 @@ export function tasksSummary(tasks: Task[], today: DateKey, focusProjectId: Id |
   };
 }
 
-/** Monday of the week that contains `day`. */
-export function weekStart(day: DateKey): DateKey {
-  return toDateKey(startOfWeek(fromDateKey(day), { weekStartsOn: 1 }));
-}
-
-/**
- * Mirrors the habits module's schedule rule (modules may not import each other).
- * TODO(#69): use the shared schedule rule from src/core once it exists.
- */
-function isDueToday(habit: Habit, logs: HabitLog[], today: DateKey): boolean {
-  const s = habit.schedule;
-  if (s.kind === 'daily') return true;
-  if (s.kind === 'weekdays') return (s.weekdays ?? []).includes(fromDateKey(today).getDay());
-  // timesPerWeek: still due while the weekly goal is not reached; a habit done today stays in the count.
-  const monday = weekStart(today);
-  const doneThisWeek = logs.filter((l) => l.habitId === habit.id && l.done && l.date >= monday && l.date <= today);
-  return doneThisWeek.some((l) => l.date === today) || doneThisWeek.length < (s.timesPerWeek ?? 1);
-}
-
 /** «Привычки: done из total» for habits scheduled today. `logs` should cover the current week. */
 export function habitsSummary(habits: Habit[], logs: HabitLog[], today: DateKey): { done: number; total: number } {
-  const due = habits.filter((h) => !h.archived && isDueToday(h, logs, today));
-  const doneToday = new Set(logs.filter((l) => l.date === today && l.done).map((l) => l.habitId));
-  return { done: due.filter((h) => doneToday.has(h.id)).length, total: due.length };
+  // Same rule as the «Привычки» screen: the shared `isDue` from src/core.
+  const own = (h: Habit) => logs.filter((l) => l.habitId === h.id);
+  const due = habits.filter((h) => !h.archived && isDue(h.schedule, own(h), today));
+  return { done: due.filter((h) => doneDays(own(h)).has(today)).length, total: due.length };
 }
 
 /** Focus sessions finished today (Pomodoro entries) and the running timer, if any. */

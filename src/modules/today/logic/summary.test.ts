@@ -123,6 +123,14 @@ describe('habitsSummary', () => {
       total: 1,
     });
   });
+
+  it('a re-toggled mark counts by its latest state, as on the «Привычки» screen', () => {
+    const unmarked = [
+      { ...log('a', today), updatedAt: 1 },
+      { ...log('a', today, false), id: 'a-again', updatedAt: 2 },
+    ];
+    expect(habitsSummary([habit({ id: 'a' })], unmarked, today)).toEqual({ done: 0, total: 1 });
+  });
 });
 
 describe('focusSummary', () => {
