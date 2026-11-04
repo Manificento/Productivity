@@ -109,18 +109,18 @@ flowchart LR
 [SPEC 0.3](SPEC.md) добавляет пять блоков и переносит два журнала. Таблицы и каркасы появляются контрактной
 issue «каркасы блоков» (веха M5); до её слияния этих модулей и таблиц **нет**, писать в них нельзя.
 
-| Модуль (план) | Будет писать в таблицы                                                          | Читает                               |
-| ------------- | ------------------------------------------------------------------------------- | ------------------------------------ |
-| nutrition     | `weightLogs`, `settings` (`nutrition.*`); после переноса — `foods`, `mealLogs`  | `sleepLogs`, `workoutLogs`, цели дня |
-| training      | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout` | `workoutLogs`, цели дня              |
-| meditation    | `meditationSessions`                                                            | цели дня                             |
-| cognition     | `cognitiveTests`, `mindSessions` (новая)                                        | цели дня                             |
-| notes         | `notes`                                                                         | `projects`, `lifeEvents`             |
-| progress      | `xpEvents`                                                                      | все таблицы (только чтение)          |
-| health        | после переноса — только `sleepLogs` через `saveSleep`                           | цели дня                             |
+| Модуль (план) | Будет писать в таблицы                                                                                               | Читает                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| nutrition     | `weightLogs`, `settings` (`nutrition.*`); после переноса — `foods`, `mealLogs`                                       | `sleepLogs`, `workoutLogs`, цели дня |
+| training      | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                      | `workoutLogs`, цели дня              |
+| meditation    | `meditationSessions`                                                                                                 | цели дня                             |
+| cognition     | `cognitiveTests`, `mindSessions` (новая)                                                                             | цели дня                             |
+| notes         | `notes`                                                                                                              | `projects`, `lifeEvents`             |
+| progress      | `xpEvents`                                                                                                           | все таблицы (только чтение)          |
+| health        | `sleepLogs` через `saveSleep`; `workoutLogs` — только через `saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
 
-Второй общий путь записи — `saveWorkout()`: журнал тренировок заполняют `health` (ручная запись, импорт из
-Health Connect / HealthKit) и `training` (выполнение плана).
+Второй общий путь записи — `saveWorkout()`: журнал тренировок заполняют `health` (импорт из Health Connect /
+HealthKit) и `training` (ручная запись и выполнение плана).
 
 Платформа: нативные возможности (будильник, датчики, уведомления, Health) доступны модулям только через
 `src/core/platform.ts` ([ADR-0008](adr/0008-web-and-native-one-codebase.md)); флаги возможностей говорят,

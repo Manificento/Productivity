@@ -153,7 +153,7 @@ P2 не означает «не делаем».
 2. Сон прошлой ночи < 6 ч → ёмкость дня −20%, интенсивность тренировки не выше `light`.
 3. Энергия в чек-ине ≤ 2 → ёмкость дня −20%.
 4. Несколько событий сразу → берётся событие с наибольшей важностью, при равенстве — ближайшее;
-   три события за три дня → ёмкость −10%.
+   два и более событий от сегодня до T+3 → ёмкость −10%.
 5. Три ночи подряд < 6,5 ч → отбой на 30 минут раньше.
 6. Вчера тренировка с RPE ≥ 8 → сегодня не выше `moderate`.
 
@@ -172,6 +172,25 @@ P2 не означает «не делаем».
 Контекст движка собирает `loadDailyTargets` из таблиц всех блоков: сон, чек-ин, тренировки вчера,
 события, базовый режим — есть; вес и цель питания, медиана PVT, минуты медитации — с контрактом v2.
 Персонализация с эластичными границами (байесовское обновление норм) — отдельный ADR и прототип (issue #44).
+
+### 5.6 Модель данных новых блоков
+
+Таблицы и типы появляются контрактной issue «каркасы блоков» (M5). Все записи наследуют `BaseRecord`
+(`id`, `createdAt`, `updatedAt`); даты дней — `DateKey`. Индексы — в скобках.
+
+| Таблица              | Владелец   | Поля                                                                                                                                        |
+| -------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `weightLogs`         | nutrition  | `date` (уникальный), `kg`                                                                                                                   |
+| `programs`           | training   | `name`, `archived`, `days: { weekday, exercises: { name, sets, reps?, weightKg?, rpeTarget? }[] }[]`, `weeks` (длина плана, по умолчанию 4) |
+| `plannedSessions`    | training   | `programId`, `date` (`[programId+date]`), `exercises` (копия на день), `status: planned \| done \| skipped`, `workoutLogId?`                |
+| `meditationSessions` | meditation | `date`, `startedAt`, `durationMin`, `kind: breathing \| focus \| sleep \| body`, `pattern?` (`4-7-8`, `box`), `completed`                   |
+| `mindSessions`       | cognition  | `date`, `kind: nback \| stroop \| schulte`, `durationMs`, `accuracyPct`, `level?` (n для n-back), `meanRtMs?`, `errors?`                    |
+| `notes`              | notes      | `title`, `body` (markdown), `linkIds` (мульти-индекс: id проекта, события или `DateKey` дня), `pinned?`                                     |
+| `xpEvents`           | progress   | `date`, `source` (`quest`), `questId`, `amount`                                                                                             |
+
+Настройки блоков — ключи `settings`: `nutrition.goal` (`kind: lose \| maintain \| gain`, `ratePct`),
+`nutrition.expenditure` (`kcal`, `updatedAt`), `nutrition.profile` (`heightCm`, `birthYear`, `sex`).
+Привычки получают поле `Habit.essential?: boolean` (контракт «цели дня v2»).
 
 ## 6. Критерии готовности
 

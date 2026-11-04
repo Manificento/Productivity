@@ -1032,6 +1032,55 @@ BACKLOG.push(
     notes: ['Закрывается PR с документами. Остальные issues вех M5–M8 ждут его слияния через «Зависит от».'],
   },
   {
+    key: 'C3',
+    title: 'core: каркасы блоков nutrition, training, meditation, progress, notes и их таблицы',
+    area: 'core',
+    type: 'contract',
+    priority: 'P0',
+    size: 'L',
+    milestone: M5,
+    deps: ['V1'],
+    story:
+      'Как команда, мы хотим пустые модули с таблицами и инструкциями, чтобы пять новых дорожек стартовали параллельно без правок ядра.',
+    ac: [
+      A(
+        'БД версии 2 с данными',
+        'приложение обновляется',
+        'данные сохранены; появились таблицы `weightLogs` (`&date`), `programs`, `plannedSessions` (`[programId+date]`, `date`), `meditationSessions` (`date`), `mindSessions` (`date`, `kind`), `notes` (`updatedAt`, `*linkIds`), `xpEvents` (`date`, `source`) — Dexie v3; `TABLE_NAMES` и резервная копия их включают',
+      ),
+      A(
+        '`src/core/types.ts`',
+        'я читаю его',
+        'типы `WeightLog`, `Program`, `PlannedSession`, `MeditationSession`, `MindSession`, `Note`, `XpEvent` с полями из раздела 5.6 SPEC 0.3 и комментариями',
+      ),
+      A(
+        'модули nutrition, training, meditation, progress, notes',
+        'я открываю их маршруты',
+        'пустое состояние с названием блока и «скоро»; в навигации они пока скрыты (`navOrder` не задан)',
+      ),
+      A(
+        'каждый новый модуль',
+        'я читаю его `CLAUDE.md`',
+        'указаны таблицы владения, дорожка и запреты — по образцу существующих',
+      ),
+      A(
+        'модули health и training',
+        'они сохраняют тренировку',
+        'вызывают `saveWorkout()` из `src/core/logging/workout.ts` с валидацией zod; `health` переведён на него',
+      ),
+      A(
+        'модули settings и cognition',
+        'я читаю их `CLAUDE.md`',
+        'settings исключает ключи `nutrition.*`, cognition добавляет таблицу `mindSessions`',
+      ),
+      A('`npm run deps` и `npm run check`', 'прогоняются', 'зелёные'),
+    ],
+    notes: [
+      'ADR-0007 для `saveWorkout`. Владение таблицами — таблица «Расширение по SPEC 0.3» в `docs/architecture.md`; перенести её строки в основную таблицу.',
+      'Реестр `src/app/modules.ts` получает все пять строк сразу — дорожки его больше не трогают.',
+    ],
+  },
+  {
     key: 'C2',
     title: 'core: цели дня v2 — питание, тренировки, медитация, ум, будильник, привычки',
     area: 'core',
@@ -1039,7 +1088,7 @@ BACKLOG.push(
     priority: 'P0',
     size: 'M',
     milestone: M5,
-    deps: ['V1'],
+    deps: ['V1', 'C3'],
     story:
       'Как команда, мы хотим расширить контракт `DailyTargets`, чтобы новые блоки читали цели дня, а не придумывали свои правила.',
     ac: [
@@ -1065,6 +1114,11 @@ BACKLOG.push(
       ),
       A('чек-ин с энергией ≤ 2', 'считаются цели', '`mindTrainingMin = 0`'),
       A(
+        '`Habit`',
+        'я читаю `src/core/types.ts`',
+        'есть поле `essential?: boolean` (по умолчанию false) — его читает режим `habitsMode` в привычках',
+      ),
+      A(
         'контекст без данных о весе и цели питания',
         'считаются цели',
         '`kcal`, `proteinG`, `fatG`, `carbsG` — `undefined`, остальные поля как раньше',
@@ -1077,52 +1131,9 @@ BACKLOG.push(
     ],
     notes: [
       '`AdaptationContext` получает `expenditureKcal?`, `nutritionGoal?` (`lose` / `maintain` / `gain`, `ratePct`), `recentPvtMediansMs?` (14 дней), `meditationMinYesterday?`.',
-      '`loadDailyTargets` заполняет их из `settings` `nutrition.expenditure` и `nutrition.goal`, из `cognitiveTests` (kind `pvt`) и `meditationSessions`; пока таблиц и ключей нет — `undefined`. Ядро не считает расход энергии — это делает модуль nutrition.',
+      '`loadDailyTargets` заполняет их из `settings` `nutrition.expenditure` и `nutrition.goal`, из `cognitiveTests` (kind `pvt`) и `meditationSessions`; пока ключей `nutrition.*` нет — `undefined`. Ядро не считает расход энергии — это делает модуль nutrition.',
+      'Зависит от каркасов (C3): `meditationSessions` должна существовать до загрузчика.',
       'Правило по PVT — отдельная issue дорожки today (D8). Таблица 5.3 в `docs/SPEC.md` — обновить, если имена полей изменились.',
-    ],
-  },
-  {
-    key: 'C3',
-    title: 'core: каркасы блоков nutrition, training, meditation, progress, notes и их таблицы',
-    area: 'core',
-    type: 'contract',
-    priority: 'P0',
-    size: 'L',
-    milestone: M5,
-    deps: ['V1'],
-    story:
-      'Как команда, мы хотим пустые модули с таблицами и инструкциями, чтобы пять новых дорожек стартовали параллельно без правок ядра.',
-    ac: [
-      A(
-        'БД версии 2 с данными',
-        'приложение обновляется',
-        'данные сохранены; появились таблицы `weightLogs` (`&date`), `programs`, `plannedSessions` (`[programId+date]`, `date`), `meditationSessions` (`date`), `mindSessions` (`date`, `kind`), `notes` (`updatedAt`, `*linkIds`), `xpEvents` (`date`, `source`) — Dexie v3; `TABLE_NAMES` и резервная копия их включают',
-      ),
-      A(
-        '`src/core/types.ts`',
-        'я читаю его',
-        'типы `WeightLog`, `Program`, `PlannedSession`, `MeditationSession`, `MindSession`, `Note`, `XpEvent` с полями из SPEC 0.3 и комментариями',
-      ),
-      A(
-        'модули nutrition, training, meditation, progress, notes',
-        'я открываю их маршруты',
-        'пустое состояние с названием блока и «скоро»; в навигации они пока скрыты (`navOrder` не задан)',
-      ),
-      A(
-        'каждый новый модуль',
-        'я читаю его `CLAUDE.md`',
-        'указаны таблицы владения, дорожка и запреты — по образцу существующих',
-      ),
-      A(
-        'модули health и training',
-        'они сохраняют тренировку',
-        'вызывают `saveWorkout()` из `src/core/logging/workout.ts` с валидацией zod; `health` переведён на него',
-      ),
-      A('`npm run deps` и `npm run check`', 'прогоняются', 'зелёные'),
-    ],
-    notes: [
-      'ADR-0007 для `saveWorkout`. Владение таблицами — таблица «Расширение по SPEC 0.3» в `docs/architecture.md`; перенести её строки в основную таблицу.',
-      'Реестр `src/app/modules.ts` получает все пять строк сразу — дорожки его больше не трогают.',
     ],
   },
   {
@@ -1262,7 +1273,7 @@ BACKLOG.push(
     ],
     notes: [
       'Алгоритм — чистые функции в `logic/expenditure.ts`; тесты на синтетических сериях: стабильный вес, −0,5 кг/нед, пропуски дней.',
-      'Рост и возраст спрашиваются только для стартовой оценки, хранятся в `settings` `nutrition.*`.',
+      'Рост, год рождения и пол спрашиваются только для стартовой оценки, хранятся в `settings` `nutrition.profile`.',
     ],
   },
   {
@@ -1347,7 +1358,7 @@ BACKLOG.push(
       A(
         'событие через 10 дней',
         'я смотрю план на 2 недели',
-        'разгрузочный день и день отдыха отмечены заранее — предпросмотр `computeDailyTargets` на будущие даты',
+        'разгрузочный день и день отдыха отмечены заранее — через `useDailyTargets(date)` для будущих дат',
       ),
     ],
   },
@@ -1586,7 +1597,7 @@ BACKLOG.push(
       A('список заметок', 'я ищу по слову', 'фильтр по заголовку и тексту без учёта регистра'),
     ],
     notes: [
-      'Редактор — textarea и предпросмотр; новая зависимость для markdown — только через контракт.',
+      'Редактор — textarea и предпросмотр; новая зависимость для markdown — только через контракт. Рендер markdown — чистая функция в `logic/` в React-элементы, без `dangerouslySetInnerHTML`.',
       'Не Notion-база: таблицы и свойства не в scope.',
     ],
   },
@@ -1632,6 +1643,7 @@ BACKLOG.push(
       A('`habitsMode = essential`', 'считаются серии', 'пропуск не-ключевой привычки в такой день не рвёт серию'),
       A('`habitsMode = all`', 'я открываю список', 'всё как раньше'),
     ],
+    notes: ['Поле `Habit.essential?: boolean` появляется контрактом C2 — модуль habits `src/core/types.ts` не меняет.'],
   },
   {
     key: 'X2',
@@ -1641,7 +1653,7 @@ BACKLOG.push(
     priority: 'P1',
     size: 'M',
     milestone: M6,
-    deps: ['N3', 'TR3', 'MD2', 'MN3', 'PG2', 'H5'],
+    deps: ['X1', 'N3', 'TR3', 'MD2', 'MN3', 'PG2', 'H5'],
     story:
       'Как владелец продукта, я хочу автоматическую проверку, что событие перестраивает каждый блок, а не только четыре первых.',
     ac: [
@@ -1718,13 +1730,82 @@ BACKLOG.push(
     ],
   },
   {
+    key: 'PL1',
+    title: 'core: обёртка будильника в platform.ts',
+    area: 'core',
+    type: 'contract',
+    priority: 'P1',
+    size: 'M',
+    milestone: M7,
+    deps: ['NV2'],
+    story:
+      'Как команда, мы хотим один проверяемый способ поставить будильник, чтобы модуль сна не зависел от плагинов.',
+    ac: [
+      A(
+        '`src/core/platform.ts`',
+        'модуль вызывает `setAlarm({ at, windowMin })` и `cancelAlarm()`',
+        'на нативе будильник звонит при закрытом приложении через плагин; на вебе возвращается `unsupported`; флаг `alarms` отражает это',
+      ),
+      A('будильник звонит', 'пользователь выключает его', 'событие `alarm:dismissed` с временем доступно подписчикам'),
+      A('тесты', 'прогоняются', 'обёртка мокается целиком; ни один модуль не импортирует `@capacitor-*`'),
+    ],
+    notes: ['Зависимость плагина будильника и права в `android/` — контракт. ADR-0008.'],
+  },
+  {
+    key: 'PL2',
+    title: 'core: обёртка фоновых датчиков (акселерометр, микрофон) в platform.ts',
+    area: 'core',
+    type: 'contract',
+    priority: 'P1',
+    size: 'L',
+    milestone: M7,
+    deps: ['NV1'],
+    story:
+      'Как команда, мы хотим собирать движение и шум ночью одной фоновой службой, чтобы трекинг сна жил в модуле, а не в нативном коде.',
+    ac: [
+      A(
+        '`src/core/platform.ts`',
+        'модуль вызывает `startNightSensing()` и `stopNightSensing()`',
+        'на нативе фоновая служба пишет агрегаты по минутам (движение, уровень шума) в буфер, который модуль читает утром; на вебе — `unsupported`',
+      ),
+      A('разрешения не даны', 'вызывается старт', 'статус `denied` и объяснение, какие права нужны'),
+      A('тесты', 'прогоняются', 'буфер агрегатов мокается; формат описан типом `NightSample` в `src/core/types.ts`'),
+    ],
+    notes: [
+      'Нативная фоновая служба в `android/` — часть этой issue. Алгоритм фаз сна — в модуле health (NV4), не здесь.',
+    ],
+  },
+  {
+    key: 'PL3',
+    title: 'core: обёртка Health Connect / HealthKit в platform.ts',
+    area: 'core',
+    type: 'contract',
+    priority: 'P1',
+    size: 'M',
+    milestone: M7,
+    deps: ['NV1'],
+    story: 'Как команда, мы хотим читать сон и тренировки из системного хранилища здоровья через один интерфейс.',
+    ac: [
+      A(
+        '`src/core/platform.ts`',
+        'модуль вызывает `readSleep(from, to)` и `readWorkouts(from, to)`',
+        'на нативе данные приходят из Health Connect (Android) или HealthKit (iOS) в типах ядра; на вебе — `unsupported`; флаг `healthImport` отражает это',
+      ),
+      A('разрешение не дано', 'вызывается чтение', 'статус `denied`, модуль показывает подсказку'),
+      A('тесты', 'прогоняются', 'обёртка мокается; дубли по внешнему `sourceId` различимы'),
+    ],
+    notes: [
+      'Зависимость плагина и объявления прав — контракт. Запись в таблицы делает модуль health через `saveSleep` / `saveWorkout`.',
+    ],
+  },
+  {
     key: 'NV3',
     title: 'health: будильник с окном подъёма из целей дня',
     area: 'health',
     priority: 'P1',
     size: 'L',
     milestone: M7,
-    deps: ['NV2', 'C2'],
+    deps: ['PL1', 'C2'],
     story:
       'Как пользователь, я хочу, чтобы будильник ставился сам по цели подъёма и звонил даже при закрытом приложении.',
     ac: [
@@ -1741,7 +1822,9 @@ BACKLOG.push(
       A('звонок', 'я нажимаю «Я встал»', 'предложение записать сон через `saveSleep()` с подставленным временем'),
       A('веб', 'я открываю карточку', '«доступно в приложении для телефона»'),
     ],
-    notes: ['Плагин будильника — через `platform.ts`. Миссия для выключения (как в Alarmy) — следующей issue.'],
+    notes: [
+      'Будильник вызывается только через обёртку `platform.ts` из PL1; модуль плагины не импортирует. Миссия для выключения (как в Alarmy) — следующей issue.',
+    ],
   },
   {
     key: 'NV4',
@@ -1750,7 +1833,7 @@ BACKLOG.push(
     priority: 'P1',
     size: 'L',
     milestone: M7,
-    deps: ['NV3'],
+    deps: ['NV3', 'PL2'],
     story: 'Как пользователь, я хочу, чтобы телефон сам понял, когда я спал и в какой момент меня лучше разбудить.',
     ac: [
       A(
@@ -1764,18 +1847,20 @@ BACKLOG.push(
         'момент выбран внутри окна в фазе лёгкого сна (локальный минимум движения); запись сна с этапами',
       ),
       A('веб', 'я открываю блок', 'объяснение и ручной ввод как раньше'),
-      A('ночь трекинга', 'утро', 'расход батареи записан в issue по результатам ручной проверки'),
     ],
-    notes: ['R&D: алгоритм фаз — чистые функции над агрегатами с тестами на синтетических ночах.'],
+    notes: [
+      'R&D: алгоритм фаз — чистые функции над агрегатами с тестами на синтетических ночах; датчики — только через обёртку `platform.ts` из PL2.',
+      'Расход батареи за ночь — ручная проверка на устройстве, результат записать комментарием в issue.',
+    ],
   },
   {
     key: 'NV5',
-    title: 'health: импорт сна, шагов и тренировок из Health Connect / HealthKit',
+    title: 'health: импорт сна и тренировок из Health Connect / HealthKit',
     area: 'health',
     priority: 'P1',
     size: 'L',
     milestone: M7,
-    deps: ['NV1'],
+    deps: ['PL3'],
     story: 'Как пользователь с часами, я хочу, чтобы сон и тренировки попадали в LifeOS сами, без ручного ввода.',
     ac: [
       A(
@@ -1787,6 +1872,7 @@ BACKLOG.push(
       A('веб', 'я открываю настройки импорта', '«доступно в приложении для телефона»'),
       A('отказ в разрешении', 'я пробую импорт', 'понятная ошибка и ручной ввод'),
     ],
+    notes: ['Чтение Health Connect / HealthKit — только через обёртку `platform.ts` из PL3.'],
   },
 
   // ───────── облако и SaaS (M8) ─────────
