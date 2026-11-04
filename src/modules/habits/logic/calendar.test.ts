@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { atLocalTime } from '../../../core/logging/sleepTime';
 import type { Habit, HabitLog, HabitSchedule } from '../../../core/types';
-import { calendarGrid, cellStatusLabel, habitHistory, habitStats } from './calendar';
+import { calendarGrid, cellStatusLabel, habitHistory, habitStats, textOn } from './calendar';
 
 const TODAY = '2026-11-05'; // Thursday; grid weeks start Mon 10/05 … Mon 11/02
 
@@ -41,8 +41,19 @@ describe('calendarGrid', () => {
     expect(grid[4]!.slice(0, 4).map((c) => c.status)).toEqual(['off', 'missed', 'done', 'open']);
   });
 
-  it('«N раз в неделю»: неотмеченные дни не считаются пропусками', () => {
-    const grid = calendarGrid(history({ kind: 'timesPerWeek', timesPerWeek: 3 }, ['2026-11-02']), TODAY);
+  it('«N раз в неделю»: прошлая неделя без нормы — пропуски, неделя с нормой и текущая — не отмечено', () => {
+    const grid = calendarGrid(
+      history({ kind: 'timesPerWeek', timesPerWeek: 3 }, [
+        '2026-10-26', // week of 10/26: 1 of 3 — missed
+        '2026-10-19',
+        '2026-10-20',
+        '2026-10-21', // week of 10/19: quota met
+        '2026-11-02', // current week
+      ]),
+      TODAY,
+    );
+    expect(grid[3]!.map((c) => c.status)).toEqual(['done', 'missed', 'missed', 'missed', 'missed', 'missed', 'missed']);
+    expect(grid[2]!.slice(3).map((c) => c.status)).toEqual(['open', 'open', 'open', 'open']);
     expect(grid[4]!.slice(0, 4).map((c) => c.status)).toEqual(['done', 'open', 'open', 'open']);
   });
 
@@ -53,7 +64,7 @@ describe('calendarGrid', () => {
 });
 
 describe('habitStats', () => {
-  it('та же история: текущая и лучшая серия, процент за 7 и 30 дней', () => {
+  it('серии и процент за 7 и 30 дней', () => {
     const dates = ['2026-10-20', '2026-10-21', '2026-10-22', '2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04'];
     const stats = habitStats(history({ kind: 'daily' }, dates, '2026-10-20'), TODAY);
     expect(stats.streak).toEqual({ current: 4, best: 4, unit: 'days' });
@@ -73,6 +84,13 @@ describe('habitStats', () => {
     const h = habitHistory(habit, [log('2026-11-01'), log('2026-11-01', 'other')]);
     expect(h.since).toBe('2026-10-20');
     expect(h.logs).toHaveLength(1);
+  });
+
+  it('цвет текста на цвете привычки читаем', () => {
+    expect(textOn('#6366f1')).toBe('#ffffff');
+    expect(textOn('#f59e0b')).toBe('#18181b');
+    expect(textOn('#22c55e')).toBe('#18181b');
+    expect(textOn('not-a-colour')).toBe('#ffffff');
   });
 
   it('подписи статусов', () => {

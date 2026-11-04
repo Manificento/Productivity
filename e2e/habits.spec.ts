@@ -40,8 +40,14 @@ test.describe('habits', () => {
     await expect(table.getByRole('row')).toHaveCount(6);
     await expect(page.getByRole('button', { name: '8 ноября: впереди' })).toBeDisabled();
 
+    // touch targets ≥ 44 px at 360 px
+    const cell = page.getByRole('button', { name: /^4 ноября:/ });
+    const box = await cell.boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+
     // back-fill yesterday
-    await page.getByRole('button', { name: /^4 ноября:/ }).click();
+    await cell.click();
     await expect(page.getByRole('button', { name: '4 ноября: выполнено' })).toBeVisible();
     await expect(page.getByText('Серия сейчас').locator('..')).toContainText('🔥1');
 

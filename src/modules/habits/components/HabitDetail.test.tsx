@@ -109,6 +109,18 @@ describe('HabitDetail', () => {
     expect(logs.map((l) => l.done)).toEqual([false]);
   });
 
+  it('день до создания привычки: тап отмечает его задним числом', async () => {
+    const id = await addHabit({ schedule: { kind: 'daily' } });
+    await db.habits.update(id, { createdAt: atLocalTime('2026-11-04', '09:00') });
+    const user = userEvent.setup();
+    renderAt(`/habits/${id}`);
+
+    await user.click(await screen.findByRole('button', { name: '3 ноября: не запланировано' }));
+    expect(await screen.findByRole('button', { name: '3 ноября: выполнено' })).toBeInTheDocument();
+    const logs = await db.habitLogs.where('[habitId+date]').equals([id, '2026-11-03']).toArray();
+    expect(logs.map((l) => l.done)).toEqual([true]);
+  });
+
   it('из списка: тап по названию открывает экран привычки, «← Все привычки» возвращает', async () => {
     await addHabit({ schedule: { kind: 'daily' }, name: 'Чтение' });
     const user = userEvent.setup();

@@ -6,7 +6,7 @@ import { fromDateKey, todayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty, Page, Sheet } from '../../../ui';
 import { archiveHabit, toggleHabit, updateHabit, useHabitLogs, useHabits } from '../data/habitStore';
-import { calendarGrid, cellStatusLabel, habitHistory, habitStats, type CellStatus } from '../logic/calendar';
+import { calendarGrid, cellStatusLabel, habitHistory, habitStats, textOn, type CellStatus } from '../logic/calendar';
 import { describeSchedule, WEEKDAYS } from '../logic/habitForm';
 import { HabitEditor } from './HabitEditor';
 
@@ -16,11 +16,14 @@ const BACK = (
   </Link>
 );
 
-function cellClass(status: CellStatus, color: string): { className: string; style?: { backgroundColor: string } } {
-  const base = 'flex aspect-square w-full min-h-11 items-center justify-center rounded-xl text-xs font-medium';
+function cellClass(
+  status: CellStatus,
+  color: string,
+): { className: string; style?: { backgroundColor: string; color: string } } {
+  const base = 'flex min-h-11 w-full min-w-11 flex-col items-center justify-center rounded-xl text-xs font-medium';
   switch (status) {
     case 'done':
-      return { className: `${base} text-white`, style: { backgroundColor: color } };
+      return { className: base, style: { backgroundColor: color, color: textOn(color) } };
     case 'missed':
       return { className: `${base} border-2 border-rose-300 text-rose-600 dark:border-rose-800 dark:text-rose-400` };
     case 'open':
@@ -98,8 +101,12 @@ export function HabitDetail() {
         </dl>
       </Card>
 
-      <Card title="5 недель">
-        <table className="w-full table-fixed border-separate border-spacing-1" aria-label="Календарь за 5 недель">
+      {/* Outside a Card: seven ≥ 44 px columns only fit the full 328 px content width at 360 px. */}
+      <section aria-labelledby="habit-calendar" className="mb-3">
+        <h2 id="habit-calendar" className="mb-2 text-sm font-medium uppercase tracking-wide text-zinc-500">
+          5 недель
+        </h2>
+        <table className="w-full table-fixed border-separate border-spacing-0.5" aria-label="Календарь за 5 недель">
           <thead>
             <tr>
               {WEEKDAYS.map((w) => (
@@ -126,7 +133,12 @@ export function HabitDetail() {
                         className={look.className}
                         style={look.style}
                       >
-                        {fromDateKey(cell.date).getDate()}
+                        <span>{fromDateKey(cell.date).getDate()}</span>
+                        {fromDateKey(cell.date).getDate() === 1 && (
+                          <span aria-hidden="true" className="text-[10px] leading-none">
+                            {format(fromDateKey(cell.date), 'LLL', { locale: ru })}
+                          </span>
+                        )}
                       </button>
                     </td>
                   );
@@ -137,11 +149,11 @@ export function HabitDetail() {
         </table>
         <p className="mt-2 text-xs text-zinc-500">Нажмите на прошедший день, чтобы поставить или снять отметку.</p>
         {error && (
-          <p role="alert" className="mt-2 text-sm text-rose-600">
+          <p role="alert" className="mt-2 text-sm text-rose-600 dark:text-rose-400">
             {error}
           </p>
         )}
-      </Card>
+      </section>
 
       <Button variant="secondary" className="w-full" onClick={() => setEditing(true)}>
         Изменить

@@ -19,15 +19,18 @@ export interface HabitHistory {
   since: DateKey;
 }
 
-/** Done days up to `today` (future marks never count) and the effective first day. */
-function prepare(h: HabitHistory, today: DateKey): { done: Set<DateKey>; since: DateKey } {
+/**
+ * Done days up to `today` (future marks never count) and the effective first day
+ * (a back-filled mark before `since` moves it back). Shared by streaks, rates and the calendar.
+ */
+export function prepare(h: HabitHistory, today: DateKey): { done: Set<DateKey>; since: DateKey } {
   const done = new Set([...doneDays(h.logs)].filter((d) => d <= today));
   let since = h.since;
   for (const d of done) if (d < since) since = d;
   return { done, since };
 }
 
-function doneInWeek(done: Set<DateKey>, monday: DateKey): number {
+export function doneInWeek(done: Set<DateKey>, monday: DateKey): number {
   let count = 0;
   for (let i = 0; i < 7; i++) if (done.has(shiftDateKey(monday, i))) count++;
   return count;
