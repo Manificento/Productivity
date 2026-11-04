@@ -1,9 +1,10 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Button, Field, Input } from '../../../ui';
-import { addTask } from '../data/tasks';
+import { addTask, type TaskDraft } from '../data/tasks';
 import { validateTitle } from '../logic/tasks';
 
-export function AddTaskForm() {
+/** Adds a task with the list's defaults (e.g. due today in «Сегодня»); `hint` says where it will land. */
+export function AddTaskForm({ defaults = {}, hint }: { defaults?: Omit<TaskDraft, 'title'>; hint?: string }) {
   const [title, setTitle] = useState('');
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
@@ -21,7 +22,7 @@ export function AddTaskForm() {
     busy.current = true;
     setSaving(true);
     try {
-      await addTask(title);
+      await addTask({ ...defaults, title });
       setTitle('');
       setError(undefined);
     } catch {
@@ -34,7 +35,7 @@ export function AddTaskForm() {
 
   return (
     <form onSubmit={submit} noValidate className="mb-2">
-      <Field label="Новая задача" error={error}>
+      <Field label="Новая задача" error={error} hint={hint}>
         {(id) => (
           <div className="flex gap-2">
             <Input

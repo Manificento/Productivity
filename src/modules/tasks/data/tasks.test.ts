@@ -8,20 +8,25 @@ beforeEach(async () => {
 
 describe('tasks data', () => {
   it('addTask stores a trimmed inbox task with priority 4', async () => {
-    const id = await addTask('  Купить молоко ', 1000);
+    const id = await addTask({ title: '  Купить молоко ' }, 1000);
     const saved = await db.tasks.get(id);
     expect(saved).toMatchObject({ title: 'Купить молоко', priority: 4, tags: [], createdAt: 1000, updatedAt: 1000 });
     expect(saved?.dueDate).toBeUndefined();
     expect(saved?.completedAt).toBeUndefined();
   });
 
+  it('addTask keeps the due date and project of the draft', async () => {
+    const id = await addTask({ title: 'Конспект', dueDate: '2026-11-04', projectId: 'study' });
+    expect(await db.tasks.get(id)).toMatchObject({ dueDate: '2026-11-04', projectId: 'study', priority: 4 });
+  });
+
   it('addTask rejects an empty title', async () => {
-    await expect(addTask('  ')).rejects.toThrow('Введите название задачи');
+    await expect(addTask({ title: '  ' })).rejects.toThrow('Введите название задачи');
     expect(await db.tasks.count()).toBe(0);
   });
 
   it('toggleTask sets completedAt, then clears it again', async () => {
-    const id = await addTask('Купить молоко', 1000);
+    const id = await addTask({ title: 'Купить молоко' }, 1000);
     await toggleTask(id, 2000);
     expect(await db.tasks.get(id)).toMatchObject({ completedAt: 2000, updatedAt: 2000 });
     await toggleTask(id, 3000);
@@ -35,7 +40,7 @@ describe('tasks data', () => {
   });
 
   it('deleteTask removes the task from the DB', async () => {
-    const id = await addTask('Купить молоко');
+    const id = await addTask({ title: 'Купить молоко' });
     await deleteTask(id);
     expect(await db.tasks.get(id)).toBeUndefined();
   });
