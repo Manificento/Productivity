@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { addQuickTask, addTask, deleteTask, toggleTask } from './tasks';
+import type { Task } from '../../../core/types';
+import { addQuickTask, addTask, deleteTask, postponeToTomorrow, toggleTask, updateTask } from './tasks';
 
 beforeEach(async () => {
   await Promise.all([db.tasks.clear(), db.projects.clear()]);
@@ -162,6 +163,112 @@ describe('tasks data', () => {
       const id = await addTask({ title: 'разово', dueDate: '2026-11-04' });
       await toggleTask(id, DONE_AT);
       expect(await db.tasks.count()).toBe(1);
+    });
+  });
+
+  describe('editing', () => {
+    const patch = {
+      title: 'Конспект главы 3',
+      notes: 'с примерами',
+      projectId: 'study',
+      priority: 1 as const,
+      dueDate: '2026-11-06',
+      dueTime: '18:00',
+      estimateMin: 45,
+      tags: ['учёба'],
+    };
+
+    it('Given открыт редактор When я меняю поля и сохраняю Then изменения в БД, updatedAt обновлён', async () => {
+      const id = await addTask({ title: 'Конспект', recurrence: { kind: 'daily' } }, 1000);
+      await updateTask(id, patch, 5000);
+      expect(await db.tasks.get(id)).toEqual({
+        id,
+        createdAt: 1000,
+        updatedAt: 5000,
+        recurrence: { kind: 'daily' },
+        ...patch,
+      });
+    });
+
+    it('removes fields that were cleared', async () => {
+      const id = await addTask(patch, 1000);
+      await updateTask(
+        id,
+        {
+          ...patch,
+          notes: undefined,
+          projectId: undefined,
+          dueDate: undefined,
+          dueTime: undefined,
+          estimateMin: undefined,
+        },
+        5000,
+      );
+      const saved = await db.tasks.get(id);
+      expect(saved).not.toHaveProperty('notes');
+      expect(saved).not.toHaveProperty('dueDate');
+      expect(saved).not.toHaveProperty('estimateMin');
+    });
+
+    it('refuses an empty title or a missing task', async () => {
+      const id = await addTask({ title: 'Конспект' });
+      await expect(updateTask(id, { ...patch, title: ' ' })).rejects.toThrow('Введите название задачи');
+      await expect(updateTask('nope', patch)).rejects.toThrow('Задача не найдена');
+    });
+
+    it('postponing a missing task fails', async () => {
+      await expect(postponeToTomorrow('nope', '2026-11-04')).rejects.toThrow('Задача не найдена');
+    });
+
+    describe('edits keep the link between a repeating task and its copy', () => {
+      const DONE_AT = new Date(2026, 10, 4, 12, 0).getTime();
+      async function completedDaily() {
+        const id = await addTask({ title: 'зарядка', dueDate: '2026-11-04', recurrence: { kind: 'daily' } }, 1000);
+        await toggleTask(id, DONE_AT);
+        const copy = (await db.tasks.toArray()).find((t) => t.id !== id)!;
+        return { id, copy };
+      }
+      const asPatch = (t: Task | undefined) => ({
+        title: t!.title,
+        notes: t!.notes,
+        projectId: t!.projectId,
+        priority: t!.priority,
+        dueDate: t!.dueDate,
+        dueTime: t!.dueTime,
+        estimateMin: t!.estimateMin,
+        tags: t!.tags,
+      });
+
+      it('the copy postponed with «На завтра» is still removed when the original is reopened', async () => {
+        const { id, copy } = await completedDaily();
+        await postponeToTomorrow(copy.id, '2026-11-05', DONE_AT + 1);
+        await toggleTask(id, DONE_AT + 2);
+        expect(await db.tasks.count()).toBe(1);
+      });
+
+      it('the copy with an edited date is still removed when the original is reopened', async () => {
+        const { id, copy } = await completedDaily();
+        await updateTask(copy.id, { ...asPatch(copy), dueDate: '2026-11-09' }, DONE_AT + 1);
+        await toggleTask(id, DONE_AT + 2);
+        expect(await db.tasks.count()).toBe(1);
+      });
+
+      it('editing a completed repeating task keeps completedAt, and reopening it still removes its copy', async () => {
+        const { id } = await completedDaily();
+        const original = await db.tasks.get(id);
+        await updateTask(id, { ...asPatch(original), title: 'зарядка утром', dueDate: '2026-11-03' }, DONE_AT + 1);
+        expect((await db.tasks.get(id))?.completedAt).toBe(DONE_AT);
+        await toggleTask(id, DONE_AT + 2);
+        const left = await db.tasks.toArray();
+        expect(left).toHaveLength(1);
+        expect(left[0].completedAt).toBeUndefined();
+      });
+    });
+
+    it('Given задача на сегодня When я нажимаю «На завтра» Then срок становится завтрашним', async () => {
+      const id = await addTask({ title: 'Конспект', dueDate: '2026-11-04', dueTime: '18:00' }, 1000);
+      await postponeToTomorrow(id, '2026-11-04', 5000);
+      expect(await db.tasks.get(id)).toMatchObject({ dueDate: '2026-11-05', dueTime: '18:00', updatedAt: 5000 });
     });
   });
 });

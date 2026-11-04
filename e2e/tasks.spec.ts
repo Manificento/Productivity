@@ -69,3 +69,27 @@ test.describe('repeating tasks', () => {
     await expect(page.getByRole('region', { name: /^Завтра/ }).getByText('зарядка')).toBeVisible();
   });
 });
+
+test.describe('editing', () => {
+  test('tap a task, edit it, then move it to tomorrow', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(2026, 10, 4, 12, 0));
+    await page.goto('/#/tasks');
+    await page.getByLabel('Новая задача').fill('Конспект');
+    await page.getByRole('button', { name: 'Добавить' }).click();
+
+    await page.getByRole('button', { name: /^Конспект/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Задача' });
+    await dialog.getByLabel('Название').fill('Конспект главы 3');
+    await dialog.getByRole('radio', { name: 'P1' }).click();
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const today = page.getByRole('region', { name: 'Сегодня' });
+    await today.getByRole('button', { name: /^Конспект главы 3/ }).click();
+    await dialog.getByRole('button', { name: 'На завтра' }).click();
+    await expect(page.getByText('На сегодня задач нет')).toBeVisible();
+
+    await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Предстоящие' }).click();
+    await expect(page.getByRole('region', { name: /^Завтра/ }).getByText('Конспект главы 3')).toBeVisible();
+  });
+});

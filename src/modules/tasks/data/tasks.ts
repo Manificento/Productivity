@@ -1,8 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { toDateKey } from '../../../core/dates';
+import { shiftDateKey, toDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
-import type { Id, Project, Task } from '../../../core/types';
+import type { DateKey, Id, Project, Task } from '../../../core/types';
+import type { TaskPatch } from '../logic/editForm';
 import { findActiveProject } from '../logic/projects';
 import { isNextCopyOf, nextOccurrence } from '../logic/recurrence';
 import type { QuickDraft } from '../logic/quickDraft';
@@ -70,18 +71,41 @@ export async function toggleTask(id: Id, now: number = Date.now()): Promise<void
       if (next && !already) await db.tasks.add(newRecord(next, now));
       return;
     }
-    const copyDate = nextOccurrence(task, toDateKey(task.completedAt))?.dueDate;
-    if (copyDate) {
-      const open = await db.tasks
-        .where('dueDate')
-        .equals(copyDate)
-        .filter((t) => isNextCopyOf(t, task))
-        .primaryKeys();
+    if (task.recurrence) {
+      // Found by the link alone: the copy's date may have been edited or postponed since.
+      const open = await db.tasks.filter((t) => isNextCopyOf(t, task)).primaryKeys();
       await db.tasks.bulkDelete(open);
     }
     const { completedAt: _done, ...reopened } = task;
     await db.tasks.put(touch(reopened, now));
   });
+}
+
+/**
+ * Saves edited fields. A field set to undefined is removed from the record; everything else
+ * (createdAt, completedAt, repeat) is kept. Bumps updatedAt.
+ */
+export async function updateTask(id: Id, patch: TaskPatch, now: number = Date.now()): Promise<void> {
+  const error = validateTitle(patch.title);
+  if (error) throw new Error(error);
+  await db.transaction('rw', db.tasks, async () => {
+    const task = await db.tasks.get(id);
+    if (!task) throw new Error('Задача не найдена');
+    const merged: Record<string, unknown> = { ...task, ...patch, updatedAt: now };
+    for (const key of Object.keys(merged)) if (merged[key] === undefined) delete merged[key];
+    await db.tasks.put(merged as unknown as Task);
+  });
+}
+
+/** «На завтра»: moves the task's due date to the day after `today`, keeping its time. */
+export async function postponeToTomorrow(id: Id, today: DateKey, now: number = Date.now()): Promise<void> {
+  const changed = await db.tasks.update(id, touch({ dueDate: shiftDateKey(today, 1) }, now));
+  if (changed === 0) throw new Error('Задача не найдена');
+}
+
+/** Live single task; undefined while loading or when it does not exist. */
+export function useTask(id: Id | undefined): Task | undefined {
+  return useLiveQuery(() => (id ? db.tasks.get(id) : undefined), [id]);
 }
 
 export async function deleteTask(id: Id): Promise<void> {
