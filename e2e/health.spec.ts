@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+/** Open Food Facts is mocked in E2E: no real network in tests. */
+const OFF_ROUTE = 'https://world.openfoodfacts.org/**';
+
 test.describe('health', () => {
   test('log last night, update it, and see it in the 14-day chart', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
@@ -83,6 +86,7 @@ test.describe('health', () => {
   });
 
   test('food diary: create a product, add 150 g to lunch, see totals, re-add from recent', async ({ page }) => {
+    await page.route(OFF_ROUTE, (route) => route.fulfill({ json: { products: [] } }));
     await page.clock.setFixedTime(new Date('2026-11-04T13:00:00+05:00'));
     await page.goto('/#/health/food');
     await expect(page.getByText(/Кофеин — до/)).toBeVisible();
@@ -109,5 +113,45 @@ test.describe('health', () => {
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test('food search: own foods first, then Open Food Facts; a picked product works offline', async ({
+    page,
+    context,
+  }) => {
+    await page.route(OFF_ROUTE, (route) =>
+      route.fulfill({
+        json: {
+          products: [
+            {
+              code: '4600000000001',
+              product_name_ru: 'Гречка ядрица',
+              nutriments: { 'energy-kcal_100g': 313, proteins_100g: 12.6, fat_100g: 3.3, carbohydrates_100g: 57.1 },
+            },
+            { code: '4600000000002', product_name_ru: 'Гречка без калорий', nutriments: {} },
+          ],
+        },
+      }),
+    );
+    await page.goto('/#/health/food');
+    await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Поиск продукта').fill('гречка');
+    const off = dialog.getByRole('list', { name: 'Результаты Open Food Facts' });
+    await expect(off.getByRole('button')).toHaveCount(1);
+    await off.getByRole('button', { name: /Гречка ядрица/ }).click();
+    await dialog.getByLabel('Вес, г').fill('80');
+    await dialog.getByRole('button', { name: 'Добавить' }).click();
+    await expect(page.getByRole('region', { name: 'Обед' })).toContainText('Гречка ядрица, 80 г');
+
+    await context.setOffline(true);
+    await page.getByRole('button', { name: '+ Добавить в «Ужин»' }).click();
+    await dialog.getByLabel('Поиск продукта').fill('гречка');
+    await expect(
+      dialog.getByRole('region', { name: 'Мои продукты' }).getByRole('button', { name: /Гречка ядрица/ }),
+    ).toBeVisible();
+    await expect(dialog.getByText(/Нет сети — поиск в Open Food Facts недоступен/)).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Создать свой продукт' })).toBeVisible();
+    await context.setOffline(false);
   });
 });

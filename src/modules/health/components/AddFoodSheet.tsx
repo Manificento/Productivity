@@ -4,6 +4,7 @@ import { Button, Field, Input, Sheet } from '../../../ui';
 import { addMealItem, useHasLoggedFood } from '../data/food';
 import { formatGrams, macrosFor, MEAL_KINDS, searchFoods, type MealKind } from '../logic/nutrition';
 import { CustomFoodForm } from './CustomFoodForm';
+import { OffResults } from './OffResults';
 
 function FoodButton({ food, onPick }: { food: Food; onPick: (f: Food) => void }) {
   return (
@@ -179,13 +180,19 @@ export function AddFoodSheet({
             </section>
           )}
           {query.trim() !== '' && (
-            <ul aria-label="Найденные продукты" className="mb-3">
-              {results.map((f) => (
-                <FoodButton key={f.id} food={f} onPick={setPicked} />
-              ))}
-              {results.length === 0 && <li className="py-3 text-sm text-zinc-500">Ничего не нашлось.</li>}
-            </ul>
+            <section aria-label="Мои продукты" className="mb-3">
+              <p className="mb-1 text-sm text-zinc-500">Мои продукты</p>
+              <ul aria-label="Найденные продукты">
+                {results.map((f) => (
+                  <FoodButton key={f.id} food={f} onPick={setPicked} />
+                ))}
+                {results.length === 0 && (
+                  <li className="py-2 text-sm text-zinc-500">Среди ваших продуктов ничего нет.</li>
+                )}
+              </ul>
+            </section>
           )}
+          <OffResults query={query} foods={foods} onPick={setPicked} />
           {foods.length === 0 && query.trim() === '' && (
             <p className="mb-3 text-sm text-zinc-500">Продуктов пока нет — создайте свой.</p>
           )}
