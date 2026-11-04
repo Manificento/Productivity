@@ -26,52 +26,54 @@ async function waitForStimulus(page: Page) {
 }
 
 test.describe('cognition: PVT', () => {
-  test('a short run from the morning flow: false start, reaction, results, back to Today, history', async ({
-    page,
-  }) => {
-    await page.clock.install({ time: START });
+  // TEMPORARY (issue #64 evidence): the same scenario 10 times in one CI run. Reverted before merge.
+  for (let attempt = 1; attempt <= 10; attempt++)
+    test(`a short run from the morning flow: false start, reaction, results, back to Today, history #${attempt}`, async ({
+      page,
+    }) => {
+      await page.clock.install({ time: START });
 
-    for (let run = 1; run <= 2; run++) {
-      await page.goto('/#/cognition/pvt?return=/&duration=12');
-      // Pause relative to the page's current (fake) time, so no real-time budget is hidden here.
-      const now = await page.evaluate(() => Date.now());
-      await page.clock.pauseAt(now + 1_000);
-      await page.getByRole('button', { name: 'Начать' }).click();
-      const area = page.getByRole('button', { name: 'Область реакции' });
+      for (let run = 1; run <= 2; run++) {
+        await page.goto('/#/cognition/pvt?return=/&duration=12');
+        // Pause relative to the page's current (fake) time, so no real-time budget is hidden here.
+        const now = await page.evaluate(() => Date.now());
+        await page.clock.pauseAt(now + 1_000);
+        await page.getByRole('button', { name: 'Начать' }).click();
+        const area = page.getByRole('button', { name: 'Область реакции' });
 
-      if (run === 1) {
-        await page.clock.runFor(500);
+        if (run === 1) {
+          await page.clock.runFor(500);
+          await area.click();
+          await expect(page.getByText('Фальстарт — рано!')).toBeVisible();
+        }
+
+        await waitForStimulus(page);
+        await page.clock.runFor(REACTION_MS);
         await area.click();
-        await expect(page.getByText('Фальстарт — рано!')).toBeVisible();
+        await expect(page.getByText(/^\d+ мс$/)).toBeVisible();
+
+        // Let the 12 s run end; then hand the clock back so saving to IndexedDB is never starved.
+        await page.clock.runFor(12_000);
+        await page.clock.resume();
+        await expect(page.getByText('Медиана реакции')).toBeVisible();
+        // The stimulus appears somewhere inside the last fake-clock step, then we wait REACTION_MS.
+        const medianMs = parseInt(
+          (await page.getByText('Медиана реакции').locator('xpath=following-sibling::dd[1]').textContent()) ?? '',
+        );
+        expect(medianMs).toBeGreaterThanOrEqual(REACTION_MS);
+        expect(medianMs).toBeLessThanOrEqual(REACTION_MS + STEP_MS);
+        await expect(page.getByText('Результат сохранён.')).toBeVisible();
+        if (run === 1)
+          await expect(page.getByText('Фальстарты').locator('xpath=following-sibling::dd[1]')).toHaveText('1');
+
+        await page.getByRole('button', { name: 'Готово' }).click();
+        await expect(page.getByRole('heading', { name: 'Сегодня' })).toBeVisible();
       }
 
-      await waitForStimulus(page);
-      await page.clock.runFor(REACTION_MS);
-      await area.click();
-      await expect(page.getByText(/^\d+ мс$/)).toBeVisible();
-
-      // Let the 12 s run end; then hand the clock back so saving to IndexedDB is never starved.
-      await page.clock.runFor(12_000);
-      await page.clock.resume();
-      await expect(page.getByText('Медиана реакции')).toBeVisible();
-      // The stimulus appears somewhere inside the last fake-clock step, then we wait REACTION_MS.
-      const medianMs = parseInt(
-        (await page.getByText('Медиана реакции').locator('xpath=following-sibling::dd[1]').textContent()) ?? '',
-      );
-      expect(medianMs).toBeGreaterThanOrEqual(REACTION_MS);
-      expect(medianMs).toBeLessThanOrEqual(REACTION_MS + STEP_MS);
-      await expect(page.getByText('Результат сохранён.')).toBeVisible();
-      if (run === 1)
-        await expect(page.getByText('Фальстарты').locator('xpath=following-sibling::dd[1]')).toHaveText('1');
-
-      await page.getByRole('button', { name: 'Готово' }).click();
-      await expect(page.getByRole('heading', { name: 'Сегодня' })).toBeVisible();
-    }
-
-    await page.goto('/#/cognition');
-    await expect(page.getByRole('img', { name: /Медиана реакции за 14 дней/ })).toBeVisible();
-    await expect(page.getByText(/Последний результат/)).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow).toBeLessThanOrEqual(0);
-  });
+      await page.goto('/#/cognition');
+      await expect(page.getByRole('img', { name: /Медиана реакции за 14 дней/ })).toBeVisible();
+      await expect(page.getByText(/Последний результат/)).toBeVisible();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      expect(overflow).toBeLessThanOrEqual(0);
+    });
 });
