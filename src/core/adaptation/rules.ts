@@ -146,16 +146,18 @@ export const CONDITION_RULES: ConditionRule[] = [
   {
     id: 'overload',
     when: (ctx, date) => upcomingWithin3Days(ctx, date).length >= 2,
-    apply: (t, ctx) => ({
-      ...t,
-      taskCapacityMin: roundCapacity(t.taskCapacityMin * 0.9),
-      reasons: [
-        ...t.reasons,
-        `Два события за 3 дня (${upcomingWithin3Days(ctx, t.date)
-          .map((e) => `«${e.title}»`)
-          .join(', ')}): ёмкость −10%`,
-      ],
-    }),
+    apply: (t, ctx) => {
+      const capacity = roundCapacity(t.taskCapacityMin * 0.9);
+      // A day already cut to the minimum may not shrink after rounding; then there is nothing to explain.
+      if (capacity >= t.taskCapacityMin) return t;
+      const events = upcomingWithin3Days(ctx, t.date);
+      const titles = events.map((e) => `«${e.title}»`).join(', ');
+      return {
+        ...t,
+        taskCapacityMin: capacity,
+        reasons: [...t.reasons, `Событий за 3 дня: ${events.length} (${titles}) — ёмкость −10%`],
+      };
+    },
   },
   {
     id: 'sleep-debt',
@@ -172,11 +174,16 @@ export const CONDITION_RULES: ConditionRule[] = [
   {
     id: 'hard-workout-yesterday',
     when: (ctx) => ctx.yesterdayMaxRpe !== undefined && ctx.yesterdayMaxRpe >= HARD_RPE,
-    apply: (t, ctx) => ({
-      ...t,
-      maxWorkoutIntensity: capIntensity(t.maxWorkoutIntensity, 'moderate'),
-      reasons: [...t.reasons, `Вчера тяжёлая тренировка (RPE ${ctx.yesterdayMaxRpe}): сегодня не выше умеренной`],
-    }),
+    apply: (t, ctx) => {
+      const capped = capIntensity(t.maxWorkoutIntensity, 'moderate');
+      // Only explain the cap when it changes something (prep, taper or short sleep may already be lower).
+      if (capped === t.maxWorkoutIntensity) return t;
+      return {
+        ...t,
+        maxWorkoutIntensity: capped,
+        reasons: [...t.reasons, `Вчера тяжёлая тренировка (RPE ${ctx.yesterdayMaxRpe}): сегодня не выше умеренной`],
+      };
+    },
   },
 ];
 

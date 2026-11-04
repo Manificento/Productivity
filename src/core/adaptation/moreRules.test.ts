@@ -30,7 +30,7 @@ describe('overload: two events within 3 days', () => {
     const two = computeDailyTargets('2026-11-01', ctx({ events: [report, defense] }));
     expect(two.phase).toBe(one.phase);
     expect(two.taskCapacityMin).toBe(roundCapacity(one.taskCapacityMin * 0.9));
-    expect(two.reasons).toContain('Два события за 3 дня («Отчёт», «Защита»): ёмкость −10%');
+    expect(two.reasons).toContain('Событий за 3 дня: 2 («Отчёт», «Защита») — ёмкость −10%');
   });
 
   it('cuts 10% of a normal day when both events are 3 days away', () => {
@@ -49,7 +49,7 @@ describe('overload: two events within 3 days', () => {
       '2026-11-01',
       ctx({ events: [event({ id: 'a', date: '2026-11-02' }), event({ id: 'b', date: '2026-11-05' })] }),
     );
-    expect(far.reasons.join()).not.toMatch(/Два события/);
+    expect(far.reasons.join()).not.toMatch(/Событий за 3 дня/);
   });
 
   it('ignores events that are already over', () => {
@@ -57,7 +57,7 @@ describe('overload: two events within 3 days', () => {
       '2026-11-03',
       ctx({ events: [event({ id: 'a', date: '2026-11-02' }), event({ id: 'b', date: '2026-11-04' })] }),
     );
-    expect(t.reasons.join()).not.toMatch(/Два события/);
+    expect(t.reasons.join()).not.toMatch(/Событий за 3 дня/);
   });
 });
 
@@ -86,5 +86,37 @@ describe('hard workout yesterday', () => {
     expect(computeDailyTargets('2026-11-04', ctx({ yesterdayMaxRpe: 7 })).maxWorkoutIntensity).toBe('hard');
     const light = computeDailyTargets('2026-11-04', ctx({ yesterdayMaxRpe: 9, lastSleepHours: 5 }));
     expect(light.maxWorkoutIntensity).toBe('light');
+    expect(light.reasons.join()).not.toMatch(/тяжёлая тренировка/);
+  });
+});
+
+describe('interactions', () => {
+  it('counts every event in the window', () => {
+    const t = computeDailyTargets(
+      '2026-11-01',
+      ctx({
+        events: ['a', 'b', 'c'].map((id) => event({ id, title: id.toUpperCase(), date: '2026-11-04' })),
+      }),
+    );
+    expect(t.reasons).toContain('Событий за 3 дня: 3 («A», «B», «C») — ёмкость −10%');
+  });
+
+  it('does not claim a cut when capacity is already at the rounding floor', () => {
+    const tiny = { ...DEFAULT_BASELINE, taskCapacityMin: 15 };
+    const t = computeDailyTargets(
+      '2026-11-01',
+      ctx({ baseline: tiny, events: [event({ id: 'a', date: '2026-11-04' }), event({ id: 'b', date: '2026-11-04' })] }),
+    );
+    expect(t.taskCapacityMin).toBe(15);
+    expect(t.reasons).toEqual([]);
+  });
+
+  it('sleep debt stacks with taper: bedtime one hour earlier', () => {
+    const t = computeDailyTargets(
+      '2026-11-09',
+      ctx({ events: [event({ date: '2026-11-10' })], recentSleepHours: [6, 6, 6] }),
+    );
+    expect(t.phase).toBe('taper');
+    expect(t.bedtime).toBe('22:30');
   });
 });

@@ -19,6 +19,11 @@ describe('loadDailyTargets', () => {
     expect(t.bedtime).toBe('23:00');
   });
 
+  it('ignores a short night older than three days', async () => {
+    await db.sleepLogs.bulkAdd([night('2026-11-01', 5), night('2026-11-02', 6), night('2026-11-03', 6)]);
+    expect((await loadDailyTargets('2026-11-04')).bedtime).toBe('23:30');
+  });
+
   it('loads yesterday’s hardest workout', async () => {
     await db.workoutLogs.bulkAdd([
       { id: 'w1', date: '2026-11-03', type: 'Сила', durationMin: 60, rpe: 9, ...base },
