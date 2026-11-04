@@ -15,6 +15,11 @@ test.describe('tasks', () => {
     await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Сегодня' }).click();
     const done = page.getByRole('region', { name: 'Выполнено сегодня' });
     await expect(done.getByText('Купить молоко')).toBeVisible();
+
+    await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Выполнено' }).click();
+    await expect(page.getByRole('region', { name: /^Сегодня · / }).getByText('Купить молоко')).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 
   test('create a project and add a task to it', async ({ page }) => {

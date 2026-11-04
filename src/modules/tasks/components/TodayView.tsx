@@ -1,5 +1,4 @@
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
-import { todayKey } from '../../../core/dates';
 import { useTasksData } from '../data/useTasksData';
 import { focusFirst } from '../logic/capacity';
 import { todayList } from '../logic/lists';
@@ -10,10 +9,11 @@ import { PlanCard } from './PlanCard';
 import { TaskRows } from './TaskRows';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
+import { useToday } from './useToday';
 
 export function TodayView() {
   const data = useTasksData();
-  const today = todayKey();
+  const today = useToday();
   const { actions, ui } = useTaskActions();
   const targets = useDailyTargets(today);
   const focusProjectId = targets?.focusProjectId;

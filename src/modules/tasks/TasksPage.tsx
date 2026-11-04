@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { Page, Tabs } from '../../ui';
+import { DoneView } from './components/DoneView';
 import { InboxView } from './components/InboxView';
 import { ProjectsView } from './components/ProjectsView';
 import { ProjectView } from './components/ProjectView';
@@ -11,6 +12,7 @@ const TABS = [
   { to: '/tasks/upcoming', label: 'Предстоящие' },
   { to: '/tasks/inbox', label: 'Входящие' },
   { to: '/tasks/projects', label: 'Проекты' },
+  { to: '/tasks/done', label: 'Выполнено' },
 ];
 
 export function TasksPage() {
@@ -23,6 +25,7 @@ export function TasksPage() {
         <Route path="inbox" element={<InboxView />} />
         <Route path="projects" element={<ProjectsView />} />
         <Route path="projects/:projectId" element={<ProjectView />} />
+        <Route path="done" element={<DoneView />} />
       </Routes>
     </Page>
   );

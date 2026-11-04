@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { todayKey } from '../../../core/dates';
 import { Button, Empty, IconButton, Sheet } from '../../../ui';
 import { renameProject, setProjectArchived } from '../data/projects';
 import { useTasksData } from '../data/useTasksData';
@@ -10,12 +9,13 @@ import { ListBody } from './ListBody';
 import { ProjectNameForm } from './ProjectNameForm';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
+import { useToday } from './useToday';
 
 export function ProjectView() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
   const data = useTasksData();
-  const today = todayKey();
+  const today = useToday();
   const { actions, ui } = useTaskActions();
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState<string>();
