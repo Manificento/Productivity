@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { exportAll, importAll } from '../../core/backup';
 import { todayKey } from '../../core/dates';
 import { Button, Card, Page } from '../../ui';
+import { DemoDataCard } from './components/DemoDataCard';
 
 export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -50,6 +51,7 @@ export function SettingsPage() {
         </div>
         {status && <p className="mt-3 text-sm">{status}</p>}
       </Card>
+      <DemoDataCard onExport={onExport} />
     </Page>
   );
 }
