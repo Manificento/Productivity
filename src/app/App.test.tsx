@@ -20,7 +20,7 @@ describe('App shell', () => {
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Сегодня' })).toBeInTheDocument();
     expect(await screen.findByText(/Цели дня/)).toBeInTheDocument();
-    for (const label of ['Задачи', 'Привычки', 'Время', 'Здоровье']) {
+    for (const label of ['Задачи', 'Привычки', 'Время', 'Блоки']) {
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
     }
   });

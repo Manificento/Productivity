@@ -6,7 +6,7 @@ import type { AppModule } from './moduleTypes';
 
 const mounts = vi.hoisted(() => ({ count: 0 }));
 
-// A fake registry: one module with a background component, one without.
+// A fake registry: a home module, one module with a background component, one without.
 vi.mock('./modules', () => {
   function AlphaBackground() {
     useEffect(() => {
@@ -14,24 +14,41 @@ vi.mock('./modules', () => {
     }, []);
     return <p>фон альфы</p>;
   }
+  const common = { group: 'plan' as const, summary: 'Тест' };
+  const home: AppModule = {
+    id: 'home',
+    title: 'Дом',
+    path: '/*',
+    icon: 'h',
+    navOrder: 1,
+    Page: () => <h1>Дом</h1>,
+    ...common,
+  };
   const alpha: AppModule = {
     id: 'alpha',
     title: 'Альфа',
     path: '/alpha',
     icon: 'α',
-    navOrder: 1,
+    navOrder: 2,
     Page: () => <h1>Альфа</h1>,
     Background: AlphaBackground,
+    ...common,
   };
   const beta: AppModule = {
     id: 'beta',
     title: 'Бета',
     path: '/beta',
     icon: 'β',
-    navOrder: 2,
+    navOrder: 3,
     Page: () => <h1>Бета</h1>,
+    ...common,
   };
-  return { MODULES: [alpha, beta], NAV_MODULES: [alpha, beta] };
+  return {
+    MODULES: [home, alpha, beta],
+    HOME_MODULE: home,
+    PINNED_MODULES: [alpha, beta],
+    MODULE_GROUPS: { plan: 'План', body: 'Тело', mind: 'Ум', knowledge: 'Знания', system: 'Система' },
+  };
 });
 
 const { App } = await import('./App');

@@ -6,5 +6,7 @@ export const settingsModule: AppModule = {
   title: 'Настройки',
   path: '/settings/*',
   icon: '⚙️',
+  group: 'system',
+  summary: 'Резервная копия, демо-данные и установка',
   Page: SettingsPage,
 };

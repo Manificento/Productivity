@@ -6,6 +6,8 @@ export const tasksModule: AppModule = {
   title: 'Задачи',
   path: '/tasks/*',
   icon: '✅',
+  group: 'plan',
+  summary: 'Список дел, проекты и ёмкость дня',
   navOrder: 2,
   Page: TasksPage,
 };
