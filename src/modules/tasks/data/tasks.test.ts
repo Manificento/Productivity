@@ -121,6 +121,43 @@ describe('tasks data', () => {
       expect(all.map((t) => t.dueDate).sort()).toEqual(['2026-11-04', '2026-11-05', '2026-11-06']);
     });
 
+    it('completing, reopening and completing again does not duplicate a kept copy', async () => {
+      const id = await addDaily();
+      await toggleTask(id, DONE_AT);
+      const copy = (await db.tasks.toArray()).find((t) => t.id !== id)!;
+      await toggleTask(copy.id, DONE_AT + 1000);
+      await toggleTask(id, DONE_AT + 2000);
+      await toggleTask(id, DONE_AT + 3000);
+
+      const dates = (await db.tasks.toArray()).map((t) => t.dueDate).sort();
+      expect(dates).toEqual(['2026-11-04', '2026-11-05', '2026-11-06']);
+    });
+
+    it('reopening removes the copy even after it was renamed', async () => {
+      const id = await addDaily();
+      await toggleTask(id, DONE_AT);
+      const copy = (await db.tasks.toArray()).find((t) => t.id !== id)!;
+      await db.tasks.update(copy.id, { title: 'зарядка утром' });
+      await toggleTask(id, DONE_AT + 1000);
+      expect(await db.tasks.count()).toBe(1);
+    });
+
+    it('Given задача «по вторникам и четвергам» на вторник When я её выполняю Then следующая копия — на ближайший четверг', async () => {
+      const id = await addTask({
+        title: 'бег',
+        dueDate: '2026-11-03',
+        recurrence: { kind: 'weekly', weekdays: [2, 4] },
+      });
+      await toggleTask(id, new Date(2026, 10, 3, 9, 0).getTime());
+      expect((await db.tasks.toArray()).find((t) => t.id !== id)?.dueDate).toBe('2026-11-05');
+    });
+
+    it('an overdue daily task completed today gets tomorrow’s copy', async () => {
+      const id = await addTask({ title: 'зарядка', dueDate: '2026-11-01', recurrence: { kind: 'daily' } });
+      await toggleTask(id, DONE_AT);
+      expect((await db.tasks.toArray()).find((t) => t.id !== id)?.dueDate).toBe('2026-11-05');
+    });
+
     it('a task without a repeat creates no copy', async () => {
       const id = await addTask({ title: 'разово', dueDate: '2026-11-04' });
       await toggleTask(id, DONE_AT);

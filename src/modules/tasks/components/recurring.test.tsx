@@ -13,7 +13,7 @@ describe('repeating tasks in the list', () => {
     renderTasks('/tasks');
 
     const today = await findSection('Сегодня');
-    expect(await within(today).findByText('↻ каждый день')).toBeInTheDocument();
+    expect(await within(today).findByText('каждый день')).toBeInTheDocument();
     await user.click(within(today).getByRole('checkbox', { name: 'Выполнено: зарядка' }));
     expect(await db.tasks.count()).toBe(2);
 

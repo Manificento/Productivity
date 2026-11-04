@@ -31,9 +31,15 @@ describe('nextDueDate', () => {
     expect(nextDueDate({ kind: 'monthly' }, '2026-12-15')).toBe('2027-01-15');
   });
 
+  it('known limit: after a short month the repeat stays on the clamped day (no anchor day in Recurrence, #73)', () => {
+    expect(nextDueDate({ kind: 'monthly' }, '2027-02-28')).toBe('2027-03-28');
+  });
+
   it('Given задача «каждые 3 дня» When я её выполняю Then следующая — через 3 дня от срока', () => {
     expect(nextDueDate({ kind: 'everyNDays', interval: 3 }, '2026-11-29')).toBe('2026-12-02');
     expect(nextDueDate({ kind: 'everyNDays' }, '2026-11-04')).toBe('2026-11-05');
+    expect(nextDueDate({ kind: 'everyNDays', interval: Number.NaN }, '2026-11-04')).toBe('2026-11-05');
+    expect(nextDueDate({ kind: 'everyNDays', interval: 2.7 }, '2026-11-04')).toBe('2026-11-06');
   });
 });
 
@@ -67,6 +73,20 @@ describe('nextOccurrence', () => {
     expect(nextOccurrence(task({ recurrence: { kind: 'daily' } }), '2026-11-04')?.dueDate).toBe('2026-11-05');
   });
 
+  it('an overdue repeating task completed today gets its next copy in the future, keeping the cadence', () => {
+    expect(nextOccurrence(task({ dueDate: '2026-11-01', recurrence: { kind: 'daily' } }), '2026-11-04')?.dueDate).toBe(
+      '2026-11-05',
+    );
+    const every3 = task({ dueDate: '2026-10-30', recurrence: { kind: 'everyNDays', interval: 3 } });
+    expect(nextOccurrence(every3, '2026-11-04')?.dueDate).toBe('2026-11-05'); // 30.10 → 2.11 → 5.11
+  });
+
+  it('a task completed before its due date repeats from the due date', () => {
+    expect(nextOccurrence(task({ dueDate: '2026-11-06', recurrence: { kind: 'daily' } }), '2026-11-04')?.dueDate).toBe(
+      '2026-11-07',
+    );
+  });
+
   it('a task without a repeat has no next occurrence', () => {
     expect(nextOccurrence(task({ dueDate: '2026-11-04' }), '2026-11-04')).toBeUndefined();
   });
@@ -76,14 +96,15 @@ describe('isNextCopyOf', () => {
   const original = task({ id: 'orig', dueDate: '2026-11-04', recurrence: { kind: 'daily' }, completedAt: 5000 });
   const copy = task({ id: 'copy', dueDate: '2026-11-05', recurrence: { kind: 'daily' }, createdAt: 5000 });
 
-  it('recognises the open copy created when the original was completed', () => {
+  it('recognises the open copy created when the original was completed, even after a rename', () => {
     expect(isNextCopyOf(copy, original)).toBe(true);
+    expect(isNextCopyOf({ ...copy, title: 'переименована' }, original)).toBe(true);
   });
 
   it('ignores a completed copy, a copy from another completion, another task and the original itself', () => {
     expect(isNextCopyOf({ ...copy, completedAt: 6000 }, original)).toBe(false);
     expect(isNextCopyOf({ ...copy, createdAt: 4000 }, original)).toBe(false);
-    expect(isNextCopyOf({ ...copy, title: 'другое' }, original)).toBe(false);
+    expect(isNextCopyOf({ ...copy, recurrence: undefined }, original)).toBe(false);
     expect(isNextCopyOf(original, original)).toBe(false);
     expect(isNextCopyOf(copy, { ...original, completedAt: undefined })).toBe(false);
   });

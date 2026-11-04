@@ -49,7 +49,12 @@ export function TaskItem({
         {(overdue || due || projectName || task.recurrence) && (
           <div className="mt-1 flex flex-wrap gap-1">
             {overdue ? <Chip tone="danger">Просрочено · {due}</Chip> : due && <Chip>{due}</Chip>}
-            {task.recurrence && <Chip>↻ {recurrenceLabel(task.recurrence)}</Chip>}
+            {task.recurrence && (
+              <Chip>
+                <span aria-hidden="true">↻&nbsp;</span>
+                {recurrenceLabel(task.recurrence)}
+              </Chip>
+            )}
             {projectName && <Chip tone="accent">#{projectName}</Chip>}
           </div>
         )}

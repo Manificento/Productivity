@@ -59,12 +59,25 @@ export async function toggleTask(id: Id, now: number = Date.now()): Promise<void
     if (task.completedAt === undefined) {
       await db.tasks.put({ ...task, ...touch({ completedAt: now }, now) });
       const next = nextOccurrence(task, toDateKey(now));
-      if (next) await db.tasks.add(newRecord(next, now));
+      // Completing, reopening and completing again must not start a second chain next to a kept copy.
+      const already =
+        next &&
+        (await db.tasks
+          .where('dueDate')
+          .equals(next.dueDate ?? '')
+          .filter((t) => t.id !== task.id && t.recurrence !== undefined && t.title === task.title)
+          .count());
+      if (next && !already) await db.tasks.add(newRecord(next, now));
       return;
     }
-    if (task.recurrence) {
-      const open = await db.tasks.filter((t) => isNextCopyOf(t, task)).toArray();
-      await db.tasks.bulkDelete(open.map((t) => t.id));
+    const copyDate = nextOccurrence(task, toDateKey(task.completedAt))?.dueDate;
+    if (copyDate) {
+      const open = await db.tasks
+        .where('dueDate')
+        .equals(copyDate)
+        .filter((t) => isNextCopyOf(t, task))
+        .primaryKeys();
+      await db.tasks.bulkDelete(open);
     }
     const { completedAt: _done, ...reopened } = task;
     await db.tasks.put(touch(reopened, now));
