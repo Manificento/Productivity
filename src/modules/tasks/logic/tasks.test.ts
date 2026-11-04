@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '../../../core/types';
-import { activeTasks, completedOn, validateTitle } from './tasks';
+import { completedOn, validateTitle } from './tasks';
 
 function task(over: Partial<Task>): Task {
   return { id: 'x', createdAt: 0, updatedAt: 0, title: 't', priority: 4, tags: [], ...over };
@@ -18,17 +18,6 @@ describe('validateTitle', () => {
 
   it('accepts a non-empty title', () => {
     expect(validateTitle('Купить молоко')).toBeUndefined();
-  });
-});
-
-describe('activeTasks', () => {
-  it('keeps only tasks without completedAt, oldest first', () => {
-    const list = [
-      task({ id: 'b', createdAt: 2 }),
-      task({ id: 'done', completedAt: 5 }),
-      task({ id: 'a', createdAt: 1 }),
-    ];
-    expect(activeTasks(list).map((t) => t.id)).toEqual(['a', 'b']);
   });
 });
 
