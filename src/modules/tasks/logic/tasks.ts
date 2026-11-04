@@ -6,11 +6,6 @@ export function validateTitle(title: string): string | undefined {
   return title.trim() === '' ? 'Введите название задачи' : undefined;
 }
 
-/** Tasks that are not completed, oldest first. */
-export function activeTasks(tasks: Task[]): Task[] {
-  return tasks.filter((t) => t.completedAt === undefined).sort((a, b) => a.createdAt - b.createdAt);
-}
-
 /** Tasks completed on the local day `date`, most recently completed first. */
 export function completedOn(tasks: Task[], date: DateKey): Task[] {
   return tasks

@@ -6,11 +6,14 @@ import { validateTitle } from '../logic/tasks';
 
 type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
 
-/** Creates an inbox task (no due date) with the default priority 4. Returns its id. */
-export async function addTask(title: string, now: number = Date.now()): Promise<Id> {
-  const error = validateTitle(title);
+/** What a new task needs: a title, optionally a due date and a project. */
+export type TaskDraft = Pick<NewTask, 'title'> & Partial<Pick<NewTask, 'dueDate' | 'projectId'>>;
+
+/** Creates a task with the default priority 4 (no due date → «Входящие»). Returns its id. */
+export async function addTask(draft: TaskDraft, now: number = Date.now()): Promise<Id> {
+  const error = validateTitle(draft.title);
   if (error) throw new Error(error);
-  const task: Task = newRecord<NewTask>({ title: title.trim(), priority: 4, tags: [] }, now);
+  const task: Task = newRecord<NewTask>({ priority: 4, tags: [], ...draft, title: draft.title.trim() }, now);
   await db.tasks.add(task);
   return task.id;
 }
