@@ -27,4 +27,25 @@ test.describe('habits', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+
+  test('habit screen: 5-week grid, stats, tapping a past day marks it', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-11-05T20:00:00+05:00') });
+    await page.goto('/#/habits');
+    await page.getByRole('button', { name: '+ Привычка' }).click();
+    await page.getByRole('dialog').getByLabel('Название').fill('Зарядка');
+    await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click();
+
+    await page.getByRole('link', { name: 'Открыть «Зарядка»' }).click();
+    const table = page.getByRole('table', { name: 'Календарь за 5 недель' });
+    await expect(table.getByRole('row')).toHaveCount(6);
+    await expect(page.getByRole('button', { name: '8 ноября: впереди' })).toBeDisabled();
+
+    // back-fill yesterday
+    await page.getByRole('button', { name: /^4 ноября:/ }).click();
+    await expect(page.getByRole('button', { name: '4 ноября: выполнено' })).toBeVisible();
+    await expect(page.getByText('Серия сейчас').locator('..')).toContainText('🔥1');
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
 });

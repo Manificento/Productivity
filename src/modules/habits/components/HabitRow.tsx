@@ -1,8 +1,9 @@
+import { Link } from 'react-router-dom';
 import type { TodayHabit } from '../logic/today';
 import { streakLabel } from '../logic/today';
 import { describeSchedule } from '../logic/habitForm';
 
-export function HabitRow({ item, onToggle, onEdit }: { item: TodayHabit; onToggle: () => void; onEdit: () => void }) {
+export function HabitRow({ item, onToggle }: { item: TodayHabit; onToggle: () => void }) {
   const { habit, done } = item;
   const color = habit.color ?? '#6366f1';
   return (
@@ -17,15 +18,14 @@ export function HabitRow({ item, onToggle, onEdit }: { item: TodayHabit; onToggl
       >
         {done ? '✓' : ''}
       </button>
-      <button
-        type="button"
-        onClick={onEdit}
-        aria-label={`Изменить «${habit.name}»`}
-        className="flex min-h-11 min-w-0 flex-1 flex-col items-start text-left"
+      <Link
+        to={`/habits/${habit.id}`}
+        aria-label={`Открыть «${habit.name}»`}
+        className="flex min-h-11 min-w-0 flex-1 flex-col items-start justify-center text-left"
       >
         <span className={`truncate font-medium ${done ? 'text-zinc-500 line-through' : ''}`}>{habit.name}</span>
         <span className="text-xs text-zinc-500">{describeSchedule(habit.schedule)}</span>
-      </button>
+      </Link>
       <span className="shrink-0 text-sm font-semibold tabular-nums">
         <span className="sr-only">Серия: </span>
         {streakLabel(item.streak)}
