@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { BASELINE_SETTING_KEY } from '../../../core/adaptation/rules';
@@ -8,6 +8,16 @@ import { SleepTab } from './SleepTab';
 import { WorkoutsTab } from './WorkoutsTab';
 
 const TODAY = '2026-11-04';
+
+/**
+ * The goal card shows up as soon as tonight's targets load; sleep records and yesterday's targets
+ * arrive in later live-query ticks. So wait for the final text, not for the card itself.
+ */
+async function goalCardWithText(...texts: string[]) {
+  const card = await screen.findByRole('region', { name: 'Цель сна' });
+  await waitFor(() => texts.forEach((t) => expect(card).toHaveTextContent(t)));
+  return card;
+}
 
 /** The user's normal day — written here only as test setup (the `today` module owns this setting). */
 async function setBaseline(value: Record<string, unknown>) {
@@ -28,15 +38,14 @@ describe('health adaptation', () => {
     await logSleep({ wakeDay: TODAY, bedtime: '00:30', wake: '07:00', quality: 3 }, TODAY);
     renderIn(<SleepTab today={TODAY} />);
 
-    const card = await screen.findByRole('region', { name: 'Цель сна' });
-    expect(card).toHaveTextContent('Сегодня: 8 ч, отбой в 23:00');
-    expect(card).toHaveTextContent('Прошлая ночь: 6,5 ч (−1,5 ч)');
+    await goalCardWithText('Сегодня: 8 ч, отбой в 23:00', 'Прошлая ночь: 6,5 ч (−1,5 ч)');
   });
 
   it('without a record for last night only the goal is shown', async () => {
     renderIn(<SleepTab today={TODAY} />);
-    const card = await screen.findByRole('region', { name: 'Цель сна' });
-    expect(card).toHaveTextContent('Сегодня: 7,5 ч, отбой в 23:30');
+    const card = await goalCardWithText('Сегодня: 7,5 ч, отбой в 23:30');
+    // Sleep records have loaded (empty chart) — only then is «no last night» meaningful.
+    await screen.findByText(/Записей пока нет/);
     expect(card).not.toHaveTextContent('Прошлая ночь');
   });
 
@@ -54,9 +63,7 @@ describe('health adaptation', () => {
     });
     await logSleep({ wakeDay: TODAY, bedtime: '23:30', wake: '07:00', quality: 3 }, TODAY); // 7,5 h
     renderIn(<SleepTab today={TODAY} />);
-    const card = await screen.findByRole('region', { name: 'Цель сна' });
-    expect(card).toHaveTextContent('Сегодня: 8,5 ч, отбой в 23:00');
-    expect(card).toHaveTextContent('Прошлая ночь: 7,5 ч (−0,5 ч) при цели 8 ч');
+    await goalCardWithText('Сегодня: 8,5 ч, отбой в 23:00', 'Прошлая ночь: 7,5 ч (−0,5 ч) при цели 8 ч');
   });
 
   it('a workout logged for a past day gets no warning', async () => {
