@@ -32,6 +32,8 @@ const WEEKDAY_FORMS: [number, string[]][] = [
   [6, ['сб', 'суббота', 'субботу', 'субботам', 'sat', 'saturday']],
   [0, ['вс', 'воскресенье', 'воскресеньям', 'sun', 'sunday']],
 ];
+/** «СБ», «ПН и ЧТ»: an all-caps two-letter weekday is more likely an acronym. */
+const isAcronym = (words: string) => /^\p{Lu}{2}(?!\p{L})/u.test(words);
 const weekdayOf = (word: string) => WEEKDAY_FORMS.find(([, forms]) => forms.includes(word.toLowerCase()))?.[0];
 
 const DATE_WEEKDAY =
@@ -131,8 +133,11 @@ function parseRecurrence(s: State): void {
     take(s, re('каждый\\s+месяц|ежемесячно|every\\s+month|monthly'), () => set({ kind: 'monthly' })) ||
     take(s, re('по\\s+будням'), () => set({ kind: 'weekly', weekdays: [1, 2, 3, 4, 5] })) ||
     take(s, re('по\\s+выходным'), () => set({ kind: 'weekly', weekdays: [0, 6] })) ||
-    take(s, re(`по\\s+(${listOf(`${PLURAL_WEEKDAY}|${SHORT_WEEKDAY}`)})`), (m) =>
-      set({ kind: 'weekly', weekdays: weekdays(m[1]) }),
+    take(
+      s,
+      re(`по\\s+(${listOf(`${PLURAL_WEEKDAY}|${SHORT_WEEKDAY}`)})`),
+      // «по СР» (самостоятельная работа) is an acronym, not «по средам».
+      (m) => !isAcronym(m[1]) && set({ kind: 'weekly', weekdays: weekdays(m[1]) }),
     ) ||
     take(s, re(`(?:кажд(?:ый|ую|ое|ая)|every)\\s+(${listOf(EACH_WEEKDAY)})`), (m) =>
       set({ kind: 'weekly', weekdays: weekdays(m[1]) }),
@@ -164,9 +169,7 @@ function parseDate(s: State): void {
       s,
       re(`((?:в|во|on)\\s+)?(?:(?:следующ(?:ий|ую|ее|ая)|next)\\s+)?(${DATE_WEEKDAY})`),
       // A bare upper-case abbreviation («СБ», «ЧТ») is more likely an acronym than a weekday.
-      (m) =>
-        (m[1] !== undefined || m[2].length > 2 || m[2] !== m[2].toUpperCase()) &&
-        set(nextWeekday(today, weekdayOf(m[2]) ?? 0, false)),
+      (m) => (m[1] !== undefined || !isAcronym(m[2])) && set(nextWeekday(today, weekdayOf(m[2]) ?? 0, false)),
     ) ||
     take(s, re('(?:(?:в|на)\\s+)?(\\d{1,2})\\.(\\d{2})(?:\\.(\\d{4}|\\d{2}))?'), (m) =>
       set(calendarDate(today, Number(m[1]), Number(m[2]), m[3])),
@@ -208,9 +211,13 @@ function parseTime(s: State): void {
     set(toTime(Number(m[1]), Number(m[2] ?? 0), m[3])),
   ) ||
     // «7:00-8:00»: a range keeps its start time.
-    take(s, re('(\\d{1,2}):(\\d{2})\\s?[-–]\\s?\\d{1,2}:\\d{2}'), (m) => set(toTime(Number(m[1]), Number(m[2])))) ||
+    take(s, re('(?:(?:в|с|at)\\s+)?(\\d{1,2}):(\\d{2})\\s?[-–]\\s?\\d{1,2}:\\d{2}'), (m) =>
+      set(toTime(Number(m[1]), Number(m[2]))),
+    ) ||
     // «9:00», «18:30 вечера» (a colon is needed — «12.11» without «в» is a date).
-    take(s, re(`(\\d{1,2}):(\\d{2})(?:\\s+(${PART_OF_DAY}))?`), (m) => set(toTime(Number(m[1]), Number(m[2]), m[3])));
+    take(s, re(`(?:(?:в|at)\\s+)?(\\d{1,2}):(\\d{2})(?:\\s+(${PART_OF_DAY}))?`), (m) =>
+      set(toTime(Number(m[1]), Number(m[2]), m[3])),
+    );
 }
 
 function parseMarkers(s: State): void {
