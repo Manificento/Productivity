@@ -1,11 +1,22 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
 import { newRecord } from '../../core/ids';
 import { atLocalTime } from '../../core/logging/sleepTime';
 import type { HabitSchedule } from '../../core/types';
 import { HabitsPage } from './HabitsPage';
+
+function renderPage(path = '/habits') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/habits/*" element={<HabitsPage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 const NOW = atLocalTime('2026-11-03', '08:00'); // Tuesday
 const TODAY = '2026-11-03';
@@ -39,7 +50,7 @@ describe('HabitsPage', () => {
     await mark(read, '2026-11-01');
     await mark(read, '2026-11-02');
     await addHabit('Зал', { kind: 'weekdays', weekdays: [1, 3, 5] }); // not on Tuesday
-    render(<HabitsPage />);
+    renderPage();
 
     const list = await screen.findByRole('list', { name: 'Привычки на сегодня' });
     const row = within(list).getByRole('listitem');
@@ -47,14 +58,14 @@ describe('HabitsPage', () => {
     expect(within(row).getByRole('button', { name: 'Отметить «Чтение»' })).toHaveAttribute('aria-pressed', 'false');
     expect(within(row).getByText('🔥2')).toBeInTheDocument();
     expect(within(list).queryByText('Зал')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Изменить «Зал»' })).toBeInTheDocument(); // under «Не сегодня»
+    expect(screen.getByRole('link', { name: 'Открыть «Зал»' })).toBeInTheDocument(); // under «Не сегодня»
   });
 
   it('привычка не отмечена: тап по отметке создаёт HabitLog с done: true, серия растёт', async () => {
     const read = await addHabit('Чтение');
     await mark(read, '2026-11-02');
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
 
     await user.click(await screen.findByRole('button', { name: 'Отметить «Чтение»' }));
 
@@ -70,7 +81,7 @@ describe('HabitsPage', () => {
     await mark(read, '2026-11-02');
     await mark(read, TODAY);
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
 
     await user.click(await screen.findByRole('button', { name: 'Снять отметку «Чтение»' }));
 
@@ -82,7 +93,7 @@ describe('HabitsPage', () => {
 
   it('редактор: название, расписание (каждый день / дни недели / N раз в неделю) и цвет сохраняются', async () => {
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
     expect(await screen.findByText(/Привычек пока нет/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '+ Привычка' }));
@@ -100,20 +111,23 @@ describe('HabitsPage', () => {
     expect(saved).toMatchObject({ name: 'Бег', schedule: { kind: 'timesPerWeek', timesPerWeek: 3 }, color: '#f59e0b' });
 
     // change to weekdays Mon/Wed: today (Tue) is no longer planned
-    await user.click(screen.getByRole('button', { name: 'Изменить «Бег»' }));
+    await user.click(screen.getByRole('link', { name: 'Открыть «Бег»' }));
+    await user.click(await screen.findByRole('button', { name: 'Изменить' }));
     dialog = screen.getByRole('dialog', { name: 'Изменить привычку' });
     await user.click(within(dialog).getByRole('radio', { name: 'Дни недели' }));
     for (const d of ['Вт', 'Чт', 'Пт']) await user.click(within(dialog).getByRole('button', { name: d }));
     await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
 
+    expect(await screen.findByText('пн, ср')).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: '← Все привычки' }));
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Привычки на сегодня' })).not.toBeInTheDocument());
-    expect(screen.getByText('пн, ср')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Открыть «Бег»' })).toBeInTheDocument();
     expect((await db.habits.get(saved!.id))?.schedule).toEqual({ kind: 'weekdays', weekdays: [1, 3] });
   });
 
   it('редактор: ошибки у полей — пустое название, нет дней недели', async () => {
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
     await user.click(await screen.findByRole('button', { name: '+ Привычка' }));
     const dialog = screen.getByRole('dialog', { name: 'Новая привычка' });
     await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
@@ -131,11 +145,12 @@ describe('HabitsPage', () => {
     await addHabit('Старое', { kind: 'daily' }, { archived: true });
     await addHabit('Чтение');
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
     await screen.findByRole('button', { name: 'Отметить «Чтение»' });
     expect(screen.queryByText('Старое')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Изменить «Чтение»' }));
+    await user.click(screen.getByRole('link', { name: 'Открыть «Чтение»' }));
+    await user.click(await screen.findByRole('button', { name: 'Изменить' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'В архив' }));
     expect(await screen.findByText(/Привычек пока нет/)).toBeInTheDocument();
   });
@@ -144,7 +159,7 @@ describe('HabitsPage', () => {
     await addHabit('Чтение');
     const spy = vi.spyOn(db.habitLogs, 'add').mockRejectedValue(new Error('disk full'));
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
     await user.click(await screen.findByRole('button', { name: 'Отметить «Чтение»' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить отметку');
     spy.mockRestore();
@@ -153,7 +168,7 @@ describe('HabitsPage', () => {
   it('ошибка сохранения в редакторе: сообщение, окно остаётся открытым', async () => {
     const spy = vi.spyOn(db.habits, 'add').mockRejectedValue(new Error('disk full'));
     const user = userEvent.setup();
-    render(<HabitsPage />);
+    renderPage();
     await user.click(await screen.findByRole('button', { name: '+ Привычка' }));
     const dialog = screen.getByRole('dialog', { name: 'Новая привычка' });
     await user.type(within(dialog).getByLabelText('Название'), 'Йога');

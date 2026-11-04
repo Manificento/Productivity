@@ -48,7 +48,7 @@ test.describe('time', () => {
 
 test.describe('pomodoro', () => {
   test('focus runs 25 minutes, then a 5-minute break; durations persist', async ({ page }) => {
-    await page.clock.install({ time: new Date('2026-11-02T09:00:00') });
+    await page.clock.install({ time: new Date('2026-11-02T09:00:00+05:00') });
     await page.goto('/#/time/pomodoro');
     await page.getByRole('button', { name: 'Добавить стартовый набор' }).click();
 
