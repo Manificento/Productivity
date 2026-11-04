@@ -1,6 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('habits', () => {
+  test('starter set: tick three, add, exactly three habits appear', async ({ page }) => {
+    await page.goto('/#/habits');
+    await expect(page.getByRole('button', { name: 'Добавить', exact: true })).toBeDisabled();
+    for (const name of ['Медитация', 'Английский', 'Отбой вовремя']) {
+      await page.getByRole('checkbox', { name: new RegExp(`^${name}`) }).check();
+    }
+    await page.getByRole('button', { name: 'Добавить (3)' }).click();
+    await expect(page.getByRole('list', { name: 'Привычки на сегодня' }).getByRole('listitem')).toHaveCount(3);
+  });
+
   test('create a habit, mark it done and undo the mark', async ({ page }) => {
     await page.goto('/#/habits');
     await expect(page.getByText(/Привычек пока нет/)).toBeVisible();
