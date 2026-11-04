@@ -15,6 +15,7 @@ describe('App shell', () => {
   });
 
   it('renders the Today screen with adaptation targets and bottom navigation', async () => {
+    // Onboarding (#41) is shown until the today module stores this flag.
     await db.settings.put({ key: 'adaptation.onboardingDone', value: true });
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'Сегодня' })).toBeInTheDocument();
@@ -23,4 +24,7 @@ describe('App shell', () => {
       expect(screen.getByRole('link', { name: new RegExp(label) })).toBeInTheDocument();
     }
   });
+
+  // Filled in by #41, which builds the onboarding screen (#84 allows it to edit this test).
+  it.todo('opens the onboarding screen «Какое у тебя ближайшее важное событие?» at / on an empty DB');
 });
