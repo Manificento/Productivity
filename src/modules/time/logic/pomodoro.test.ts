@@ -38,13 +38,13 @@ describe('pomodoro', () => {
     expect(r.finished).toEqual([{ phase: 'work', endedAt: T0 + 25 * MIN }]);
 
     r = advance(r.state, DEFAULT_POMODORO, T0 + 30 * MIN);
-    expect(r.state).toEqual({ status: 'idle', completedWork: 1 });
+    expect(r.state).toEqual({ status: 'idle', completedWork: 1, idleSince: T0 + 30 * MIN });
     expect(r.finished).toEqual([{ phase: 'shortBreak', endedAt: T0 + 30 * MIN }]);
 
     s = r.state;
     const breaks: string[] = [];
     for (let i = 2; i <= 4; i++) {
-      const at = T0 + i * 60 * MIN;
+      const at = (s.status === 'idle' && s.idleSince !== undefined ? s.idleSince : T0) + MIN;
       const focus = startFocus(s, DEFAULT_POMODORO, target, at);
       const afterWork = advance(focus, DEFAULT_POMODORO, at + 25 * MIN).state;
       if (afterWork.status !== 'running') throw new Error('break expected');
@@ -52,7 +52,7 @@ describe('pomodoro', () => {
       s = advance(afterWork, DEFAULT_POMODORO, afterWork.endsAt).state;
     }
     expect(breaks).toEqual(['shortBreak:5', 'shortBreak:5', 'longBreak:15']);
-    expect(s).toEqual({ status: 'idle', completedWork: 4 });
+    expect(s).toMatchObject({ status: 'idle', completedWork: 4 });
     // the fifth session starts a new cycle with a short break again
     const fifth = advance(
       startFocus(s, DEFAULT_POMODORO, target, T0 + 9 * 60 * MIN),
@@ -91,7 +91,7 @@ describe('pomodoro', () => {
     const r = cycle(IDLE, T0);
     expect(r.finished.map((f) => f.phase)).toEqual(['work', 'shortBreak']);
     expect(r.records).toHaveLength(1);
-    expect(r.state).toEqual({ status: 'idle', completedWork: 1 });
+    expect(r.state).toEqual({ status: 'idle', completedWork: 1, idleSince: T0 + 30 * MIN });
   });
 
   it('новые длительности применяются со следующей сессии', () => {
@@ -106,7 +106,7 @@ describe('pomodoro', () => {
   it('стоп во время фокуса записывает уже прошедшее время (от минуты)', () => {
     const s = startFocus(IDLE, DEFAULT_POMODORO, target, T0);
     expect(stop(s, T0 + 12 * MIN)).toEqual({
-      state: { status: 'idle', completedWork: 0 },
+      state: { status: 'idle', completedWork: 0, idleSince: T0 + 12 * MIN },
       records: [{ categoryId: 'study', taskId: 'task-1', start: T0, end: T0 + 12 * MIN, date: '2026-11-02' }],
     });
     expect(stop(s, T0 + 30_000).records).toEqual([]);
@@ -115,16 +115,29 @@ describe('pomodoro', () => {
 
   it('стоп во время перерыва ничего не записывает', () => {
     const brk = advance(startFocus(IDLE, DEFAULT_POMODORO, target, T0), DEFAULT_POMODORO, T0 + 25 * MIN).state;
-    expect(stop(brk, T0 + 27 * MIN)).toEqual({ state: { status: 'idle', completedWork: 1 }, records: [] });
+    expect(stop(brk, T0 + 27 * MIN)).toEqual({
+      state: { status: 'idle', completedWork: 1, idleSince: T0 + 27 * MIN },
+      records: [],
+    });
   });
 
   it('номер сессии в цикле', () => {
-    expect(sessionInCycle(IDLE, DEFAULT_POMODORO)).toBe(1);
+    expect(sessionInCycle(IDLE, DEFAULT_POMODORO, T0)).toBe(1);
     const running = startFocus({ status: 'idle', completedWork: 3 }, DEFAULT_POMODORO, target, T0);
-    expect(sessionInCycle(running, DEFAULT_POMODORO)).toBe(4);
+    expect(sessionInCycle(running, DEFAULT_POMODORO, T0)).toBe(4);
     const longBreak = advance(running, DEFAULT_POMODORO, T0 + 25 * MIN).state;
-    expect(sessionInCycle(longBreak, DEFAULT_POMODORO)).toBe(4);
-    expect(sessionInCycle({ status: 'idle', completedWork: 4 }, DEFAULT_POMODORO)).toBe(1);
+    expect(sessionInCycle(longBreak, DEFAULT_POMODORO, T0 + 25 * MIN)).toBe(4);
+    expect(sessionInCycle({ status: 'idle', completedWork: 4 }, DEFAULT_POMODORO, T0)).toBe(1);
+  });
+
+  it('после долгой паузы (например, на следующее утро) цикл начинается заново', () => {
+    const evening = { status: 'idle' as const, completedWork: 3, idleSince: atLocalTime('2026-11-02', '22:00') };
+    const morning = atLocalTime('2026-11-03', '08:00');
+    expect(sessionInCycle(evening, DEFAULT_POMODORO, morning)).toBe(1);
+    expect(startFocus(evening, DEFAULT_POMODORO, target, morning)).toMatchObject({ completedWork: 0 });
+    // a short pause keeps the cycle
+    const soon = evening.idleSince + 20 * MIN;
+    expect(startFocus(evening, DEFAULT_POMODORO, target, soon)).toMatchObject({ completedWork: 3 });
   });
 });
 
@@ -155,6 +168,11 @@ describe('restore', () => {
     const running = startFocus({ status: 'idle', completedWork: 2 }, DEFAULT_POMODORO, target, T0);
     expect(restoreState(JSON.parse(JSON.stringify(running)))).toEqual(running);
     expect(restoreState({ status: 'idle', completedWork: 3 })).toEqual({ status: 'idle', completedWork: 3 });
+    expect(restoreState({ status: 'idle', completedWork: 3, idleSince: 7 })).toEqual({
+      status: 'idle',
+      completedWork: 3,
+      idleSince: 7,
+    });
     expect(restoreState({ status: 'idle', completedWork: -1 })).toEqual(IDLE);
     expect(restoreState(null)).toEqual(IDLE);
     expect(restoreState({ status: 'running', phase: 'nap', startedAt: 1, endsAt: 2, target })).toEqual(IDLE);

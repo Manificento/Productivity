@@ -5,7 +5,7 @@ import { phaseMinutes, remainingMs, sessionInCycle, type Phase } from '../logic/
 import { formatDuration } from '../logic/timer';
 import { PomodoroSettingsForm } from './PomodoroSettingsForm';
 import { notificationsState } from './signal';
-import { usePomodoro } from './usePomodoro';
+import type { Pomodoro } from './usePomodoro';
 
 const PHASE_LABEL: Record<Phase, string> = {
   work: 'Фокус',
@@ -13,8 +13,8 @@ const PHASE_LABEL: Record<Phase, string> = {
   longBreak: 'Длинный перерыв',
 };
 
-export function PomodoroView() {
-  const pomodoro = usePomodoro();
+/** Pomodoro screen. The timer itself lives in `TimePage`, so it keeps running on the «Таймер» tab. */
+export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
   const { state, settings, now } = pomodoro;
   const categories = useCategories();
   const tasks = useOpenTasks();
@@ -22,6 +22,7 @@ export function PomodoroView() {
   const [categoryId, setCategoryId] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [permission, setPermission] = useState(notificationsState);
+  const [seedError, setSeedError] = useState<string>();
 
   if (categories === undefined || tasks === undefined) return <Empty>Загрузка…</Empty>;
 
@@ -31,9 +32,19 @@ export function PomodoroView() {
         <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
           Фокус-сессии пишутся в учёт времени по категории. Сначала добавьте категории.
         </p>
-        <Button className="w-full" onClick={() => void createDefaultCategories()}>
+        <Button
+          className="w-full"
+          onClick={() =>
+            createDefaultCategories().catch(() => setSeedError('Не удалось сохранить. Попробуйте ещё раз'))
+          }
+        >
           Добавить стартовый набор
         </Button>
+        {seedError && (
+          <p role="alert" className="mt-2 text-sm text-rose-600">
+            {seedError}
+          </p>
+        )}
       </Card>
     );
   }
@@ -42,7 +53,8 @@ export function PomodoroView() {
   const chosenTask = tasks.some((t) => t.id === taskId) ? taskId : '';
   const running = state.status === 'running';
   const phase: Phase = running ? state.phase : 'work';
-  const left = running ? remainingMs(state, now) : phaseMinutes('work', settings) * 60_000;
+  // Round up so the countdown never sits on 00:00 while the phase is still running.
+  const left = running ? Math.ceil(remainingMs(state, now) / 1000) * 1000 : phaseMinutes('work', settings) * 60_000;
   const runningTask = running && state.target.taskId ? tasks.find((t) => t.id === state.target.taskId) : undefined;
 
   async function askNotifications() {
@@ -54,7 +66,7 @@ export function PomodoroView() {
       <Card>
         <div role="timer" aria-label="Pomodoro" className="text-center">
           <p className="text-sm font-medium text-zinc-500">
-            {running ? PHASE_LABEL[phase] : 'Готово к фокусу'} · сессия {sessionInCycle(state, settings)} из{' '}
+            {running ? PHASE_LABEL[phase] : 'Готово к фокусу'} · сессия {sessionInCycle(state, settings, now)} из{' '}
             {settings.sessionsBeforeLongBreak}
           </p>
           <p className="my-2 text-5xl font-semibold tabular-nums">{formatDuration(left)}</p>
@@ -74,12 +86,12 @@ export function PomodoroView() {
             </Button>
           )}
           {running && phase === 'work' && (
-            <Button variant="danger" className="w-full" onClick={pomodoro.stop}>
+            <Button variant="danger" className="w-full" onClick={() => void pomodoro.stop()}>
               Остановить
             </Button>
           )}
           {running && phase !== 'work' && (
-            <Button variant="secondary" className="w-full" onClick={pomodoro.stop}>
+            <Button variant="secondary" className="w-full" onClick={() => void pomodoro.stop()}>
               Пропустить перерыв
             </Button>
           )}

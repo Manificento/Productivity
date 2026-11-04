@@ -28,7 +28,7 @@ export interface FocusTarget {
 }
 
 export type PomodoroState =
-  | { status: 'idle'; completedWork: number }
+  | { status: 'idle'; completedWork: number; /** When the last phase ended. */ idleSince?: Millis }
   | {
       status: 'running';
       phase: Phase;
@@ -71,6 +71,15 @@ export function phaseMinutes(phase: Phase, settings: PomodoroSettings): number {
   return phase === 'longBreak' ? settings.longBreakMin : settings.shortBreakMin;
 }
 
+/** After this long without focus the cycle starts over (next morning, long pause). */
+export const CYCLE_RESET_MS = 60 * MIN;
+
+/** Focus sessions done in the current cycle; resets after a long idle pause. */
+export function completedInCycle(state: PomodoroState, now: Millis): number {
+  if (state.status === 'idle' && state.idleSince !== undefined && now - state.idleSince >= CYCLE_RESET_MS) return 0;
+  return state.completedWork;
+}
+
 /** Starts a focus session. Durations are taken from `settings` at this moment. */
 export function startFocus(
   state: PomodoroState,
@@ -83,7 +92,7 @@ export function startFocus(
     phase: 'work',
     startedAt: now,
     endsAt: now + settings.workMin * MIN,
-    completedWork: state.completedWork,
+    completedWork: completedInCycle(state, now),
     target,
   };
 }
@@ -110,7 +119,7 @@ export function advance(state: PomodoroState, settings: PomodoroSettings, now: M
         completedWork,
       };
     } else {
-      s = { status: 'idle', completedWork: s.completedWork };
+      s = { status: 'idle', completedWork: s.completedWork, idleSince: s.endsAt };
     }
   }
   return { state: s, records, finished };
@@ -121,8 +130,8 @@ export function advance(state: PomodoroState, settings: PomodoroSettings, now: M
  */
 export function stop(state: PomodoroState, now: Millis): { state: PomodoroState; records: FocusRecord[] } {
   if (state.status !== 'running') return { state, records: [] };
-  const idle: PomodoroState = { status: 'idle', completedWork: state.completedWork };
   const end = Math.min(now, state.endsAt);
+  const idle: PomodoroState = { status: 'idle', completedWork: state.completedWork, idleSince: end };
   const spent = state.phase === 'work' && end - state.startedAt >= MIN;
   return { state: idle, records: spent ? [record(state.target, state.startedAt, end)] : [] };
 }
@@ -132,9 +141,10 @@ export function remainingMs(state: PomodoroState, now: Millis): Millis {
 }
 
 /** Position of the next/current focus session inside the cycle: 1…sessionsBeforeLongBreak. */
-export function sessionInCycle(state: PomodoroState, settings: PomodoroSettings): number {
+export function sessionInCycle(state: PomodoroState, settings: PomodoroSettings, now: Millis): number {
   const n = settings.sessionsBeforeLongBreak;
-  const done = state.status === 'running' && state.phase !== 'work' ? state.completedWork - 1 : state.completedWork;
+  const completed = completedInCycle(state, now);
+  const done = state.status === 'running' && state.phase !== 'work' ? completed - 1 : completed;
   return (((done % n) + n) % n) + 1;
 }
 
@@ -170,7 +180,11 @@ export function restoreState(raw: unknown): PomodoroState {
     typeof s.completedWork === 'number' && Number.isInteger(s.completedWork) && s.completedWork >= 0
       ? s.completedWork
       : 0;
-  if (s.status === 'idle') return { status: 'idle', completedWork };
+  if (s.status === 'idle') {
+    return typeof s.idleSince === 'number'
+      ? { status: 'idle', completedWork, idleSince: s.idleSince }
+      : { status: 'idle', completedWork };
+  }
   const phases: unknown[] = ['work', 'shortBreak', 'longBreak'];
   const target = (s.target ?? {}) as Record<string, unknown>;
   if (

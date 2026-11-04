@@ -7,6 +7,11 @@ import { atLocalTime } from '../../../core/logging/sleepTime';
 import type { Task } from '../../../core/types';
 import { createDefaultCategories, listCategories, startCategoryTimer } from '../data/timeStore';
 import { PomodoroView } from './PomodoroView';
+import { usePomodoro } from './usePomodoro';
+
+function Pomodoro() {
+  return <PomodoroView pomodoro={usePomodoro()} />;
+}
 
 const MIN = 60_000;
 const NOW = atLocalTime('2026-11-02', '09:00');
@@ -43,7 +48,7 @@ afterEach(() => {
 describe('PomodoroView', () => {
   it('настройки по умолчанию: при запуске идёт 25 мин работы, затем 5 мин отдыха', async () => {
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     const timer = await screen.findByRole('timer', { name: 'Pomodoro' });
     expect(within(timer).getByText('25:00')).toBeInTheDocument();
 
@@ -63,7 +68,7 @@ describe('PomodoroView', () => {
     const open = task('Эссе по истории');
     await db.tasks.bulkAdd([open, task('Сдано', { completedAt: NOW - 5000 })]);
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
 
     const taskSelect = await screen.findByLabelText('Задача');
     expect(within(taskSelect).queryByRole('option', { name: 'Сдано' })).not.toBeInTheDocument();
@@ -87,7 +92,7 @@ describe('PomodoroView', () => {
 
   it('вкладка была в фоне 10 минут: при возврате оставшееся время верное', async () => {
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     await startFocus(user);
 
     returnAfter(10);
@@ -97,19 +102,19 @@ describe('PomodoroView', () => {
 
   it('таймер переживает перезагрузку страницы', async () => {
     const user = userEvent.setup();
-    const first = render(<PomodoroView />);
+    const first = render(<Pomodoro />);
     await startFocus(user);
     first.unmount();
 
     vi.setSystemTime(NOW + 7 * MIN);
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     const timer = await screen.findByRole('timer', { name: 'Pomodoro' });
     expect(within(timer).getByText('18:00')).toBeInTheDocument();
   });
 
   it('меняю длительности: после сохранения значения применяются со следующей сессии и сохраняются', async () => {
     const user = userEvent.setup();
-    const first = render(<PomodoroView />);
+    const first = render(<Pomodoro />);
     await startFocus(user);
 
     await user.click(screen.getByRole('button', { name: /^Длительности/ }));
@@ -126,13 +131,13 @@ describe('PomodoroView', () => {
     expect(await within(timer).findByText('10:00')).toBeInTheDocument(); // the break uses the new value
 
     first.unmount();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     expect(await screen.findByRole('button', { name: 'Длительности: 50 / 10 / 15 мин' })).toBeInTheDocument();
   });
 
   it('неверная длительность — ошибка у поля, настройки не меняются', async () => {
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     await user.click(await screen.findByRole('button', { name: /^Длительности/ }));
     const dialog = screen.getByRole('dialog', { name: 'Настройки Pomodoro' });
     await user.clear(within(dialog).getByLabelText('Фокус, мин'));
@@ -156,13 +161,13 @@ describe('PomodoroView', () => {
     Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
 
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     expect(screen.queryByRole('button', { name: /Разрешить уведомления/ })).not.toBeInTheDocument();
     await startFocus(user);
     expect(vibrate).not.toHaveBeenCalled();
 
     returnAfter(25);
-    expect(vibrate).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(vibrate).toHaveBeenCalledTimes(1));
     expect(shown).toEqual(['Фокус-сессия завершена — время отдохнуть']);
   });
 
@@ -170,7 +175,7 @@ describe('PomodoroView', () => {
     const requestPermission = vi.fn().mockResolvedValue('granted');
     vi.stubGlobal('Notification', { permission: 'default', requestPermission });
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
 
     await user.click(await screen.findByRole('button', { name: 'Разрешить уведомления о конце сессии' }));
     expect(requestPermission).toHaveBeenCalled();
@@ -183,14 +188,14 @@ describe('PomodoroView', () => {
     const [study] = await listCategories();
     const id = await startCategoryTimer({ categoryId: study!.id, source: 'timer' }, NOW - 10 * MIN);
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     await startFocus(user);
     expect((await db.timeEntries.get(id))?.end).toBe(NOW);
   });
 
   it('остановка фокуса раньше времени записывает прошедшие минуты', async () => {
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     await startFocus(user);
     vi.setSystemTime(NOW + 12 * MIN);
     await user.click(screen.getByRole('button', { name: 'Остановить' }));
@@ -203,18 +208,61 @@ describe('PomodoroView', () => {
   it('категорий нет: предлагается добавить стартовый набор', async () => {
     await db.timeCategories.clear();
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     await user.click(await screen.findByRole('button', { name: 'Добавить стартовый набор' }));
     expect(await screen.findByRole('button', { name: 'Начать фокус' })).toBeInTheDocument();
   });
 
-  it('ошибка записи в базу: показывается сообщение на русском', async () => {
+  it('ошибка записи в базу: сообщение на русском, сессия не теряется и записывается при следующей попытке', async () => {
     const add = vi.spyOn(db.timeEntries, 'add').mockRejectedValue(new Error('disk full'));
     const user = userEvent.setup();
-    render(<PomodoroView />);
+    render(<Pomodoro />);
     await startFocus(user);
     returnAfter(25);
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось записать фокус-сессию');
+    expect(screen.getByText(/^Фокус · сессия/)).toBeInTheDocument(); // state did not move on
+
     add.mockRestore();
+    returnAfter(0);
+    await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
+    expect(await screen.findByText(/^Перерыв · сессия/)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('фаза закончилась давно (приложение было закрыто): запись создаётся, но сигнала нет', async () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
+    const user = userEvent.setup();
+    render(<Pomodoro />);
+    await startFocus(user);
+
+    returnAfter(40);
+    await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
+    expect(await screen.findByText(/^Готово к фокусу/)).toBeInTheDocument();
+    expect(vibrate).not.toHaveBeenCalled();
+  });
+
+  it('остановка с ошибкой записи оставляет таймер идти', async () => {
+    const user = userEvent.setup();
+    render(<Pomodoro />);
+    await startFocus(user);
+    const add = vi.spyOn(db.timeEntries, 'add').mockRejectedValue(new Error('disk full'));
+    vi.setSystemTime(NOW + 5 * MIN);
+    await user.click(screen.getByRole('button', { name: 'Остановить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось записать фокус-сессию');
+    expect(screen.getByRole('button', { name: 'Остановить' })).toBeInTheDocument();
+    add.mockRestore();
+  });
+
+  it('другая вкладка остановила таймер: эта вкладка следует за ней', async () => {
+    const user = userEvent.setup();
+    render(<Pomodoro />);
+    await startFocus(user);
+    localStorage.setItem('lifeos.time.pomodoro.state', JSON.stringify({ status: 'idle', completedWork: 0 }));
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'lifeos.time.pomodoro.state' }));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'other' }));
+    });
+    expect(await screen.findByRole('button', { name: 'Начать фокус' })).toBeInTheDocument();
   });
 });

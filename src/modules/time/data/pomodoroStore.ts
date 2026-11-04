@@ -6,7 +6,7 @@ import { restoreSettings, restoreState, type PomodoroSettings, type PomodoroStat
  * per-device UI state. Finished focus sessions are written to `timeEntries` like any other time.
  */
 const SETTINGS_KEY = 'lifeos.time.pomodoro.settings';
-const STATE_KEY = 'lifeos.time.pomodoro.state';
+export const POMODORO_STATE_KEY = 'lifeos.time.pomodoro.state';
 
 function read(key: string): unknown {
   try {
@@ -27,5 +27,5 @@ function write(key: string, value: unknown): void {
 
 export const loadPomodoroSettings = (): PomodoroSettings => restoreSettings(read(SETTINGS_KEY));
 export const savePomodoroSettings = (s: PomodoroSettings): void => write(SETTINGS_KEY, s);
-export const loadPomodoroState = (): PomodoroState => restoreState(read(STATE_KEY));
-export const savePomodoroState = (s: PomodoroState): void => write(STATE_KEY, s);
+export const loadPomodoroState = (): PomodoroState => restoreState(read(POMODORO_STATE_KEY));
+export const savePomodoroState = (s: PomodoroState): void => write(POMODORO_STATE_KEY, s);

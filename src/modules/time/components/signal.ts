@@ -6,23 +6,37 @@ const MESSAGES: Record<Phase, string> = {
   longBreak: 'Длинный перерыв закончился — можно начинать следующую сессию',
 };
 
-function beep(): void {
+let audio: AudioContext | undefined;
+
+function audioContext(): AudioContext | undefined {
   const Ctx = globalThis.AudioContext;
-  if (!Ctx) return;
+  if (!Ctx) return undefined;
   try {
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.2, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.6);
-    osc.onended = () => void ctx.close();
+    audio ??= new Ctx();
+    return audio;
   } catch {
-    // Audio blocked until the user interacts with the page — vibration/notification still work.
+    return undefined;
   }
+}
+
+/** Call from a click handler: browsers only start audio after a user gesture. */
+export function unlockSound(): void {
+  void audioContext()
+    ?.resume()
+    .catch(() => {});
+}
+
+function beep(): void {
+  const ctx = audioContext();
+  if (!ctx || ctx.state !== 'running') return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.frequency.value = 880;
+  gain.gain.setValueAtTime(0.2, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.6);
 }
 
 function notify(text: string): void {
