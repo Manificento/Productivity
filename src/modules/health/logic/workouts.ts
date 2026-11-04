@@ -1,5 +1,6 @@
 import { startOfWeek } from 'date-fns';
 import { fromDateKey, shiftDateKey, toDateKey } from '../../../core/dates';
+import type { WorkoutInput } from '../../../core/logging/workout';
 import type { DateKey, WorkoutLog } from '../../../core/types';
 
 export const WORKOUT_TYPES = ['Силовая', 'Бег', 'Велосипед', 'Плавание', 'Йога', 'Ходьба', 'Другое'] as const;
@@ -22,7 +23,8 @@ export interface WorkoutDraft {
   note: string;
 }
 
-export type WorkoutInput = Pick<WorkoutLog, 'date' | 'type' | 'durationMin' | 'rpe' | 'exercises' | 'note'>;
+/** The shared contract of `saveWorkout()` — the form produces exactly what core validates. */
+export type { WorkoutInput };
 
 export function emptyDraft(today: DateKey): WorkoutDraft {
   return { date: today, type: WORKOUT_TYPES[0], durationMin: '', rpe: '', exercises: [], note: '' };

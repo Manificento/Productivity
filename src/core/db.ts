@@ -80,7 +80,7 @@ export class LifeDB extends Dexie {
     this.version(3).stores({
       weightLogs: 'id, &date',
       programs: 'id',
-      plannedSessions: 'id, [programId+date], date',
+      plannedSessions: 'id, &[programId+date], date',
       meditationSessions: 'id, date',
       mindSessions: 'id, date, kind',
       notes: 'id, updatedAt, *linkIds',

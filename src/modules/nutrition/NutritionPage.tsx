@@ -8,7 +8,7 @@ export function NutritionPage() {
         <Empty>
           Блок «Питание» — скоро.
           <br />
-          <span className="text-zinc-400 dark:text-zinc-500">
+          <span className="text-zinc-500 dark:text-zinc-400">
             Журнал веса и тренд, адаптивная оценка расхода энергии, цели по калориям и макросам по фазам события.
           </span>
         </Empty>

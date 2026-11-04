@@ -52,6 +52,12 @@ describe('saveWorkout — the one write path for workoutLogs (ADR-0007)', () => 
     );
   });
 
+  it('rejects a calendar day that does not exist (2026-13-45, 2026-02-30)', async () => {
+    await expect(saveWorkout({ date: '2026-13-45', type: 'Бег', durationMin: 30, rpe: 5 })).rejects.toThrow(/календар/);
+    await expect(saveWorkout({ date: '2026-02-30', type: 'Бег', durationMin: 30, rpe: 5 })).rejects.toThrow(/календар/);
+    expect(await db.workoutLogs.count()).toBe(0);
+  });
+
   it('rejects exercises without a name or with negative sets', async () => {
     await expect(
       saveWorkout({ date: TODAY, type: 'Силовая', durationMin: 30, rpe: 5, exercises: [{ name: '', sets: [] }] }),

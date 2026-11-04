@@ -8,7 +8,7 @@ export function MeditationPage() {
         <Empty>
           Блок «Медитация» — скоро.
           <br />
-          <span className="text-zinc-400 dark:text-zinc-500">
+          <span className="text-zinc-500 dark:text-zinc-400">
             Таймер, дыхательные паттерны, библиотека текстовых сессий и план по фазам события.
           </span>
         </Empty>

@@ -8,7 +8,7 @@ export function NotesPage() {
         <Empty>
           Блок «Заметки» — скоро.
           <br />
-          <span className="text-zinc-400 dark:text-zinc-500">
+          <span className="text-zinc-500 dark:text-zinc-400">
             Страницы в markdown, привязанные к проектам, событиям и дням; поиск, обратные ссылки, шаблон подготовки к
             событию.
           </span>

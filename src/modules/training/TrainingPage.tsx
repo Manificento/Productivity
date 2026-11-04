@@ -8,7 +8,7 @@ export function TrainingPage() {
         <Empty>
           Блок «Тренировки» — скоро.
           <br />
-          <span className="text-zinc-400 dark:text-zinc-500">
+          <span className="text-zinc-500 dark:text-zinc-400">
             Программы и шаблоны, выполнение плана, прогрессия и разгрузка перед важным событием.
           </span>
         </Empty>

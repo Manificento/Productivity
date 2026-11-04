@@ -2,7 +2,7 @@
 
 Метка дорожки: `area:health`. Задачи: `scripts/agent.sh next health`.
 
-- **Пишет в таблицы:** `sleepLogs`, `foods`, `mealLogs`, `workoutLogs`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
+- **Пишет в таблицы:** `sleepLogs` (через `saveSleep`), `foods`, `mealLogs`, `workoutLogs` (через `saveWorkout`). Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
   По SPEC 0.3 дневник еды и журнал тренировок переезжают в `nutrition` и `training` (#107); `health` остаётся блоком сна.
 - **Суть модуля:** журналы сна, еды (КБЖУ, Open Food Facts — единственный разрешённый внешний API) и тренировок.
 - **Сон пишется ТОЛЬКО через `saveSleep()` (перенос ночи на другой день — `deleteSleep()` старой + `saveSleep()` новой) из `src/core/logging/sleep.ts`** (валидация и «одна запись на ночь»),

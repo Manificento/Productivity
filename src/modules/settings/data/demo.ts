@@ -6,7 +6,10 @@ import { buildDemoTables } from '../logic/demo';
 /** Tables the demo replaces: everything except preferences (`settings` — theme, normal routine). */
 const DATA_TABLES = TABLE_NAMES.filter((name) => name !== 'settings');
 
-/** Every table, empty — the tables of blocks the demo does not fill yet (SPEC 0.3) are cleared, not kept. */
+/**
+ * Every table, empty — only to satisfy `Backup.tables` (`Record<TableName, unknown[]>`): `importAll` clears a table
+ * missing from the backup anyway, so the tables of blocks the demo does not fill yet (SPEC 0.3) end up empty either way.
+ */
 function emptyTables(): Record<TableName, unknown[]> {
   return Object.fromEntries(TABLE_NAMES.map((name) => [name, [] as unknown[]])) as Record<TableName, unknown[]>;
 }

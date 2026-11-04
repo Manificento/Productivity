@@ -8,7 +8,7 @@ export function ProgressPage() {
         <Empty>
           Блок «Прогресс» — скоро.
           <br />
-          <span className="text-zinc-400 dark:text-zinc-500">
+          <span className="text-zinc-500 dark:text-zinc-400">
             Опыт и уровни поверх всех блоков, навыки по блокам, ежедневные квесты из целей дня.
           </span>
         </Empty>

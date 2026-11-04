@@ -31,7 +31,7 @@ describe('database migrations', () => {
 });
 
 describe('contract C3: tables of the SPEC 0.3 blocks', () => {
-  it('Given БД версии 2 с данными When приложение обновляется Then данные сохранены; появились таблицы weightLogs, programs, plannedSessions, meditationSessions, mindSessions, notes, xpEvents — Dexie v3', async () => {
+  it('Given БД версии 2 с данными When приложение обновляется Then данные сохранены; появились таблицы weightLogs (&date), programs, plannedSessions (&[programId+date], date), meditationSessions, mindSessions, notes, xpEvents — Dexie v3', async () => {
     const name = `migration-v2-${Math.random()}`;
     const v2 = new Dexie(name);
     v2.version(1).stores({ tasks: 'id, projectId, dueDate, priority, completedAt, *tags' });
@@ -83,6 +83,16 @@ describe('contract C3: tables of the SPEC 0.3 blocks', () => {
     await expect(db.weightLogs.add({ id: 'w2', ...base, date: '2026-11-04', kg: 70 })).rejects.toThrow(); // &date
     expect(await db.plannedSessions.where('[programId+date]').equals(['p1', '2026-11-04']).count()).toBe(1);
     expect(await db.plannedSessions.where('date').equals('2026-11-04').count()).toBe(1);
+    await expect(
+      db.plannedSessions.add({
+        id: 's2',
+        ...base,
+        programId: 'p1',
+        date: '2026-11-04',
+        exercises: [],
+        status: 'planned',
+      }),
+    ).rejects.toThrow(); // &[programId+date]: one session of a program per day
     expect(await db.meditationSessions.where('date').equals('2026-11-04').count()).toBe(1);
     expect(await db.mindSessions.where('kind').equals('nback').count()).toBe(1);
     expect(await db.mindSessions.where('date').equals('2026-11-04').count()).toBe(1);
