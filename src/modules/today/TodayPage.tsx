@@ -1,8 +1,11 @@
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import type { DailyTargets, Phase } from '../../core/adaptation/types';
 import { todayKey } from '../../core/dates';
 import type { WorkoutIntensity } from '../../core/types';
 import { Card, Page } from '../../ui';
+import { EventDetail } from './components/EventDetail';
+import { EventsList } from './components/EventsList';
 
 const PHASE_LABEL: Record<Phase, string> = {
   normal: 'Обычный день',
@@ -55,11 +58,37 @@ export function TargetsCard({ t }: { t: DailyTargets }) {
   );
 }
 
+function TodayHome() {
+  const targets = useDailyTargets(todayKey());
+  return (
+    <Page title="Сегодня">
+      {targets ? <TargetsCard t={targets} /> : <Card>Загрузка…</Card>}
+      <Link
+        to="/today/events"
+        className="flex min-h-11 items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-medium shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <span>
+          <span aria-hidden>📅</span> События
+        </span>
+        <span aria-hidden className="text-zinc-400">
+          →
+        </span>
+      </Link>
+    </Page>
+  );
+}
+
 /**
- * Minimal "Today" screen: shows the adaptation targets.
- * The adaptation session extends it with tasks, habits, timer and check-in widgets.
+ * "Today" module: the daily targets screen and important events.
+ * Sub-routes live under /today/… because the module itself is mounted at the app root.
  */
 export function TodayPage() {
-  const targets = useDailyTargets(todayKey());
-  return <Page title="Сегодня">{targets ? <TargetsCard t={targets} /> : <Card>Загрузка…</Card>}</Page>;
+  return (
+    <Routes>
+      <Route index element={<TodayHome />} />
+      <Route path="today/events" element={<EventsList />} />
+      <Route path="today/events/:id" element={<EventDetail />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
