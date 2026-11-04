@@ -173,8 +173,9 @@ describe('Утро за 3 минуты', () => {
     renderToday();
     const row = await screen.findByRole('button', { name: /Утро ✓/ });
     expect(screen.queryByRole('region', { name: 'Утро: 3 минуты' })).not.toBeInTheDocument();
-    expect(screen.getByText(/Сон прошлой ночью 5/)).toBeInTheDocument();
-    expect(screen.getByText(/Низкая энергия/)).toBeInTheDocument();
+    // The reasons come from the daily targets — a separate live query from the morning row: wait for them too.
+    expect(await screen.findByText(/Сон прошлой ночью 5/)).toBeInTheDocument();
+    expect(await screen.findByText(/Низкая энергия/)).toBeInTheDocument();
 
     await userEvent.setup().click(row);
     expect(screen.getByRole('region', { name: 'Утро: 3 минуты' })).toBeInTheDocument();
