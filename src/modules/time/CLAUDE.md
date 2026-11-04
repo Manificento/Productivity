@@ -20,10 +20,11 @@ components/     компоненты модуля (+ *.test.tsx)
 
 ## Решения модуля
 
-- **Pomodoro: настройки и состояние таймера — в `localStorage`** (`lifeos.time.pomodoro.*`, `data/pomodoroStore.ts`),
-  так сложилось до контракта #58. Теперь модуль может писать ключи `settings` `time.*`: перенос длительностей
-  в `time.pomodoro` (чтобы они попадали в резервную копию) — issue #101. Состояние таймера — данные устройства,
-  оно остаётся в `localStorage`.
+- **Pomodoro: длительности — в `settings` под ключом `time.pomodoro`** (`data/pomodoroStore.ts`), поэтому попадают в
+  резервную копию и переезжают на новое устройство (#101). Старое значение из `localStorage`
+  (`lifeos.time.pomodoro.settings`) при первом открытии переносится в `settings`, старый ключ удаляется.
+  Рантайм подписан на ключ через `liveQuery`: импорт копии меняет длительности без перезагрузки.
+  **Состояние таймера остаётся в `localStorage`** (`lifeos.time.pomodoro.state`) — это данные устройства.
 - **`settings` `time.pomodoro.running`** = `{ phase: 'work'|'shortBreak'|'longBreak', startedAt, endsAt }` (мс, epoch) —
   зеркало идущей фазы для других экранов (#68). Пишет `pomodoroRuntime.commit` (старт, смена фазы, стоп) и обработчик
   `storage` (другая вкладка); когда таймер не идёт — ключ удалён. Читать можно всем, писать — только `time`.

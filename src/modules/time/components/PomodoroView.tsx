@@ -173,7 +173,7 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
         <PomodoroSettingsForm
           settings={settings}
           onSave={(next) => {
-            pomodoro.saveSettings(next);
+            void pomodoro.saveSettings(next);
             setSettingsOpen(false);
           }}
         />

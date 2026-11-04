@@ -5,10 +5,12 @@ import {
   savePomodoroSettings,
   savePomodoroState,
   syncRunningSetting,
+  watchPomodoroSettings,
 } from '../data/pomodoroStore';
 import { addFocusRecords, stopRunningTimers } from '../data/timeStore';
 import {
   advance,
+  DEFAULT_POMODORO,
   startFocus,
   stop,
   type FocusTarget,
@@ -44,11 +46,15 @@ let users = 0;
 let busy = false;
 /** Bumped on every (re)start, so writes that finish after a restart are ignored. */
 let generation = 0;
+/** Last known durations: shown right away when the timer is re-attached, until the stored ones are read. */
+let lastSettings: PomodoroSettings = DEFAULT_POMODORO;
+/** False until the stored durations are read: the timer must not advance phases with default durations. */
+let settingsReady = false;
 let teardown: (() => void) | undefined;
 const listeners = new Set<() => void>();
 
 function load(): PomodoroSnapshot {
-  return { state: loadPomodoroState(), settings: loadPomodoroSettings(), now: Date.now() };
+  return { state: loadPomodoroState(), settings: lastSettings, now: Date.now() };
 }
 
 export function getPomodoro(): PomodoroSnapshot {
@@ -72,7 +78,7 @@ function tick(): void {
   const { state: base, settings } = getPomodoro();
   // Idle and nobody shows the clock (only the background is attached): nothing to do this second.
   if (base.status === 'idle' && listeners.size === 0) return;
-  if (busy) {
+  if (busy || !settingsReady) {
     emit({ now: t });
     return;
   }
@@ -121,11 +127,25 @@ function run(): () => void {
     void syncRunningSetting(state);
     emit({ state });
   };
+  const stopWatching = watchPomodoroSettings(
+    (settings) => {
+      lastSettings = settings;
+      const wasReady = settingsReady;
+      settingsReady = true;
+      emit({ settings });
+      if (!wasReady) tick(); // catch up right away instead of waiting for the next second
+    },
+    () => {
+      settingsReady = true; // keep the timer going with the last known durations
+      emit({ error: 'Не удалось прочитать длительности Pomodoro' });
+    },
+  );
   const first = setTimeout(tick, 0);
   const id = setInterval(tick, 1000);
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('storage', onStorage);
   return () => {
+    stopWatching();
     clearTimeout(first);
     clearInterval(id);
     document.removeEventListener('visibilitychange', onVisibility);
@@ -138,6 +158,7 @@ export function attachPomodoro(): () => void {
   if (users++ === 0) {
     generation++;
     busy = false;
+    settingsReady = false;
     snap = load();
     // Heal a stale key (restored backup, failed delete, cleared local state): settings follow the real timer.
     void syncRunningSetting(snap.state);
@@ -170,6 +191,13 @@ export async function startPomodoro(target: FocusTarget): Promise<void> {
   unlockSound(); // inside the click: browsers allow audio only after a user gesture
   const t = Date.now();
   try {
+    // Durations are read from storage, so a start right after opening never uses stale defaults.
+    lastSettings = await loadPomodoroSettings();
+    emit({ settings: lastSettings });
+  } catch {
+    // keep the last known durations
+  }
+  try {
     await stopRunningTimers(t);
   } catch {
     emit({ error: 'Не удалось остановить таймер учёта. Попробуйте ещё раз' });
@@ -199,7 +227,14 @@ export async function stopPomodoro(): Promise<boolean> {
   return true;
 }
 
-export function savePomodoroSettingsNow(next: PomodoroSettings): void {
-  savePomodoroSettings(next);
+export async function savePomodoroSettingsNow(next: PomodoroSettings): Promise<void> {
+  const previous = lastSettings;
+  lastSettings = next;
   emit({ settings: next });
+  try {
+    await savePomodoroSettings(next);
+  } catch {
+    lastSettings = previous; // not stored: do not keep running on durations that vanish on reload
+    emit({ settings: previous, error: 'Не удалось сохранить длительности. Попробуйте ещё раз' });
+  }
 }

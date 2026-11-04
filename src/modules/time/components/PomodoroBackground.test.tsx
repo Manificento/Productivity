@@ -28,7 +28,7 @@ beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
   localStorage.clear();
-  await Promise.all([db.timeCategories.clear(), db.timeEntries.clear(), db.tasks.clear()]);
+  await Promise.all([db.timeCategories.clear(), db.timeEntries.clear(), db.tasks.clear(), db.settings.clear()]);
   await createDefaultCategories(NOW - 1000);
 });
 
