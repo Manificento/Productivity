@@ -94,11 +94,14 @@ flowchart LR
 | --------- | ------------------------------------------------------------------------------------- |
 | tasks     | `projects`, `tasks`                                                                   |
 | habits    | `habits`, `habitLogs`                                                                 |
-| time      | `timeCategories`, `timeEntries`                                                       |
+| time      | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)      |
 | health    | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`, `workoutLogs`      |
 | today     | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep` |
 | cognition | `cognitiveTests`                                                                      |
 | settings  | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                  |
+
+Таблица `settings` делится по префиксу ключа: модуль пишет только свои ключи `<модуль>.*` (`adaptation.*` — today,
+`time.*` — time), остальные ключи — модуль `settings`.
 
 Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
 ([ADR-0007](adr/0007-shared-write-paths.md)): сейчас это только сон.
