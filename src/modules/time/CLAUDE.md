@@ -27,6 +27,7 @@ components/     компоненты модуля (+ *.test.tsx)
 - **`settings` `time.pomodoro.running`** = `{ phase: 'work'|'shortBreak'|'longBreak', startedAt, endsAt }` (мс, epoch) —
   зеркало идущей фазы для других экранов (#68). Пишет `pomodoroRuntime.commit` (старт, смена фазы, стоп) и обработчик
   `storage` (другая вкладка); когда таймер не идёт — ключ удалён. Читать можно всем, писать — только `time`.
+  Читатель считает сессию неидущей, если `endsAt <= now` (приложение могло быть закрыто).
 - **Таймер Pomodoro — один на страницу** (`components/pomodoroRuntime.ts`): его держит `PomodoroBackground`
   (`Background` в манифесте, оболочка монтирует на всех страницах, #59), а `usePomodoro` на экранах «Времени»
   читает тот же таймер через `useSyncExternalStore`. Поэтому сессия записывается и сигналит и в других модулях.

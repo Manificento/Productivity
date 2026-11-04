@@ -39,4 +39,25 @@ describe('time.pomodoro.running', () => {
     window.dispatchEvent(new StorageEvent('storage', { key: POMODORO_STATE_KEY }));
     await vi.waitFor(async () => expect(await running()).toBeUndefined());
   });
+
+  it('Given фокус идёт When фаза сменилась на перерыв, а затем перерыв кончился Then phase = shortBreak с новыми метками, потом ключ удалён', async () => {
+    await db.timeCategories.add({ id: 'c1' } as never);
+    detach = attachPomodoro();
+    await startPomodoro({ categoryId: 'c1' });
+    const t1 = NOW + 25 * 60_000;
+    vi.setSystemTime(t1);
+    await vi.waitFor(
+      async () =>
+        expect((await running())?.value).toEqual({ phase: 'shortBreak', startedAt: t1, endsAt: t1 + 5 * 60_000 }),
+      { timeout: 4000 },
+    );
+    vi.setSystemTime(t1 + 5 * 60_000);
+    await vi.waitFor(async () => expect(await running()).toBeUndefined(), { timeout: 4000 });
+  });
+
+  it('Given в settings осталась «идущая» сессия, а таймер не идёт When приложение открывается Then ключ удалён', async () => {
+    await db.settings.put({ key: RUNNING_SETTING_KEY, value: { phase: 'work', startedAt: NOW, endsAt: NOW + 1 } });
+    detach = attachPomodoro();
+    await vi.waitFor(async () => expect(await running()).toBeUndefined());
+  });
 });

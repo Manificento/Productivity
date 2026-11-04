@@ -139,6 +139,8 @@ export function attachPomodoro(): () => void {
     generation++;
     busy = false;
     snap = load();
+    // Heal a stale key (restored backup, failed delete, cleared local state): settings follow the real timer.
+    void syncRunningSetting(snap.state);
     teardown = run();
   }
   let attached = true;
