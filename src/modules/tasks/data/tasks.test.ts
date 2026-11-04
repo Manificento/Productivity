@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { addQuickTask, addTask, deleteTask, toggleTask } from './tasks';
+import { addQuickTask, addTask, deleteTask, postponeToTomorrow, toggleTask, updateTask } from './tasks';
 
 beforeEach(async () => {
   await Promise.all([db.tasks.clear(), db.projects.clear()]);
@@ -162,6 +162,63 @@ describe('tasks data', () => {
       const id = await addTask({ title: 'разово', dueDate: '2026-11-04' });
       await toggleTask(id, DONE_AT);
       expect(await db.tasks.count()).toBe(1);
+    });
+  });
+
+  describe('editing', () => {
+    const patch = {
+      title: 'Конспект главы 3',
+      notes: 'с примерами',
+      projectId: 'study',
+      priority: 1 as const,
+      dueDate: '2026-11-06',
+      dueTime: '18:00',
+      estimateMin: 45,
+      tags: ['учёба'],
+    };
+
+    it('Given открыт редактор When я меняю поля и сохраняю Then изменения в БД, updatedAt обновлён', async () => {
+      const id = await addTask({ title: 'Конспект', recurrence: { kind: 'daily' } }, 1000);
+      await updateTask(id, patch, 5000);
+      expect(await db.tasks.get(id)).toEqual({
+        id,
+        createdAt: 1000,
+        updatedAt: 5000,
+        recurrence: { kind: 'daily' },
+        ...patch,
+      });
+    });
+
+    it('removes fields that were cleared', async () => {
+      const id = await addTask(patch, 1000);
+      await updateTask(
+        id,
+        {
+          ...patch,
+          notes: undefined,
+          projectId: undefined,
+          dueDate: undefined,
+          dueTime: undefined,
+          estimateMin: undefined,
+        },
+        5000,
+      );
+      const saved = await db.tasks.get(id);
+      expect(saved).not.toHaveProperty('notes');
+      expect(saved).not.toHaveProperty('dueDate');
+      expect(saved).not.toHaveProperty('estimateMin');
+    });
+
+    it('refuses an empty title or a missing task', async () => {
+      const id = await addTask({ title: 'Конспект' });
+      await expect(updateTask(id, { ...patch, title: ' ' })).rejects.toThrow('Введите название задачи');
+      await expect(updateTask('nope', patch)).rejects.toThrow('Задача не найдена');
+    });
+
+    it('Given задача на сегодня When я нажимаю «На завтра» Then срок становится завтрашним', async () => {
+      const id = await addTask({ title: 'Конспект', dueDate: '2026-11-04', dueTime: '18:00' }, 1000);
+      await postponeToTomorrow(id, '2026-11-04', 5000);
+      expect(await db.tasks.get(id)).toMatchObject({ dueDate: '2026-11-05', dueTime: '18:00', updatedAt: 5000 });
     });
   });
 });
