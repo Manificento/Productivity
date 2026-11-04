@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import { todayKey } from '../../../core/dates';
 import type { DateKey, WorkoutLog } from '../../../core/types';
-import { Card, Empty } from '../../../ui';
-import { HISTORY_DAYS, useRecentWorkouts } from '../data/workouts';
+import { Button, Card, Empty, Sheet } from '../../../ui';
+import { deleteWorkout, HISTORY_DAYS, useRecentWorkouts } from '../data/workouts';
 import { draftFromWorkout, emptyDraft, formatNumber, weekStats } from '../logic/workouts';
-import { WorkoutCard } from './WorkoutCard';
+import { WorkoutCard, workoutLabel } from './WorkoutCard';
 import { WorkoutForm } from './WorkoutForm';
 
 /** «Тренировки»: this week's volume, a new-workout form and the recent history. */
@@ -14,6 +14,24 @@ export function WorkoutsTab({ today = todayKey() }: { today?: DateKey }) {
   const [form, setForm] = useState({ version: 0, initial: emptyDraft(today) });
   const [savedNote, setSavedNote] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
+  const [deleting, setDeleting] = useState<WorkoutLog>();
+  const [deleteError, setDeleteError] = useState<string>();
+  const [removing, setRemoving] = useState(false);
+
+  const askDelete = (w: WorkoutLog | undefined) => {
+    setDeleting(w);
+    setDeleteError(undefined);
+  };
+  const confirmDelete = async (w: WorkoutLog) => {
+    setRemoving(true);
+    try {
+      await deleteWorkout(w.id);
+      askDelete(undefined);
+    } catch {
+      setDeleteError('Не удалось удалить — попробуйте ещё раз');
+    }
+    setRemoving(false);
+  };
 
   const repeat = (w: WorkoutLog) => {
     setForm((f) => ({ version: f.version + 1, initial: draftFromWorkout(w, today) }));
@@ -75,11 +93,30 @@ export function WorkoutsTab({ today = todayKey() }: { today?: DateKey }) {
         ) : (
           <ul aria-label="История тренировок">
             {workouts.map((w) => (
-              <WorkoutCard key={w.id} workout={w} onRepeat={repeat} />
+              <WorkoutCard key={w.id} workout={w} onRepeat={repeat} onDelete={askDelete} />
             ))}
           </ul>
         )}
       </Card>
+
+      <Sheet open={deleting !== undefined} title="Удалить тренировку?" onClose={() => askDelete(undefined)}>
+        <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+          «{deleting && workoutLabel(deleting)}» будет удалена, итоги недели пересчитаются.
+        </p>
+        {deleteError && (
+          <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
+            {deleteError}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="secondary" onClick={() => askDelete(undefined)}>
+            Отмена
+          </Button>
+          <Button variant="danger" disabled={removing} onClick={() => deleting && void confirmDelete(deleting)}>
+            Удалить
+          </Button>
+        </div>
+      </Sheet>
     </>
   );
 }

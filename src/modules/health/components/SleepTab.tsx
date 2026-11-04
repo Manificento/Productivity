@@ -16,7 +16,7 @@ export function SleepTab({ today = todayKey() }: { today?: DateKey }) {
     <>
       <SleepGoal today={today} lastNight={logs?.find((l) => l.date === today)} />
       {/* Re-mount after midnight so the form defaults to the new «last night». */}
-      <SleepForm key={today} today={today} hasRecord={(day) => !!logs?.some((l) => l.date === day)} />
+      <SleepForm key={today} today={today} recordFor={(day) => logs?.find((l) => l.date === day)} />
       <Card title="Сон за 14 дней">
         {logs === undefined ? (
           <Empty>Загрузка…</Empty>

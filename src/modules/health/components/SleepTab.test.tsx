@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
+import * as sleepWrites from '../../../core/logging/sleep';
 import { sleepHours } from '../../../core/logging/sleepTime';
 import { logSleep } from '../data/sleep';
 import { SleepTab } from './SleepTab';
@@ -95,5 +96,48 @@ describe('sleep tab', () => {
     const chart = await screen.findByRole('img', { name: /Длительность сна за 14 дней/ });
     expect(within(chart.parentElement!).getAllByTestId('sleep-bar')).toHaveLength(3);
     expect(screen.getByText(/Среднее за 7 дней/)).toHaveTextContent('Среднее за 7 дней: 7 ч');
+  });
+
+  it('Given a sleep record for a day When I delete it Then it disappears from the chart (only through deleteSleep())', async () => {
+    const remove = vi.spyOn(sleepWrites, 'deleteSleep');
+    await logSleep({ wakeDay: '2026-11-04', bedtime: '23:00', wake: '07:00', quality: 3 }, TODAY); // 8 h
+    await logSleep({ wakeDay: '2026-11-03', bedtime: '00:00', wake: '06:00', quality: 3 }, TODAY); // 6 h
+    renderTab();
+    const chart = await screen.findByRole('img', { name: /записей 2/ });
+    expect(screen.getByText(/Среднее за 7 дней/)).toHaveTextContent('7 ч');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить запись за 4 ноября' }));
+    const dialog = screen.getByRole('dialog', { name: 'Удалить запись сна?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+
+    expect(await screen.findByRole('img', { name: /записей 1/ })).toBeInTheDocument();
+    expect(within(chart.parentElement!).getAllByTestId('sleep-bar')).toHaveLength(1);
+    expect(screen.getByText(/Среднее за 7 дней/)).toHaveTextContent('6 ч');
+    expect(screen.queryByRole('button', { name: /Удалить запись/ })).not.toBeInTheDocument();
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect((await db.sleepLogs.toArray()).map((l) => l.date)).toEqual(['2026-11-03']);
+    remove.mockRestore();
+  });
+
+  it('cancelling the deletion keeps the sleep record; a failure shows an error', async () => {
+    await logSleep({ wakeDay: '2026-11-04', bedtime: '23:00', wake: '07:00', quality: 3 }, TODAY);
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Удалить запись за 4 ноября' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Отмена' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(await db.sleepLogs.count()).toBe(1);
+
+    const del = vi.spyOn(db.sleepLogs, 'delete').mockRejectedValueOnce(new Error('quota'));
+    fireEvent.click(screen.getByRole('button', { name: 'Удалить запись за 4 ноября' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Не удалось удалить');
+    expect(await db.sleepLogs.count()).toBe(1);
+    del.mockRestore();
+  });
+
+  it('a day without a record offers no deletion', async () => {
+    renderTab();
+    await screen.findByText(/Записей пока нет/);
+    expect(screen.queryByRole('button', { name: /Удалить запись/ })).not.toBeInTheDocument();
   });
 });
