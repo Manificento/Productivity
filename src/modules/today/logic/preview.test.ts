@@ -49,6 +49,10 @@ describe('previewDays', () => {
       sleepHours: 8,
       maxWorkoutIntensity: 'moderate',
       focusPomodoros: 7,
+      habitsMode: 'all',
+      meditationKind: 'focus',
+      mindTrainingMin: 10,
+      deload: false,
     });
     expect(rows[5]).toMatchObject({
       phase: 'event',
@@ -56,6 +60,18 @@ describe('previewDays', () => {
       maxWorkoutIntensity: 'rest',
       focusPomodoros: 0,
     });
+  });
+
+  it('Given предпросмотр 10 дней Then он показывает новые поля целей v2', () => {
+    const rows = previewDays(ielts, [], DEFAULT_BASELINE, '2026-11-04');
+    expect(rows[4]).toMatchObject({ phase: 'taper', deload: true, mindTrainingMin: 5, habitsMode: 'all' });
+    expect(rows[5]).toMatchObject({
+      phase: 'event',
+      deload: true,
+      habitsMode: 'essential',
+      meditationKind: 'breathing',
+    });
+    expect(rows[6]).toMatchObject({ phase: 'recovery', deload: false, meditationKind: 'body' });
   });
 
   it('Given я меняю важность или дни подготовки Then предпросмотр пересчитывается', () => {

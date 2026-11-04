@@ -1,4 +1,4 @@
-import type { CheckIn, DateKey, Id, LifeEvent, WorkoutIntensity } from '../types';
+import type { CheckIn, DateKey, Id, LifeEvent, MeditationKind, WorkoutIntensity } from '../types';
 
 export type Phase = 'normal' | 'prep' | 'taper' | 'event' | 'recovery';
 
@@ -13,6 +13,19 @@ export interface Baseline {
   meditationMin: number;
   /** 'HH:mm' */
   caffeineCutoff: string;
+  /** 'HH:mm' — planned wake-up (v2). */
+  wakeTime: string;
+  /** Minutes of mind trainers (n-back, Stroop, Schulte) on a normal day (v2). */
+  mindTrainingMin: number;
+}
+
+/** `all` habits, or only those marked `Habit.essential`. */
+export type HabitsMode = 'all' | 'essential';
+
+/** `settings` `nutrition.goal`: direction and rate, % of body weight per week. */
+export interface NutritionGoal {
+  kind: 'lose' | 'maintain' | 'gain';
+  ratePct: number;
 }
 
 /**
@@ -38,6 +51,21 @@ export interface DailyTargets {
   /** 'HH:mm' */
   caffeineCutoff: string;
   noNewFoods: boolean;
+  // ---- v2 (contract M5, SPEC 0.3 §5.3) ----
+  habitsMode: HabitsMode;
+  /** 'HH:mm' */
+  wakeTime: string;
+  /** Smart alarm window before `wakeTime`, minutes. */
+  wakeWindowMin: number;
+  /** A deload day for the training plan. */
+  deload: boolean;
+  /** Nutrition targets; `undefined` until expenditure, goal and weight are known. */
+  kcal?: number;
+  proteinG?: number;
+  fatG?: number;
+  carbsG?: number;
+  meditationKind: MeditationKind;
+  mindTrainingMin: number;
   /** Human-readable reasons in Russian, one per adjustment, shown in the UI. */
   reasons: string[];
 }
@@ -55,6 +83,17 @@ export interface AdaptationContext {
   recentSleepHours?: (number | undefined)[];
   /** Highest RPE among the workouts logged the day before `date`. */
   yesterdayMaxRpe?: number;
+  // ---- v2 ----
+  /** `settings` `nutrition.expenditure.kcal` — computed by the nutrition module, not by the core. */
+  expenditureKcal?: number;
+  /** `settings` `nutrition.goal`. */
+  nutritionGoal?: NutritionGoal;
+  /** Latest body weight on or before `date`, kg. */
+  weightKg?: number;
+  /** Medians of PVT runs of the last 14 days, most recent first (for the PVT rule, today lane). */
+  recentPvtMediansMs?: number[];
+  /** Minutes of meditation logged the day before `date`. */
+  meditationMinYesterday?: number;
 }
 
 /** A declarative adjustment applied when its phase is active. */

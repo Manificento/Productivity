@@ -1,6 +1,6 @@
 import { daysBetween } from '../dates';
 import type { DateKey, LifeEvent } from '../types';
-import { baselineTargets, CONDITION_RULES, PHASE_RULES } from './rules';
+import { baselineTargets, CONDITION_RULES, nutritionTargets, PHASE_RULES } from './rules';
 import type { AdaptationContext, DailyTargets, Phase } from './types';
 
 /** Phase of `date` relative to one event. */
@@ -45,6 +45,17 @@ export function computeDailyTargets(date: DateKey, ctx: AdaptationContext): Dail
 
   for (const rule of CONDITION_RULES) {
     if (rule.when(ctx, date)) t = rule.apply(t, ctx);
+  }
+
+  // Nutrition (v2): only when the nutrition module has an expenditure, a goal and a weight.
+  const { expenditureKcal, nutritionGoal, weightKg } = ctx;
+  if (expenditureKcal !== undefined && nutritionGoal && weightKg !== undefined) {
+    // Taper and event days drop a calorie deficit (rule 7): eat at least the expenditure.
+    const noDeficit = t.phase === 'taper' || t.phase === 'event';
+    t = { ...t, ...nutritionTargets(expenditureKcal, nutritionGoal, weightKg, noDeficit) };
+    if (noDeficit && nutritionGoal.kind === 'lose') {
+      t = { ...t, reasons: [...t.reasons, 'Перед событием и в день события — без дефицита калорий'] };
+    }
   }
 
   return t;
