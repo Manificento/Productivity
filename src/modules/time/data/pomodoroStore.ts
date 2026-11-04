@@ -1,9 +1,10 @@
+import { db } from '../../../core/db';
 import { restoreSettings, restoreState, type PomodoroSettings, type PomodoroState } from '../logic/pomodoro';
 
 /*
- * Pomodoro settings and the live timer state live in localStorage, not in Dexie:
- * the `settings` table belongs to other modules (docs/architecture.md), and the timer state is
- * per-device UI state. Finished focus sessions are written to `timeEntries` like any other time.
+ * Pomodoro settings and the live timer state live in localStorage, not in Dexie: the timer state is per-device
+ * UI state. Only a mirror of the running phase goes to the `settings` table (`time.pomodoro.running`, see
+ * `syncRunningSetting`). Finished focus sessions are written to `timeEntries` like any other time.
  */
 const SETTINGS_KEY = 'lifeos.time.pomodoro.settings';
 export const POMODORO_STATE_KEY = 'lifeos.time.pomodoro.state';
@@ -29,3 +30,24 @@ export const loadPomodoroSettings = (): PomodoroSettings => restoreSettings(read
 export const savePomodoroSettings = (s: PomodoroSettings): void => write(SETTINGS_KEY, s);
 export const loadPomodoroState = (): PomodoroState => restoreState(read(POMODORO_STATE_KEY));
 export const savePomodoroState = (s: PomodoroState): void => write(POMODORO_STATE_KEY, s);
+
+export const RUNNING_SETTING_KEY = 'time.pomodoro.running';
+
+/**
+ * Mirrors the running phase into `settings` (`time.pomodoro.running` = `{ phase, startedAt, endsAt }`) so other
+ * screens can show it without reading our localStorage. The key is removed while the timer is not running.
+ * Best effort: a failed write must not stop the timer; the key is re-synced on every change and on attach.
+ * Readers must treat `endsAt <= now` as «не идёт» (the app may have been closed past the end).
+ */
+export async function syncRunningSetting(state: PomodoroState): Promise<void> {
+  try {
+    if (state.status === 'running') {
+      const { phase, startedAt, endsAt } = state;
+      await db.settings.put({ key: RUNNING_SETTING_KEY, value: { phase, startedAt, endsAt } });
+    } else {
+      await db.settings.delete(RUNNING_SETTING_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
