@@ -108,12 +108,20 @@ describe('parseQuickAdd', () => {
       ['по выходным зарядка', { kind: 'weekly', weekdays: [0, 6] }, '2026-11-07'],
       ['каждый понедельник зарядка', { kind: 'weekly', weekdays: [1] }, '2026-11-09'],
       ['по вторникам и четвергам зарядка', { kind: 'weekly', weekdays: [2, 4] }, '2026-11-05'],
-      ['каждый месяц зарядка', { kind: 'monthly' }, TODAY],
+      ['каждый месяц зарядка', { kind: 'monthly', dayOfMonth: 4 }, TODAY],
       ['каждые 3 дня зарядка', { kind: 'everyNDays', interval: 3 }, TODAY],
       ['каждые 2 недели зарядка', { kind: 'everyNDays', interval: 14 }, TODAY],
       ['every day зарядка', { kind: 'daily' }, TODAY],
     ])('%s', (input, recurrence, dueDate) => {
       expect(parse(input)).toEqual({ title: 'зарядка', recurrence, dueDate, tags: [] });
+    });
+
+    it('«ежемесячно» с датой 31-го запоминает якорный день 31 (после февраля — снова на конец месяца)', () => {
+      expect(parse('31 января каждый месяц аренда')).toMatchObject({
+        title: 'аренда',
+        dueDate: '2027-01-31',
+        recurrence: { kind: 'monthly', dayOfMonth: 31 },
+      });
     });
 
     it('keeps an explicit start date and uses its weekday for «каждую неделю»', () => {

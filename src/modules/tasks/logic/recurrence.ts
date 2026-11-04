@@ -1,4 +1,4 @@
-import { addMonths, getDay } from 'date-fns';
+import { addMonths, getDay, getDaysInMonth, setDate, startOfMonth } from 'date-fns';
 import { fromDateKey, shiftDateKey, toDateKey } from '../../../core/dates';
 import type { DateKey, Recurrence, Task } from '../../../core/types';
 
@@ -9,10 +9,11 @@ export function nextDueDate(recurrence: Recurrence, dueDate: DateKey): DateKey {
       return shiftDateKey(dueDate, 1);
     case 'everyNDays':
       return shiftDateKey(dueDate, Math.max(1, Math.floor(recurrence.interval ?? 1) || 1));
-    case 'monthly':
-      // date-fns clamps to the month's last day: 31 Jan → 28/29 Feb. The next step counts from that
-      // date (28 Feb → 28 Mar): `Recurrence` has no anchor day yet — see issue #73.
-      return toDateKey(addMonths(fromDateKey(dueDate), 1));
+    case 'monthly': {
+      // Next month on the anchor day, clamped to the month's last day: 31 Jan → 28/29 Feb → 31 Mar.
+      const next = addMonths(startOfMonth(fromDateKey(dueDate)), 1);
+      return toDateKey(setDate(next, Math.min(monthlyAnchor(recurrence, dueDate), getDaysInMonth(next))));
+    }
     default: {
       const days = recurrence.weekdays?.length ? recurrence.weekdays : [getDay(fromDateKey(dueDate))];
       const from = getDay(fromDateKey(dueDate));
@@ -21,6 +22,20 @@ export function nextDueDate(recurrence: Recurrence, dueDate: DateKey): DateKey {
       return shiftDateKey(dueDate, ahead);
     }
   }
+}
+
+/**
+ * The day of month a monthly repeat aims at. The stored anchor counts only while `dueDate` is on it (or on the
+ * last day of a shorter month); a date moved by hand, an invalid value or an old record without one fall back
+ * to the due date's own day.
+ */
+function monthlyAnchor(recurrence: Recurrence, dueDate: DateKey): number {
+  const due = fromDateKey(dueDate);
+  const day = due.getDate();
+  const a = recurrence.dayOfMonth;
+  if (a === undefined || !Number.isInteger(a) || a < 1 || a > 31) return day;
+  const last = getDaysInMonth(due);
+  return a === day || (day === last && a > last) ? a : day;
 }
 
 type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;

@@ -31,8 +31,30 @@ describe('nextDueDate', () => {
     expect(nextDueDate({ kind: 'monthly' }, '2026-12-15')).toBe('2027-01-15');
   });
 
-  it('known limit: after a short month the repeat stays on the clamped day (no anchor day in Recurrence, #73)', () => {
+  it('Given ежемесячная задача, созданная на 31 января When её копии выполняются по очереди Then сроки: 28 февраля → 31 марта → 30 апреля', () => {
+    const monthly = { kind: 'monthly' as const, dayOfMonth: 31 };
+    const due: string[] = [];
+    let current = task({ dueDate: '2027-01-31', recurrence: monthly });
+    for (let i = 0; i < 3; i++) {
+      const next = nextOccurrence(current, current.dueDate!)!;
+      due.push(next.dueDate!);
+      current = task({ ...next });
+    }
+    expect(due).toEqual(['2027-02-28', '2027-03-31', '2027-04-30']);
+    expect(nextDueDate({ kind: 'monthly', dayOfMonth: 30 }, '2028-01-30')).toBe('2028-02-29');
+    expect(nextDueDate({ kind: 'monthly', dayOfMonth: 30 }, '2028-02-29')).toBe('2028-03-30');
+  });
+
+  it('Given старые записи без якоря When они повторяются Then поведение прежнее (день из срока), миграция не нужна', () => {
     expect(nextDueDate({ kind: 'monthly' }, '2027-02-28')).toBe('2027-03-28');
+    expect(nextDueDate({ kind: 'monthly' }, '2027-03-31')).toBe('2027-04-30');
+  });
+
+  it('a stale anchor (the due date was moved by hand to another day) gives way to the due date', () => {
+    expect(nextDueDate({ kind: 'monthly', dayOfMonth: 31 }, '2027-03-15')).toBe('2027-04-15');
+    // An invalid anchor (e.g. from an import) is ignored.
+    expect(nextDueDate({ kind: 'monthly', dayOfMonth: 0 }, '2027-01-31')).toBe('2027-02-28');
+    expect(nextDueDate({ kind: 'monthly', dayOfMonth: 40 }, '2027-02-28')).toBe('2027-03-28');
   });
 
   it('Given задача «каждые 3 дня» When я её выполняю Then следующая — через 3 дня от срока', () => {
