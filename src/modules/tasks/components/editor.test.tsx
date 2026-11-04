@@ -9,7 +9,10 @@ setupTasksTestEnv();
 async function openEditor(title: string) {
   const user = userEvent.setup();
   await user.click(await screen.findByRole('button', { name: new RegExp(`^${title}`) }));
-  return { user, dialog: screen.getByRole('dialog', { name: 'Задача' }) };
+  const dialog = screen.getByRole('dialog', { name: 'Задача' });
+  // The editor reads the task live from the DB, so its fields appear a tick later.
+  await within(dialog).findByLabelText('Название');
+  return { user, dialog };
 }
 
 describe('task editor', () => {
@@ -139,6 +142,25 @@ describe('task editor', () => {
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Не удалось сохранить изменения');
     expect(screen.getByRole('dialog', { name: 'Задача' })).toBeInTheDocument();
+  });
+
+  it('«На завтра» is offered for overdue tasks but not for later or undated ones', async () => {
+    await seedTask('Просроченная', { dueDate: '2026-11-01' });
+    await seedTask('Позже', { dueDate: '2026-11-10' });
+    await seedTask('Без срока');
+    renderTasks('/tasks');
+    let editor = await openEditor('Просроченная');
+    expect(within(editor.dialog).getByRole('button', { name: 'На завтра' })).toBeInTheDocument();
+    await editor.user.keyboard('{Escape}');
+
+    await editor.user.click(screen.getByRole('link', { name: 'Предстоящие' }));
+    editor = await openEditor('Позже');
+    expect(within(editor.dialog).queryByRole('button', { name: 'На завтра' })).not.toBeInTheDocument();
+    await editor.user.keyboard('{Escape}');
+
+    await editor.user.click(screen.getByRole('link', { name: 'Входящие' }));
+    editor = await openEditor('Без срока');
+    expect(within(editor.dialog).queryByRole('button', { name: 'На завтра' })).not.toBeInTheDocument();
   });
 
   it('a completed task can be edited but not postponed', async () => {

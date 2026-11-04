@@ -71,13 +71,9 @@ export async function toggleTask(id: Id, now: number = Date.now()): Promise<void
       if (next && !already) await db.tasks.add(newRecord(next, now));
       return;
     }
-    const copyDate = nextOccurrence(task, toDateKey(task.completedAt))?.dueDate;
-    if (copyDate) {
-      const open = await db.tasks
-        .where('dueDate')
-        .equals(copyDate)
-        .filter((t) => isNextCopyOf(t, task))
-        .primaryKeys();
+    if (task.recurrence) {
+      // Found by the link alone: the copy's date may have been edited or postponed since.
+      const open = await db.tasks.filter((t) => isNextCopyOf(t, task)).primaryKeys();
       await db.tasks.bulkDelete(open);
     }
     const { completedAt: _done, ...reopened } = task;
@@ -103,7 +99,13 @@ export async function updateTask(id: Id, patch: TaskPatch, now: number = Date.no
 
 /** «На завтра»: moves the task's due date to the day after `today`, keeping its time. */
 export async function postponeToTomorrow(id: Id, today: DateKey, now: number = Date.now()): Promise<void> {
-  await db.tasks.update(id, touch({ dueDate: shiftDateKey(today, 1) }, now));
+  const changed = await db.tasks.update(id, touch({ dueDate: shiftDateKey(today, 1) }, now));
+  if (changed === 0) throw new Error('Задача не найдена');
+}
+
+/** Live single task; undefined while loading or when it does not exist. */
+export function useTask(id: Id | undefined): Task | undefined {
+  return useLiveQuery(() => (id ? db.tasks.get(id) : undefined), [id]);
 }
 
 export async function deleteTask(id: Id): Promise<void> {

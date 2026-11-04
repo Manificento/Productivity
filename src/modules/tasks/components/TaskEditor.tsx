@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { todayKey } from '../../../core/dates';
-import type { Task } from '../../../core/types';
+import type { Id, Task } from '../../../core/types';
 import { Button, Field, Input, Segmented, Select, Sheet, Textarea } from '../../../ui';
 import { useProjects } from '../data/projects';
-import { postponeToTomorrow, updateTask } from '../data/tasks';
+import { postponeToTomorrow, updateTask, useTask } from '../data/tasks';
 import { formToPatch, taskToForm, validateForm, type FormErrors, type TaskForm } from '../logic/editForm';
 import { activeProjects } from '../logic/projects';
 
@@ -15,9 +15,11 @@ const PRIORITIES: { value: TaskForm['priority']; label: string }[] = [
 ];
 
 /** Bottom sheet with every field of a task. Nothing is saved until «Сохранить» (or «На завтра»). */
-export function TaskEditor({ task, onClose }: { task: Task | undefined; onClose: () => void }) {
+export function TaskEditor({ taskId, onClose }: { taskId: Id | undefined; onClose: () => void }) {
+  // Live: if the task changes elsewhere while the sheet is open, the buttons follow it.
+  const task = useTask(taskId);
   return (
-    <Sheet open={task !== undefined} title="Задача" onClose={onClose}>
+    <Sheet open={taskId !== undefined} title="Задача" onClose={onClose}>
       {/* Keyed by id: opening another task starts from that task's values. */}
       {task && <EditorForm key={task.id} task={task} onClose={onClose} />}
     </Sheet>
@@ -108,7 +110,8 @@ function EditorForm({ task, onClose }: { task: Task; onClose: () => void }) {
           {saveError}
         </p>
       )}
-      {task.completedAt === undefined && (
+      {/* Only for tasks due today or overdue: for later or undated tasks «tomorrow» is not a postponement. */}
+      {task.completedAt === undefined && task.dueDate !== undefined && task.dueDate <= todayKey() && (
         <Button
           variant="secondary"
           className="mb-2 w-full"
