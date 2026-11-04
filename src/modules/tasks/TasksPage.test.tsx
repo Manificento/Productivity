@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
 import { newRecord } from '../../core/ids';
 import type { Task } from '../../core/types';
@@ -20,8 +20,18 @@ function findSection(name: string) {
   return screen.findByRole('region', { name });
 }
 
+// 2026-11-04 12:00 local time. Only Date is faked so userEvent and Dexie timers keep working.
+const NOW = new Date(2026, 10, 4, 12, 0).getTime();
+
 beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
   await db.tasks.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('TasksPage', () => {
@@ -49,12 +59,12 @@ describe('TasksPage', () => {
 
     expect(within(await findSection('Выполнено сегодня')).getByText('Купить молоко')).toBeInTheDocument();
     expect(within(section('Входящие')).queryByText('Купить молоко')).not.toBeInTheDocument();
-    expect((await db.tasks.get(task.id))?.completedAt).toEqual(expect.any(Number));
+    expect((await db.tasks.get(task.id))?.completedAt).toBe(NOW);
   });
 
   it('Given выполненная задача When я снимаю отметку Then completedAt очищается и задача возвращается в список', async () => {
     const user = userEvent.setup();
-    const task = await seed('Купить молоко', { completedAt: Date.now() });
+    const task = await seed('Купить молоко', { completedAt: NOW - 60_000 });
     render(<TasksPage />);
 
     const box = within(await findSection('Выполнено сегодня')).getByRole('checkbox', {
@@ -103,5 +113,39 @@ describe('TasksPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Введите название задачи');
     expect(screen.getByLabelText('Новая задача')).toHaveAttribute('aria-invalid', 'true');
     expect(await db.tasks.count()).toBe(0);
+  });
+
+  it('shows an error and keeps the title when saving fails', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(db.tasks, 'add').mockRejectedValueOnce(new Error('quota'));
+    render(<TasksPage />);
+
+    await user.type(screen.getByLabelText('Новая задача'), 'Купить молоко');
+    await user.click(screen.getByRole('button', { name: 'Добавить' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить задачу');
+    expect(screen.getByLabelText('Новая задача')).toHaveValue('Купить молоко');
+  });
+
+  it('shows an error when completing a task fails', async () => {
+    const user = userEvent.setup();
+    await seed('Купить молоко');
+    vi.spyOn(db.tasks, 'put').mockRejectedValueOnce(new Error('quota'));
+    render(<TasksPage />);
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Выполнено: Купить молоко' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить изменения');
+  });
+
+  it('a double tap on «Добавить» creates only one task', async () => {
+    const user = userEvent.setup();
+    render(<TasksPage />);
+
+    await user.type(screen.getByLabelText('Новая задача'), 'Купить молоко');
+    await user.dblClick(screen.getByRole('button', { name: 'Добавить' }));
+
+    expect(await within(section('Входящие')).findByText('Купить молоко')).toBeInTheDocument();
+    expect(await db.tasks.count()).toBe(1);
   });
 });
