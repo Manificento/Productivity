@@ -94,11 +94,14 @@ describe('PVT run', () => {
     expect(tapPvt(s, 5_000, 2_000)).toBe(s);
   });
 
-  it('a stimulus left unanswered for more than 500 ms when time runs out counts as a lapse', () => {
-    let s = running(startPvt(0, 5_000, 4_000));
+  it('a stimulus left unanswered for more than 500 ms when time runs out counts as a lapse without a made-up reaction time', () => {
+    let s = running(startPvt(0, 5_000, 2_000));
+    s = tickPvt(s, 2_000) as PvtRunning;
+    s = tapPvt(s, 2_300, 1_700); // next stimulus at 4 000
     s = tickPvt(s, 4_000) as PvtRunning;
     const done = finishPvt(s, 5_000);
-    expect(done.result.reactionTimesMs).toEqual([1_000]);
+    expect(done.result.reactionTimesMs).toEqual([300]);
+    expect(done.result.medianRtMs).toBe(300);
     expect(done.result.lapses).toBe(1);
   });
 

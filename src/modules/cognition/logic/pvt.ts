@@ -80,22 +80,27 @@ export function tapPvt(state: PvtRunning, now: number, nextDelayMs: number): Pvt
 }
 
 /**
- * Ends the test. A stimulus still waiting for a tap for longer than the lapse threshold
- * counts as a lapse (the user missed it); a fresher one is dropped — there was no fair chance to react.
+ * Ends the test. A stimulus still waiting for a tap for longer than the lapse threshold is a
+ * missed stimulus: it counts as a lapse, but adds no reaction time (there was no response to measure).
+ * A fresher one is dropped — there was no fair chance to react.
  */
 export function finishPvt(state: PvtRunning, now: number): PvtDone {
   const end = Math.min(now, state.endsAt);
-  const rts = [...state.reactionTimesMs];
-  if (state.shownAt !== undefined && end - state.shownAt > LAPSE_MS) rts.push(end - state.shownAt);
-  return { phase: 'done', durationMs: state.endsAt - state.startedAt, result: summarizePvt(rts, state.falseStarts) };
+  const missed = state.shownAt !== undefined && end - state.shownAt > LAPSE_MS ? 1 : 0;
+  return {
+    phase: 'done',
+    durationMs: state.endsAt - state.startedAt,
+    result: summarizePvt(state.reactionTimesMs, state.falseStarts, missed),
+  };
 }
 
-export function summarizePvt(reactionTimesMs: number[], falseStarts: number): PvtSummary {
+/** `missed` = stimuli never answered; each one is a lapse on top of the slow reactions. */
+export function summarizePvt(reactionTimesMs: number[], falseStarts: number, missed = 0): PvtSummary {
   const rounded = reactionTimesMs.map((ms) => Math.round(ms));
   return {
     reactionTimesMs: rounded,
     medianRtMs: median(rounded),
-    lapses: rounded.filter((ms) => ms > LAPSE_MS).length,
+    lapses: rounded.filter((ms) => ms > LAPSE_MS).length + missed,
     falseStarts,
   };
 }

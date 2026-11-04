@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { todayKey } from '../../core/dates';
+import type { DateKey } from '../../core/types';
 import { Card, Empty, Page } from '../../ui';
 import { MedianChart } from './components/MedianChart';
 import { useRecentPvt } from './data/cognitiveTests';
@@ -19,7 +20,7 @@ function ComparisonText({ latestMs, averageMs, diffMs }: { latestMs: number; ave
 }
 
 /** `/cognition` — start the test and see the 14-day history. */
-export function CognitionHome({ today = todayKey() }: { today?: string }) {
+export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
   const tests = useRecentPvt(today);
   const comparison = tests && compareWithAverage(tests);
 

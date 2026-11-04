@@ -73,14 +73,14 @@ describe('PVT screen', () => {
     tap(); // ~700 ms reaction → lapse
     advance(5_000); // the stimulus at ~7.5 s is never answered → second lapse
 
-    expect(screen.getByText('Медиана реакции').nextElementSibling?.textContent).toMatch(/^\d+ мс$/);
+    expect(screen.getByText('Медиана реакции').nextElementSibling).toHaveTextContent('494 мс');
     expect(screen.getByText('Пропуски (> 500 мс)').nextElementSibling).toHaveTextContent('2');
     expect(screen.getByText('Фальстарты').nextElementSibling).toHaveTextContent('1');
     expect(await screen.findByText('Результат сохранён.')).toBeInTheDocument();
 
     const [saved] = await db.cognitiveTests.toArray();
     expect(saved).toMatchObject({ kind: 'pvt', durationMs: 10_000, falseStarts: 1, lapses: 2 });
-    expect(saved.reactionTimesMs).toHaveLength(3);
+    expect(saved.reactionTimesMs).toEqual([288, 700]);
   });
 
   it('a run without a single valid reaction is not saved and says so', async () => {
@@ -128,6 +128,26 @@ describe('PVT screen', () => {
     expect(screen.queryByText('Результат')).not.toBeInTheDocument();
     expect(await db.cognitiveTests.count()).toBe(0);
     visibility.mockRestore();
+  });
+
+  it('a failed save is reported and the results can still be closed', async () => {
+    const add = vi.spyOn(db.cognitiveTests, 'add').mockRejectedValueOnce(new Error('quota'));
+    renderAt('/cognition/pvt?duration=5');
+    fireEvent.click(screen.getByRole('button', { name: 'Начать' }));
+    advance(2_300);
+    tap();
+    advance(3_000);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить результат');
+    expect(screen.getByRole('button', { name: 'Готово' })).toBeEnabled();
+    add.mockRestore();
+  });
+
+  it('a second finger of the same touch is not counted as another tap', () => {
+    renderAt('/cognition/pvt');
+    fireEvent.click(screen.getByRole('button', { name: 'Начать' }));
+    advance(500);
+    act(() => void fireEvent.pointerDown(tapArea(), { isPrimary: false, pointerType: 'touch' }));
+    expect(screen.queryByText('Фальстарт — рано!')).not.toBeInTheDocument();
   });
 
   it('«Прервать» stops the run without saving', async () => {

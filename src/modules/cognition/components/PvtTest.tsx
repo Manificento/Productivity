@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { Button, Card } from '../../../ui';
 import type { PvtRun } from '../data/cognitiveTests';
 import { randomDelayMs, startPvt, tapPvt, tickPvt, type PvtRunning, type PvtState } from '../logic/pvt';
@@ -56,7 +57,12 @@ export function PvtTest({
         return;
       }
       const secondsLeft = Math.ceil((next.endsAt - now) / 1_000);
-      if (next !== current || secondsLeft !== lastSecondsLeft) {
+      if (next.shownAt !== undefined && current.shownAt === undefined) {
+        // Commit the stimulus synchronously so it is painted in the frame `shownAt` was measured in;
+        // a normal (deferred) render would add a frame (~16 ms) to every reaction time.
+        lastSecondsLeft = secondsLeft;
+        flushSync(() => show(next, now));
+      } else if (next !== current || secondsLeft !== lastSecondsLeft) {
         lastSecondsLeft = secondsLeft;
         show(next, now);
       }
@@ -81,6 +87,12 @@ export function PvtTest({
     if (!current) return;
     const now = performance.now();
     show(tapPvt(current, now, randomDelayMs(random)), now);
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    // A second finger of the same touch is not a new reaction.
+    if (e.pointerType === 'touch' && !e.isPrimary) return;
+    tap();
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -110,7 +122,7 @@ export function PvtTest({
         <button
           type="button"
           aria-label="Область реакции"
-          onPointerDown={tap}
+          onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
           className="m-4 mt-0 flex flex-1 touch-none select-none flex-col items-center justify-center rounded-3xl bg-zinc-100 outline-none dark:bg-zinc-900"
         >
