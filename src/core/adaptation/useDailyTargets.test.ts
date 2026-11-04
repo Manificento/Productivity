@@ -95,6 +95,7 @@ describe('loadDailyTargets', () => {
       nutritionGoal: { kind: 'lose', ratePct: 0.5 },
       weightKg: 80,
       recentPvtMediansMs: [270, 320, 300],
+      todayPvtMedianMs: 270,
       meditationMinYesterday: 15,
     });
     expect((await loadDailyTargets('2026-11-04')).kcal).toBe(2060);
@@ -116,6 +117,26 @@ describe('loadDailyTargets', () => {
       const t = await loadDailyTargets('2026-11-04');
       expect(t.kcal).toBeUndefined();
     }
+  });
+
+  it('takes the latest PVT run of the day and ignores runs without a valid median', async () => {
+    const run = (id: string, startedAt: number, medianRtMs: number) => ({
+      id,
+      date: '2026-11-04',
+      kind: 'pvt' as const,
+      startedAt,
+      durationMs: 60_000,
+      reactionTimesMs: [medianRtMs],
+      medianRtMs,
+      lapses: 0,
+      falseStarts: 0,
+      ...base,
+    });
+    // Ids sort the other way round, so index order alone would pick the older run.
+    await db.cognitiveTests.bulkAdd([run('b-first', 1000, 400), run('a-retake', 2000, 270), run('c-broken', 3000, 0)]);
+    const ctx = await loadAdaptationContext('2026-11-04');
+    expect(ctx.todayPvtMedianMs).toBe(270);
+    expect(ctx.recentPvtMediansMs).toEqual([270, 400]);
   });
 
   it('ignores a non-positive weight', async () => {

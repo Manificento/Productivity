@@ -90,8 +90,10 @@ export interface AdaptationContext {
   nutritionGoal?: NutritionGoal;
   /** Latest body weight on or before `date`, kg. */
   weightKg?: number;
-  /** Medians of PVT runs of the last 14 days, most recent first (for the PVT rule, today lane). */
+  /** Medians of PVT runs of the last 14 days (including `date`), most recent first. */
   recentPvtMediansMs?: number[];
+  /** Median of the latest PVT run on `date` itself, if the test was taken that day. */
+  todayPvtMedianMs?: number;
   /** Minutes of meditation logged the day before `date`. */
   meditationMinYesterday?: number;
 }
