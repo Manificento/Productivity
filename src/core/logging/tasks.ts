@@ -21,33 +21,43 @@ const PriorityField = z
   })
   .transform((p): Priority => (typeof p === 'number' ? p : (Number(p.slice(1)) as Priority)));
 
+const text = (message: string) => z.string({ error: message });
+const millis = (message: string) => z.number({ error: message }).int(message);
+const RowField = z.number({ error: 'Номер строки — целое число' }).int().positive().optional();
+
 export const ImportProject = z.object({
-  name: z.string().trim().min(1, 'Введите название проекта'),
+  name: text('Название проекта — текст').trim().min(1, 'Введите название проекта'),
   /** Row in the source file, for error messages. Defaults to the position in the list. */
-  row: z.number().int().positive().optional(),
+  row: RowField,
 });
 
 export const ImportTask = z
   .object({
-    title: z.string().trim().min(1, 'Введите название задачи'),
-    notes: z.string().optional(),
+    title: text('Название задачи — текст').trim().min(1, 'Введите название задачи'),
+    notes: text('Заметка — текст').optional(),
     /** Matched to an active project by name (case-insensitive); created when missing. */
-    projectName: z.string().trim().optional(),
+    projectName: text('Название проекта — текст').trim().optional(),
     priority: PriorityField.optional(),
     /** Due day; or give `dueAt` and let the import derive the LOCAL day and time. */
     dueDate: DateKeyField.optional(),
     dueTime: TimeField.optional(),
     /** Due instant (epoch ms) in the user's time zone — becomes `dueDate` + `dueTime`. */
-    dueAt: z.number().int().optional(),
-    completedAt: z.number().int().optional(),
-    tags: z.array(z.string().trim().min(1)).optional(),
+    dueAt: millis('Срок — момент времени в миллисекундах').optional(),
+    completedAt: millis('Время выполнения — момент времени в миллисекундах').optional(),
+    tags: z
+      .array(text('Метка — текст').trim().min(1, 'Метка не может быть пустой'), { error: 'Метки — список' })
+      .optional(),
     /** Id in the source system; re-import updates the task with the same `source` + `externalId`. */
-    externalId: z.string().trim().min(1).optional(),
-    row: z.number().int().positive().optional(),
+    externalId: text('Внешний id — текст').trim().min(1, 'Внешний id не может быть пустым').optional(),
+    row: RowField,
   })
   .refine((t) => t.dueTime === undefined || t.dueDate !== undefined || t.dueAt !== undefined, {
     message: 'Время без даты: укажите дату срока',
     path: ['dueDate'],
+  })
+  .refine((t) => t.dueAt === undefined || (t.dueDate === undefined && t.dueTime === undefined), {
+    message: 'Укажите либо срок со временем (dueAt), либо дату и время',
+    path: ['dueAt'],
   });
 
 export type ImportProject = z.input<typeof ImportProject>;
@@ -69,9 +79,14 @@ export interface ImportTasksResult {
 
 type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
 
-/** First zod issue as «Задача 3: сообщение» — the row number helps to fix the source file. */
+/** Fields the import owns: re-import rewrites exactly these and keeps the rest (e.g. `recurrence`). */
+const IMPORT_OWNED = ['title', 'notes', 'projectId', 'priority', 'dueDate', 'dueTime', 'completedAt', 'tags'] as const;
+
+/** First zod issue as «Задача 3: сообщение (поле)» — the row number helps to fix the source file. */
 function rowError(kind: 'Проект' | 'Задача', row: number, error: z.ZodError): Error {
-  return new Error(`${kind} ${row}: ${error.issues[0]?.message ?? 'неверные данные'}`);
+  const issue = error.issues[0];
+  const field = issue?.path.length ? ` (${issue.path.join('.')})` : '';
+  return new Error(`${kind} ${row}: ${issue?.message ?? 'неверные данные'}${field}`);
 }
 
 function parseAll<S extends z.ZodType>(schema: S, kind: 'Проект' | 'Задача', items: unknown[]): z.output<S>[] {
@@ -81,6 +96,23 @@ function parseAll<S extends z.ZodType>(schema: S, kind: 'Проект' | 'Зад
     if (!r.success) throw rowError(kind, row, r.error);
     return r.data;
   });
+}
+
+/** Rows with the same `externalId` collapse into the last one — a file row is imported once. */
+function dedupeByExternalId<T extends { externalId?: string }>(tasks: T[]): T[] {
+  const lastIndex = new Map<string, number>();
+  tasks.forEach((t, i) => t.externalId !== undefined && lastIndex.set(t.externalId, i));
+  return tasks.filter((t, i) => t.externalId === undefined || lastIndex.get(t.externalId) === i);
+}
+
+/**
+ * Of several tasks with the same `source` + `externalId` (a repeat copy made in the app may inherit them),
+ * the one to update: the open one, else the newest.
+ */
+function pickExisting(matches: Task[]): Task {
+  const open = matches.filter((t) => t.completedAt === undefined);
+  const pool = open.length ? open : matches;
+  return pool.reduce((best, t) => (t.createdAt > best.createdAt ? t : best));
 }
 
 /** The task record to store, without the project link. */
@@ -103,7 +135,8 @@ function toNewTask(t: z.output<typeof ImportTask>, source: TaskSource): Omit<New
 /**
  * Validates everything first (nothing is written when a row is invalid), then writes projects and
  * tasks in one transaction. Projects are matched to ACTIVE projects by name; tasks with an
- * `externalId` update the task with the same `source` + `externalId` instead of adding a second one.
+ * `externalId` update the task with the same `source` + `externalId` (only the import-owned fields)
+ * instead of adding a second one.
  */
 export async function importTasks(
   input: ImportTasksInput,
@@ -111,7 +144,7 @@ export async function importTasks(
   now: number = Date.now(),
 ): Promise<ImportTasksResult> {
   const projects = parseAll(ImportProject, 'Проект', input.projects);
-  const tasks = parseAll(ImportTask, 'Задача', input.tasks);
+  const tasks = dedupeByExternalId(parseAll(ImportTask, 'Задача', input.tasks));
   const { source } = options;
 
   return db.transaction('rw', db.projects, db.tasks, async () => {
@@ -144,14 +177,10 @@ export async function importTasks(
         t.externalId !== undefined
           ? await db.tasks.where('[source+externalId]').equals([source, t.externalId]).toArray()
           : [];
-      if (existing.length > 1) {
-        throw new Error(
-          `Задача ${t.row ?? ''}: несколько записей с externalId «${t.externalId}» — импорт отменён`.replace('  ', ' '),
-        );
-      }
-      if (existing.length === 1) {
-        const old = existing[0];
-        await db.tasks.put({ ...record, ...touch({ id: old.id, createdAt: old.createdAt }, now) } as Task);
+      if (existing.length > 0) {
+        const kept: Partial<Task> = { ...pickExisting(existing) };
+        for (const key of IMPORT_OWNED) delete kept[key];
+        await db.tasks.put({ ...kept, ...record, ...touch({}, now) } as Task);
         result.tasks.updated += 1;
       } else {
         await db.tasks.add(newRecord(record, now));

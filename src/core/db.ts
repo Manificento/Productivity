@@ -86,10 +86,9 @@ export class LifeDB extends Dexie {
       notes: 'id, updatedAt, *linkIds',
       xpEvents: 'id, date, source',
     });
-    // v4 (contract #150): re-import of tasks finds them by source + external id; `name` for project lookup.
+    // v4 (contract #150): re-import of tasks finds them by source + external id.
     this.version(4).stores({
       tasks: 'id, projectId, dueDate, priority, completedAt, *tags, [source+externalId]',
-      projects: 'id, archived, name',
     });
   }
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../db';
 import { newRecord } from '../ids';
 import { importTasks } from './tasks';
@@ -68,18 +68,48 @@ describe('importTasks — the one write path for imported tasks and projects (AD
   });
 
   it('a failure inside the transaction writes nothing (all or nothing)', async () => {
-    await db.tasks.add(
-      newRecord({ title: 'Старая', priority: 4 as const, tags: [], source: 'todoist', externalId: 'dup' }),
-    );
-    await db.tasks.add(
-      newRecord({ title: 'Старая копия', priority: 4 as const, tags: [], source: 'todoist', externalId: 'dup' }),
-    );
-    // Two existing rows with the same key cannot be upserted unambiguously → the whole import is rolled back.
+    const add = vi.spyOn(db.tasks, 'add').mockRejectedValueOnce(new Error('quota'));
     await expect(
-      importTasks({ projects: [{ name: 'Новый' }], tasks: [{ title: 'Новая', externalId: 'dup' }] }, TODOIST, NOW),
-    ).rejects.toThrow();
+      importTasks({ projects: [{ name: 'Новый' }], tasks: [{ title: 'Новая' }] }, TODOIST, NOW),
+    ).rejects.toThrow('quota');
+    add.mockRestore();
     expect(await db.projects.count()).toBe(0);
-    expect(await db.tasks.count()).toBe(2);
+    expect(await db.tasks.count()).toBe(0);
+  });
+
+  it('re-import keeps recurrence set in the app and other fields the import does not own', async () => {
+    await importTasks(
+      { projects: [], tasks: [{ title: 'Отчёт', externalId: '7', dueDate: '2026-11-10' }] },
+      TODOIST,
+      NOW,
+    );
+    const id = (await db.tasks.toArray())[0].id;
+    await db.tasks.update(id, { recurrence: { kind: 'weekly', weekdays: [1] }, estimateMin: 30 });
+
+    await importTasks({ projects: [], tasks: [{ title: 'Отчёт v2', externalId: '7' }] }, TODOIST, NOW + 1);
+    const task = (await db.tasks.toArray())[0];
+    expect(task).toMatchObject({
+      id,
+      title: 'Отчёт v2',
+      recurrence: { kind: 'weekly', weekdays: [1] },
+      estimateMin: 30,
+    });
+    // A field the import owns and the file no longer has is cleared.
+    expect(task.dueDate).toBeUndefined();
+  });
+
+  it('when several tasks share source + externalId (a repeat copy made in the app), the open one is updated and nothing is duplicated', async () => {
+    const base = { priority: 4 as const, tags: [], source: 'todoist' as const, externalId: 'dup' };
+    await db.tasks.add(newRecord({ title: 'Выполненная', ...base, completedAt: 5 }, 1));
+    await db.tasks.add(newRecord({ title: 'Открытая', ...base }, 2));
+    const result = await importTasks(
+      { projects: [], tasks: [{ title: 'Обновлённая', externalId: 'dup' }] },
+      TODOIST,
+      NOW,
+    );
+    expect(result.tasks).toEqual({ created: 0, updated: 1 });
+    const tasks = (await db.tasks.toArray()).sort((a, b) => a.createdAt - b.createdAt);
+    expect(tasks.map((t) => t.title)).toEqual(['Выполненная', 'Обновлённая']);
   });
 
   it('Given проект с таким же именем уже есть When идёт импорт Then задачи привязываются к существующему проекту, дубликат проекта не создаётся', async () => {
@@ -101,14 +131,14 @@ describe('importTasks — the one write path for imported tasks and projects (AD
     const tasks = await db.tasks.toArray();
     expect(tasks.find((t) => t.title === 'Слова')?.projectId).toBe(existing.id);
     expect(tasks.find((t) => t.title === 'Новое')?.projectId).toBe(
-      (await db.projects.where('name').equals('Спорт').first())!.id,
+      (await db.projects.filter((p) => p.name === 'Спорт').first())!.id,
     );
   });
 
   it('an archived project with the same name is not reused: imports go to a new active project', async () => {
     await db.projects.add(newRecord({ name: 'Дом', archived: true }, 1));
     await importTasks({ projects: [], tasks: [{ title: 'Лампа', projectName: 'Дом' }] }, TODOIST, NOW);
-    const homes = await db.projects.where('name').equals('Дом').toArray();
+    const homes = await db.projects.filter((p) => p.name === 'Дом').toArray();
     expect(homes.map((p) => p.archived).sort()).toEqual([false, true]);
   });
 
@@ -147,7 +177,7 @@ describe('importTasks — the one write path for imported tasks and projects (AD
   });
 
   it('the same externalId twice in one file is written once (last row wins)', async () => {
-    await importTasks(
+    const result = await importTasks(
       {
         projects: [],
         tasks: [
@@ -158,6 +188,7 @@ describe('importTasks — the one write path for imported tasks and projects (AD
       TODOIST,
       NOW,
     );
+    expect(result.tasks).toEqual({ created: 1, updated: 0 });
     expect((await db.tasks.toArray()).map((t) => t.title)).toEqual(['Второй']);
   });
 
@@ -190,6 +221,19 @@ describe('importTasks — the one write path for imported tasks and projects (AD
     await expect(bad({ dueDate: '2026-11-10T00:00:00Z' })).rejects.toThrow(/Задача 1: .*дат/i);
     await expect(bad({ dueDate: '2026-11-10', dueTime: '9:05' })).rejects.toThrow(/Задача 1: .*врем/i);
     await expect(bad({ dueTime: '09:05' })).rejects.toThrow(/Задача 1: .*дат/i);
+    await expect(bad({ dueAt: NOW, dueDate: '2026-11-10' })).rejects.toThrow(/Задача 1: .*либо/i);
     expect(await db.tasks.count()).toBe(0);
+  });
+
+  it('every validation message is in Russian and names the field', async () => {
+    const bad = (task: Record<string, unknown>) =>
+      importTasks({ projects: [], tasks: [{ title: 'x', ...task } as never] }, TODOIST, NOW);
+    await expect(bad({ notes: 5 })).rejects.toThrow('Задача 1: Заметка — текст (notes)');
+    await expect(bad({ completedAt: 'вчера' })).rejects.toThrow(/Задача 1: Время выполнения.*\(completedAt\)/);
+    await expect(bad({ tags: ['ок', ''] })).rejects.toThrow(/Задача 1: Метка не может быть пустой \(tags\.1\)/);
+    await expect(bad({ externalId: ' ' })).rejects.toThrow(/Задача 1: Внешний id не может быть пустым/);
+    await expect(importTasks({ projects: [], tasks: [{} as never] }, TODOIST, NOW)).rejects.toThrow(
+      'Задача 1: Название задачи — текст (title)',
+    );
   });
 });

@@ -122,13 +122,19 @@ describe('contract: imported tasks (Dexie v4)', () => {
   it('Given задача с теми же source и externalId When ищем её Then индекс [source+externalId] есть; поля Task.source? и Task.externalId? необязательны', async () => {
     const name = `migration-v4-${Math.random()}`;
     const v3 = new Dexie(name);
-    v3.version(1).stores({ tasks: 'id, projectId, dueDate, priority, completedAt, *tags' });
+    v3.version(1).stores({ tasks: 'id, projectId, dueDate, priority, completedAt, *tags', projects: 'id, archived' });
+    v3.version(2).stores({ cognitiveTests: 'id, date, kind, [kind+date]' });
+    v3.version(3).stores({ weightLogs: 'id, &date' });
     await v3.table('tasks').add({ id: 't1', title: 'старая задача', priority: 4, tags: [] });
+    await v3.table('projects').add({ id: 'p1', name: 'Дом', archived: false });
+    await v3.table('weightLogs').add({ id: 'w1', date: '2026-11-04', kg: 70 });
     v3.close();
 
     const db = new LifeDB(name);
     expect(db.verno).toBe(4);
     expect((await db.tasks.get('t1'))?.title).toBe('старая задача');
+    expect((await db.projects.get('p1'))?.name).toBe('Дом');
+    expect((await db.weightLogs.get('w1'))?.kg).toBe(70);
     await db.tasks.add({
       id: 't2',
       createdAt: 0,
