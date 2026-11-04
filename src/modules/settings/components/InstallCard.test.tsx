@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SettingsPage } from '../SettingsPage';
+import { resetInstallPrompt } from './installPrompt';
 import { InstallPromptListener } from './InstallPromptListener';
 
 /** What Chrome dispatches when the site can be installed. */
@@ -26,13 +27,11 @@ function renderSettings() {
 }
 
 afterEach(() => {
-  act(() => {
-    window.dispatchEvent(new Event('appinstalled'));
-  });
+  act(() => resetInstallPrompt());
 });
 
 describe('Установка приложения', () => {
-  it('Given Chrome на Android When сайт открыт Then в настройках есть кнопка «Установить», если браузер её поддерживает', async () => {
+  it('Given Chrome на Android When сайт открыт Then доступна установка; в настройках есть кнопка «Установить», если браузер её поддерживает', async () => {
     const user = userEvent.setup();
     renderSettings();
     expect(screen.queryByRole('button', { name: 'Установить' })).not.toBeInTheDocument();
@@ -41,7 +40,7 @@ describe('Установка приложения', () => {
     act(() => {
       window.dispatchEvent(event);
     });
-    expect(event.defaultPrevented).toBe(true); // our button replaces Chrome's mini-infobar
+    expect(event.defaultPrevented).toBe(false); // Chrome's own install hint stays
     await user.click(await screen.findByRole('button', { name: 'Установить' }));
     expect(event.prompt).toHaveBeenCalledTimes(1);
     // A prompt can be used once: after the choice the button goes away.
@@ -75,6 +74,9 @@ describe('Установка приложения', () => {
     });
     await user.click(await screen.findByRole('button', { name: 'Установить' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Браузер не дал установить приложение');
+    // The offer is spent: no dead button, the message stays.
+    expect(screen.queryByRole('button', { name: 'Установить' })).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   });
 
   it('is captured on any page: the prompt that fired before opening «Настройки» is still offered', async () => {

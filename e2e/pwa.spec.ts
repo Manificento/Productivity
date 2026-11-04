@@ -30,22 +30,32 @@ test('Given сборка When проверяется манифест Then ес�
   const res = await request.get(new URL(apple!, page.url()).toString());
   expect(res.ok()).toBe(true);
   expect(res.headers()['content-type']).toContain('image/png');
+  expect((await res.body()).readUInt32BE(16)).toBe(180);
 });
 
-test('Given Chrome на Android When сайт открыт Then в настройках есть кнопка «Установить», если браузер её поддерживает', async ({
+test('Given Chrome на Android When сайт открыт Then доступна установка; в настройках есть кнопка «Установить», если браузер её поддерживает', async ({
   page,
 }) => {
   await page.goto('/#/tasks');
   await expect(page.getByRole('heading', { name: 'Задачи', level: 1 })).toBeVisible();
-  await page.goto('/#/settings');
-  await expect(page.getByRole('heading', { name: 'Настройки', level: 1 })).toBeVisible();
-  // Headless Chrome does not run its install heuristics: stand in for its offer.
+
+  // Chrome itself finds the site installable (manifest, icons, service worker).
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+  const cdp = await page.context().newCDPSession(page);
+  const { installabilityErrors } = (await cdp.send('Page.getInstallabilityErrors')) as {
+    installabilityErrors: { errorId: string }[];
+  };
+  // Playwright's contexts are incognito-like; that is the test browser, not the app.
+  expect(installabilityErrors.map((e) => e.errorId).filter((id) => id !== 'in-incognito')).toEqual([]);
+
+  // Headless Chrome does not run its install heuristics: stand in for its offer, on another page.
   await page.evaluate(() => {
     const offer = new Event('beforeinstallprompt', { cancelable: true }) as Event & Record<string, unknown>;
     offer.prompt = () => Promise.resolve();
     offer.userChoice = Promise.resolve({ outcome: 'accepted' });
     window.dispatchEvent(offer);
   });
+  await page.getByRole('link', { name: 'Настройки' }).click();
   const install = page.getByRole('button', { name: 'Установить' });
   await expect(install).toBeVisible();
   expect((await install.boundingBox())!.height).toBeGreaterThanOrEqual(44);

@@ -28,8 +28,8 @@ function set(next: InstallState) {
 
 /** Starts listening for the browser's install offer; returns the cleanup. */
 export function listenForInstallPrompt(): () => void {
+  // No preventDefault(): Chrome's own install hint stays; the saved offer can still be used by the button.
   const onOffer = (e: Event) => {
-    e.preventDefault(); // our button in «Настройки» replaces Chrome's mini-infobar
     offer = e as BeforeInstallPromptEvent;
     set({ canInstall: true, installed: false });
   };
@@ -50,9 +50,20 @@ async function install(): Promise<void> {
   const current = offer;
   if (!current) return;
   offer = undefined;
-  await current.prompt();
+  try {
+    await current.prompt();
+  } catch (e) {
+    set({ canInstall: false, installed: false }); // a used offer cannot be prompted again
+    throw e;
+  }
   const { outcome } = await current.userChoice;
   set({ canInstall: false, installed: outcome === 'accepted' });
+}
+
+/** Tests only: forget any offer, as on a fresh page. */
+export function resetInstallPrompt(): void {
+  offer = undefined;
+  set({ canInstall: false, installed: false });
 }
 
 function subscribe(listener: () => void) {

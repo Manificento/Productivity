@@ -1,18 +1,20 @@
 // Renders the PWA icons from public/icons/icon.svg with the Playwright Chromium already used for e2e.
 // Run after changing the SVG: node scripts/generate-icons.mjs
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 
-const svg = readFileSync('public/icons/icon.svg', 'utf8');
+const dir = (name) => fileURLToPath(new URL(`../public/icons/${name}`, import.meta.url));
+const svg = readFileSync(dir('icon.svg'), 'utf8');
 const BG = '#4f46e5';
 
 /** `inset` < 1 shrinks the mark into the maskable safe zone on a full-bleed background. */
 const ICONS = [
-  { file: 'public/icons/pwa-192.png', size: 192, inset: 1, round: true },
-  { file: 'public/icons/pwa-512.png', size: 512, inset: 1, round: true },
-  { file: 'public/icons/pwa-maskable-192.png', size: 192, inset: 0.8, round: false },
-  { file: 'public/icons/pwa-maskable-512.png', size: 512, inset: 0.8, round: false },
-  { file: 'public/icons/apple-touch-icon.png', size: 180, inset: 1, round: false },
+  { file: dir('pwa-192.png'), size: 192, inset: 1, round: true },
+  { file: dir('pwa-512.png'), size: 512, inset: 1, round: true },
+  { file: dir('pwa-maskable-192.png'), size: 192, inset: 0.8, round: false },
+  { file: dir('pwa-maskable-512.png'), size: 512, inset: 0.8, round: false },
+  { file: dir('apple-touch-icon.png'), size: 180, inset: 1, round: false },
 ];
 
 const browser = await chromium.launch({ channel: 'chrome' }); // same browser as e2e (playwright.config.ts)

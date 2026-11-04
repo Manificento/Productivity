@@ -6,7 +6,7 @@ import { useInstallPrompt } from './installPrompt';
 export function InstallCard() {
   const { canInstall, installed, install } = useInstallPrompt();
   const [error, setError] = useState<string>();
-  if (!canInstall && !installed) return null;
+  if (!canInstall && !installed && !error) return null;
 
   async function onInstall() {
     try {
@@ -21,7 +21,7 @@ export function InstallCard() {
     <Card title="Приложение на телефоне">
       {installed ? (
         <p className="text-sm">Приложение установлено</p>
-      ) : (
+      ) : !canInstall ? null : (
         <>
           <p className="mb-3 text-sm text-zinc-500">Иконка на главном экране, запуск без браузера, работа офлайн.</p>
           <Button onClick={() => void onInstall()}>Установить</Button>
