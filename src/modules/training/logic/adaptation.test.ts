@@ -2,18 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeDailyTargets } from '../../../core/adaptation/engine';
 import { DEFAULT_BASELINE } from '../../../core/adaptation/rules';
 import type { LifeEvent } from '../../../core/types';
-import { formatHoursDiff, intensityWarning, maxRpe } from './adaptation';
-
-describe('formatHoursDiff', () => {
-  it('Given a sleep goal of 8 h and 6.5 h slept Then the difference reads «−1,5 ч»', () => {
-    expect(formatHoursDiff(6.5 - 8)).toBe('−1,5 ч');
-  });
-
-  it('more sleep than the goal gets a plus sign; a match is «0 ч»', () => {
-    expect(formatHoursDiff(0.5)).toBe('+0,5 ч');
-    expect(formatHoursDiff(0.02)).toBe('0 ч');
-  });
-});
+import { intensityWarning, maxRpe } from './adaptation';
 
 describe('maxRpe', () => {
   it('maps intensity to an RPE ceiling: rest → 0, light ≤ 4, moderate ≤ 6, hard ≤ 10', () => {

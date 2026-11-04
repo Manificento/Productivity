@@ -1,10 +1,7 @@
 import type { AppModule } from '../../app/moduleTypes';
 import { NutritionPage } from './NutritionPage';
 
-/**
- * «Питание» (SPEC 0.3). A skeleton for the `nutrition` lane: not pinned, reached through «Блоки» and
- * marked «скоро» there; the route works and shows «скоро» until the block has content.
- */
+/** «Питание»: food diary, Open Food Facts search and own foods (moved from health, #107). */
 export const nutritionModule: AppModule = {
   id: 'nutrition',
   title: 'Питание',
@@ -12,6 +9,5 @@ export const nutritionModule: AppModule = {
   icon: '🥗',
   group: 'body',
   summary: 'Калории, БЖУ и вес',
-  comingSoon: true,
   Page: NutritionPage,
 };

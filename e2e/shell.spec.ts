@@ -12,7 +12,7 @@ async function box(locator: Locator) {
 test('Given страница модуля передаёт actions в Page When экран 360 px Then кнопка действий не перекрывается ссылкой «Настройки», обе ≥ 44 px', async ({
   page,
 }) => {
-  for (const path of ['/#/tasks', '/#/habits', '/#/time', '/#/health']) {
+  for (const path of ['/#/tasks', '/#/habits', '/#/time', '/#/health', '/#/nutrition']) {
     await page.goto(path);
     const header = page.locator('section > header').first();
     await expect(header.getByRole('heading', { level: 1 })).toBeVisible();
@@ -44,7 +44,7 @@ test('Given страница модуля передаёт actions в Page When 
 });
 
 test('Given любой экран с Tabs When он отображается на 360 px Then высота каждой вкладки ≥ 44 px', async ({ page }) => {
-  for (const path of ['/#/tasks', '/#/time', '/#/health']) {
+  for (const path of ['/#/tasks', '/#/time']) {
     await page.goto(path);
     const tabs = page.getByRole('navigation', { name: 'Разделы' }).getByRole('link');
     await expect(tabs.first()).toBeVisible();
@@ -99,7 +99,8 @@ test('Given 12 модулей When я открываю приложение на
 
   await nav.getByRole('link', { name: /Блоки/ }).click();
   await expect(page.getByRole('heading', { name: 'Все блоки', level: 1 })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Питание/ })).toContainText('скоро');
+  await expect(page.getByRole('link', { name: /Медитация/ })).toContainText('скоро');
+  await expect(page.getByRole('link', { name: /Питание/ })).not.toContainText('скоро');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });

@@ -98,20 +98,20 @@ flowchart LR
 
 ## Владение таблицами
 
-| Модуль     | Пишет в таблицы                                                                                                                                                       | Читает (кроме своих)                 |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| tasks      | `projects`, `tasks`                                                                                                                                                   | цели дня                             |
-| habits     | `habits`, `habitLogs`                                                                                                                                                 | цели дня                             |
-| time       | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)                                                                                      | `tasks`, цели дня                    |
-| health     | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`; `workoutLogs` — только через `core/logging/saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
-| today      | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep`                                                                                 | все таблицы (сводка, инсайты)        |
-| cognition  | `cognitiveTests`, `mindSessions`                                                                                                                                      | цели дня                             |
-| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                                                                                                  | все таблицы (экспорт)                |
-| nutrition  | `weightLogs`, `settings` (`nutrition.*`); после переноса дневника еды (#107) — `foods`, `mealLogs`                                                                    | `sleepLogs`, `workoutLogs`, цели дня |
-| training   | `programs`, `plannedSessions`; журнал — только через `core/logging/saveWorkout`                                                                                       | `workoutLogs`, цели дня              |
-| meditation | `meditationSessions`                                                                                                                                                  | цели дня                             |
-| notes      | `notes`                                                                                                                                                               | `projects`, `lifeEvents`             |
-| progress   | `xpEvents`                                                                                                                                                            | все таблицы (только чтение)          |
+| Модуль     | Пишет в таблицы                                                                                                                                  | Читает (кроме своих)                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| tasks      | `projects`, `tasks`                                                                                                                              | цели дня                             |
+| habits     | `habits`, `habitLogs`                                                                                                                            | цели дня                             |
+| time       | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)                                                                 | `tasks`, цели дня                    |
+| health     | `sleepLogs` (через `core/logging/saveSleep`); `workoutLogs` — только через `core/logging/saveWorkout` (импорт из Health Connect / HealthKit, M7) | цели дня                             |
+| today      | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep`                                                            | все таблицы (сводка, инсайты)        |
+| cognition  | `cognitiveTests`, `mindSessions`                                                                                                                 | цели дня                             |
+| settings   | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                                                                             | все таблицы (экспорт)                |
+| nutrition  | `weightLogs`, `settings` (`nutrition.*`), `foods`, `mealLogs` (дневник еды, #107)                                                                | `sleepLogs`, `workoutLogs`, цели дня |
+| training   | `programs`, `plannedSessions`, `workoutLogs` (журнал — только через `core/logging/saveWorkout`, #107)                                            | цели дня                             |
+| meditation | `meditationSessions`                                                                                                                             | цели дня                             |
+| notes      | `notes`                                                                                                                                          | `projects`, `lifeEvents`             |
+| progress   | `xpEvents`                                                                                                                                       | все таблицы (только чтение)          |
 
 Ключ `time.pomodoro.running` = `{ phase, startedAt, endsAt }` (мс) — идущая фаза Pomodoro; ключа нет, когда таймер
 не идёт. Пишет `time`, читают все (например, «Сегодня»); `endsAt <= now` — не идёт.

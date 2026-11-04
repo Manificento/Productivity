@@ -3,7 +3,7 @@ import { shiftDateKey } from '../../../core/dates';
 import { sleepHours } from '../../../core/logging/sleepTime';
 import type { DateKey, SleepLog } from '../../../core/types';
 import { Card } from '../../../ui';
-import { formatHoursDiff } from '../logic/adaptation';
+import { formatHoursDiff } from '../logic/sleep';
 import { formatHours } from '../logic/sleep';
 
 /**

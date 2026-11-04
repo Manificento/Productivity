@@ -3,10 +3,10 @@ import { HealthPage } from './HealthPage';
 
 export const healthModule: AppModule = {
   id: 'health',
-  title: 'Здоровье',
+  title: 'Сон',
   path: '/health/*',
   icon: '💪',
   group: 'body',
-  summary: 'Сон, питание и тренировки за день',
+  summary: 'Журнал сна, график и цель на ночь',
   Page: HealthPage,
 };
