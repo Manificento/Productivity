@@ -152,7 +152,7 @@ describe('HabitsPage', () => {
     await user.click(screen.getByRole('link', { name: 'Открыть «Чтение»' }));
     await user.click(await screen.findByRole('button', { name: 'Изменить' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'В архив' }));
-    expect(await screen.findByText(/Привычек пока нет/)).toBeInTheDocument();
+    expect(await screen.findByText(/все в архиве/)).toBeInTheDocument();
   });
 
   it('ошибка записи: сообщение на русском', async () => {

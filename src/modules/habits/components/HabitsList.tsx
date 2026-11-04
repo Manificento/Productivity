@@ -42,12 +42,17 @@ export function HabitsList() {
   return (
     <Page title="Привычки">
       {!hasActive ? (
-        <>
-          <p className="mb-3 text-center text-sm text-zinc-500">
-            Привычек пока нет. Выберите из набора ниже или создайте свою.
-          </p>
-          <StarterHabits onAdd={(list) => createHabits(list)} />
-        </>
+        habits.length === 0 ? (
+          <>
+            <p className="mb-3 text-center text-sm text-zinc-500">
+              Привычек пока нет. Выберите из набора ниже или создайте свою.
+            </p>
+            <StarterHabits onAdd={(list) => createHabits(list)} />
+          </>
+        ) : (
+          // Everything is archived: not a new user, so no starter offer (it would duplicate old habits).
+          <Empty>Активных привычек нет — все в архиве. Создайте новую.</Empty>
+        )
       ) : (
         <>
           {items.length > 0 ? (

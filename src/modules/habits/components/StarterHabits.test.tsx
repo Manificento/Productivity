@@ -31,13 +31,11 @@ describe('стартовый набор привычек', () => {
     renderPage();
     const offer = await screen.findByRole('group', { name: /Отметьте привычки/ });
     const boxes = within(offer).getAllByRole('checkbox');
-    expect(boxes.map((b) => b.closest('label')?.querySelector('span')?.textContent)).toEqual([
-      'Медитация',
-      'Чтение 20 мин',
-      'Английский',
-      'Тренировка',
-      'Отбой вовремя',
-    ]);
+    const names = ['Медитация', 'Чтение 20 мин', 'Английский', 'Тренировка', 'Отбой вовремя'];
+    expect(boxes).toHaveLength(names.length);
+    names.forEach((name, i) => {
+      expect(boxes[i]).toBe(within(offer).getByRole('checkbox', { name: new RegExp(`^${name}`) }));
+    });
     expect(boxes.every((b) => !(b as HTMLInputElement).checked)).toBe(true);
     expect(screen.getByRole('button', { name: 'Добавить' })).toBeDisabled();
   });
@@ -77,7 +75,22 @@ describe('стартовый набор привычек', () => {
     await user.click(await screen.findByRole('checkbox', { name: /^Медитация/ }));
     await user.click(screen.getByRole('button', { name: 'Добавить (1)' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить');
+    expect(screen.getByRole('button', { name: 'Добавить (1)' })).toBeEnabled();
     spy.mockRestore();
     expect(await db.habits.count()).toBe(0);
+  });
+
+  it('все привычки в архиве: набор не предлагается', async () => {
+    await db.habits.add({
+      id: 'old',
+      name: 'Медитация',
+      schedule: { kind: 'daily' },
+      archived: true,
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    renderPage();
+    expect(await screen.findByText(/все в архиве/)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Отметьте привычки/ })).not.toBeInTheDocument();
   });
 });

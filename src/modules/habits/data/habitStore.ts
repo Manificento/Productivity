@@ -52,5 +52,7 @@ export async function toggleHabit(habitId: Id, date: DateKey, now: Millis = Date
 
 /** Creates several habits at once (all or none), keeping their order by `createdAt`. */
 export async function createHabits(list: readonly HabitFields[], now: Millis = Date.now()): Promise<void> {
-  await db.habits.bulkAdd(list.map((fields, i) => newRecord({ ...fields, archived: false }, now + i)));
+  await db.transaction('rw', db.habits, () =>
+    db.habits.bulkAdd(list.map((fields, i) => newRecord({ ...fields, archived: false }, now + i))),
+  );
 }
