@@ -6,6 +6,10 @@ import { BASELINE_SETTING_KEY, DEFAULT_BASELINE } from '../../../core/adaptation
 import { db } from '../../../core/db';
 import { todayModule } from '../index';
 import { ONBOARDING_DONE_KEY } from '../data/onboarding';
+import { applyAsyncTimeout } from '../../../test/async';
+
+// Full screens with live queries: wait up to the shared timeout, not the default 1 s (#169).
+applyAsyncTimeout();
 
 // These tests open «Сегодня»: the first-run onboarding (#41) is already done.
 beforeEach(async () => {
@@ -22,7 +26,14 @@ function renderAt(path: string) {
   );
 }
 
+beforeEach(() => {
+  // «Сегодня» reads today's targets: freeze the day (#169).
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(2026, 10, 4, 12, 0));
+});
+
 afterEach(async () => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   await db.settings.clear();
 });
