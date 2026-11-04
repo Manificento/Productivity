@@ -78,4 +78,21 @@ describe('TimePage', () => {
       ['timer', NOW + 10 * 60_000, undefined],
     ]);
   });
+
+  it('фокус не удалось остановить: таймер учёта не запускается, показана ошибка', async () => {
+    await createDefaultCategories(NOW - 1000);
+    const user = userEvent.setup();
+    renderAt('/time/pomodoro');
+    await user.click(await screen.findByRole('button', { name: 'Начать фокус' }));
+    await user.click(screen.getByRole('link', { name: 'Таймер' }));
+
+    vi.setSystemTime(NOW + 10 * 60_000);
+    const add = vi.spyOn(db.timeEntries, 'add').mockRejectedValue(new Error('disk full'));
+    await user.click(await screen.findByRole('button', { name: 'Работа' }));
+
+    expect(await screen.findByText('Не удалось сохранить. Попробуйте ещё раз')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Фокус-сессия' })).toHaveTextContent('Идёт Pomodoro (фокус)');
+    expect(screen.queryByRole('timer', { name: 'Идущий таймер' })).not.toBeInTheDocument();
+    add.mockRestore();
+  });
 });

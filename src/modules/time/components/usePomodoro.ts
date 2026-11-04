@@ -115,8 +115,11 @@ export function usePomodoro() {
     [commit],
   );
 
-  /** Stops the current phase; spent focus time is recorded first, so a failed write keeps the timer. */
-  const stopNow = useCallback(async () => {
+  /**
+   * Stops the current phase; spent focus time is recorded first, so a failed write keeps the timer.
+   * Resolves to `false` when the timer could not be stopped.
+   */
+  const stopNow = useCallback(async (): Promise<boolean> => {
     const t = Date.now();
     const base = latest.current.state;
     const r = stop(base, t);
@@ -124,11 +127,12 @@ export function usePomodoro() {
       await addFocusRecords(r.records, t);
     } catch {
       setError('Не удалось записать фокус-сессию. Попробуйте ещё раз');
-      return;
+      return false;
     }
     setError(undefined);
     if (latest.current.state === base) commit(r.state);
     setNow(t);
+    return true;
   }, [commit]);
 
   const saveSettings = useCallback((next: PomodoroSettings) => {

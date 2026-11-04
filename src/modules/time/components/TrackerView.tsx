@@ -14,10 +14,13 @@ import {
 } from '../data/timeStore';
 import { DEFAULT_CATEGORY_NAMES } from '../logic/timer';
 
-/** A Pomodoro focus session running at the same time (see `TimePage`). */
+/** A Pomodoro phase running at the same time (see `TimePage`). */
 export interface RunningFocus {
+  /** 'фокус' or 'перерыв'. */
+  phase: string;
   left: string;
-  stop: () => Promise<void>;
+  /** Resolves to `false` when it could not be stopped. */
+  stop: () => Promise<boolean>;
 }
 
 /** Stopwatch tracking: starter categories, one-tap timer, manual entries. */
@@ -41,7 +44,7 @@ export function TrackerView({ focus }: { focus?: RunningFocus | undefined }) {
       ? undefined
       : act(async () => {
           // One clock at a time: the stopwatch replaces a running focus session (its minutes are kept).
-          if (focus) await focus.stop();
+          if (focus && !(await focus.stop())) throw new Error('pomodoro not stopped');
           await startCategoryTimer({ categoryId: c.id, source: 'timer' });
         });
 
@@ -63,7 +66,7 @@ export function TrackerView({ focus }: { focus?: RunningFocus | undefined }) {
           {focus && (
             <Card>
               <p role="status" aria-label="Фокус-сессия" className="text-sm text-zinc-600 dark:text-zinc-400">
-                Идёт фокус-сессия Pomodoro, осталось {focus.left}. Запуск таймера учёта остановит её.
+                Идёт Pomodoro ({focus.phase}), осталось {focus.left}. Запуск таймера учёта остановит его.
               </p>
             </Card>
           )}

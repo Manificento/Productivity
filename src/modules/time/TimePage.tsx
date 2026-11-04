@@ -12,8 +12,12 @@ export function TimePage() {
   const pomodoro = usePomodoro();
   const { state } = pomodoro;
   const focus =
-    state.status === 'running' && state.phase === 'work'
-      ? { left: formatDuration(Math.ceil(remainingMs(state, pomodoro.now) / 1000) * 1000), stop: pomodoro.stop }
+    state.status === 'running'
+      ? {
+          phase: state.phase === 'work' ? 'фокус' : 'перерыв',
+          left: formatDuration(Math.ceil(remainingMs(state, pomodoro.now) / 1000) * 1000),
+          stop: pomodoro.stop,
+        }
       : undefined;
 
   return (
