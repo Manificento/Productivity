@@ -32,7 +32,7 @@ test.describe('health', () => {
     await expect(page.getByText('Новая тренировка')).toBeVisible();
     await page.getByRole('link', { name: 'Еда' }).click();
     await expect(page).toHaveURL(/#\/health\/food$/);
-    await expect(page.getByText('Модуль «Еда» ещё строится')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Итого за день' })).toBeVisible();
   });
 
   test('workouts: log one with an exercise, repeat it, see the week totals', async ({ page }) => {
@@ -80,5 +80,34 @@ test.describe('health', () => {
     const warning = page.getByRole('note', { name: 'Предупреждение об интенсивности' });
     await expect(warning).toContainText('RPE до 4');
     await expect(warning).toContainText('тренировка не выше лёгкой');
+  });
+
+  test('food diary: create a product, add 150 g to lunch, see totals, re-add from recent', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T13:00:00+05:00'));
+    await page.goto('/#/health/food');
+    await expect(page.getByText(/Кофеин — до/)).toBeVisible();
+
+    await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Поиск продукта').fill('Хлеб');
+    await dialog.getByRole('button', { name: 'Создать свой продукт' }).click();
+    await dialog.getByLabel('Ккал').fill('250');
+    await dialog.getByLabel('Белки, г').fill('10');
+    await dialog.getByLabel('Жиры, г').fill('5');
+    await dialog.getByLabel('Углеводы, г').fill('40');
+    await dialog.getByRole('button', { name: 'Создать продукт' }).click();
+    await dialog.getByLabel('Вес, г').fill('150');
+    await dialog.getByRole('button', { name: 'Добавить' }).click();
+
+    const lunch = page.getByRole('region', { name: 'Обед' });
+    await expect(lunch).toContainText('Итого: 375 ккал · Б 15 · Ж 7,5 · У 60');
+
+    await page.getByRole('button', { name: '+ Добавить в «Ужин»' }).click();
+    await page.getByRole('region', { name: 'Недавние продукты' }).getByRole('button', { name: 'Хлеб' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Добавить' }).click();
+    await expect(page.getByRole('region', { name: 'Итого за день' })).toContainText('625 ккал');
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });
