@@ -30,7 +30,7 @@ export interface ManualEntry {
   date: DateKey;
 }
 
-export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export type ParseResult<T, F extends string> = { ok: true; value: T } | { ok: false; field: F; error: string };
 
 function parseLocal(value: string): Millis | undefined {
   if (!value) return undefined;
@@ -39,11 +39,12 @@ function parseLocal(value: string): Millis | undefined {
 }
 
 /** Validates a hand-entered time record. The entry belongs to the local day of its start. */
-export function parseManualEntry(input: ManualEntryInput): ParseResult<ManualEntry> {
-  if (!input.categoryId) return { ok: false, error: 'Выберите категорию' };
+export function parseManualEntry(input: ManualEntryInput): ParseResult<ManualEntry, keyof ManualEntryInput> {
+  if (!input.categoryId) return { ok: false, field: 'categoryId', error: 'Выберите категорию' };
   const start = parseLocal(input.start);
   const end = parseLocal(input.end);
-  if (start === undefined || end === undefined) return { ok: false, error: 'Укажите начало и конец' };
-  if (end <= start) return { ok: false, error: 'Конец должен быть позже начала' };
+  if (start === undefined) return { ok: false, field: 'start', error: 'Укажите начало' };
+  if (end === undefined) return { ok: false, field: 'end', error: 'Укажите конец' };
+  if (end <= start) return { ok: false, field: 'end', error: 'Конец должен быть позже начала' };
   return { ok: true, value: { categoryId: input.categoryId, start, end, date: toDateKey(start) } };
 }

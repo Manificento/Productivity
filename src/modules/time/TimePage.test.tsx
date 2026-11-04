@@ -58,7 +58,7 @@ describe('TimePage', () => {
       source: 'timer',
     });
     expect(entries[0]?.end).toBeUndefined();
-    expect(screen.getByRole('button', { name: 'Учёба' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Учёба' })).toHaveAttribute('aria-current', 'true');
   });
 
   it('идёт таймер: после перезагрузки страницы таймер продолжается с правильного времени', async () => {
@@ -156,5 +156,23 @@ describe('TimePage', () => {
 
     expect(within(dialog).getByRole('alert')).toHaveTextContent('Конец должен быть позже начала');
     expect(await db.timeEntries.count()).toBe(0);
+  });
+
+  it('ошибка записи в базу: показывается сообщение на русском', async () => {
+    await createDefaultCategories();
+    const user = userEvent.setup();
+    render(<TimePage />);
+    const add = vi.spyOn(db.timeEntries, 'add').mockRejectedValue(new Error('disk full'));
+
+    await user.click(await screen.findByRole('button', { name: 'Учёба' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось сохранить. Попробуйте ещё раз');
+
+    await user.click(screen.getByRole('button', { name: '+ Запись вручную' }));
+    const dialog = screen.getByRole('dialog', { name: 'Запись вручную' });
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Не удалось сохранить запись. Попробуйте ещё раз',
+    );
+    add.mockRestore();
   });
 });

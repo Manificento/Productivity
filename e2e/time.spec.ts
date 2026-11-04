@@ -10,8 +10,11 @@ test.describe('time', () => {
     await expect(timer).toContainText('Учёба');
     await expect(timer).toContainText(/00:0[0-9]/);
 
+    await page.waitForTimeout(1500);
     await page.reload();
     await expect(timer).toContainText('Учёба');
+    // continues from the original start instead of restarting at 00:00
+    await expect(timer).not.toContainText('00:00');
 
     await page.getByRole('button', { name: 'Стоп' }).click();
     await expect(timer).toBeHidden();

@@ -17,7 +17,7 @@ export function CategoryButtons({
           <li key={c.id}>
             <button
               type="button"
-              aria-pressed={active}
+              aria-current={active ? 'true' : undefined}
               onClick={() => onStart(c)}
               className={`flex min-h-14 w-full items-center gap-2 rounded-2xl border px-3 text-left text-sm font-medium transition ${
                 active

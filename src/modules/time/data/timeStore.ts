@@ -16,7 +16,7 @@ export async function listCategories(): Promise<TimeCategory[]> {
 /** Creates the starter set (Учёба, Работа, …) unless categories already exist. */
 export async function createDefaultCategories(now: Millis = Date.now()): Promise<void> {
   await db.transaction('rw', db.timeCategories, async () => {
-    if ((await db.timeCategories.count()) > 0) return;
+    if ((await db.timeCategories.filter((c) => !c.archived).count()) > 0) return;
     await db.timeCategories.bulkAdd(
       DEFAULT_CATEGORY_NAMES.map((name, i) =>
         newRecord({ name, color: DEFAULT_COLORS[i % DEFAULT_COLORS.length], archived: false }, now + i),
@@ -25,15 +25,24 @@ export async function createDefaultCategories(now: Millis = Date.now()): Promise
   });
 }
 
-/** Entries without `end`. Normally zero or one. */
+/**
+ * Entries without `end`. Normally zero or one. A full scan is accepted for now:
+ * IndexedDB cannot index a missing `end`, and history stays small for one person.
+ */
 export async function runningEntries(): Promise<TimeEntry[]> {
   return (await db.timeEntries.toArray()).filter((e) => e.end === undefined);
 }
 
-/** Starts a timer; any running timer is finished at the same moment. Returns the new entry id. */
+/**
+ * Starts a timer; any running timer is finished at the same moment. Returns the running entry id.
+ * Starting the timer that is already running (e.g. a double tap) changes nothing.
+ */
 export async function startCategoryTimer(timer: NewTimer, now: Millis = Date.now()): Promise<Id> {
   return db.transaction('rw', db.timeEntries, async () => {
-    const { finished, started } = startTimer(await runningEntries(), timer, now);
+    const running = await runningEntries();
+    const same = running.length === 1 ? running[0] : undefined;
+    if (same && same.categoryId === timer.categoryId && same.taskId === timer.taskId) return same.id;
+    const { finished, started } = startTimer(running, timer, now);
     await db.timeEntries.bulkPut(finished.map((e) => ({ ...e, ...touch({}, now) })));
     const entry = newRecord(started, now);
     await db.timeEntries.add(entry);

@@ -2,9 +2,11 @@ import { format } from 'date-fns';
 import { useState, type FormEvent } from 'react';
 import { Button, Field, Input, Select } from '../../../ui';
 import type { TimeCategory } from '../../../core/types';
-import { parseManualEntry, type ManualEntry } from '../logic/timer';
+import { parseManualEntry, type ManualEntry, type ManualEntryInput } from '../logic/timer';
 
 const LOCAL = "yyyy-MM-dd'T'HH:mm";
+
+type FieldErrors = Partial<Record<keyof ManualEntryInput, string>>;
 
 export function ManualEntryForm({
   categories,
@@ -16,22 +18,24 @@ export function ManualEntryForm({
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '');
   const [start, setStart] = useState(() => format(Date.now() - 3_600_000, LOCAL));
   const [end, setEnd] = useState(() => format(Date.now(), LOCAL));
-  const [error, setError] = useState<string>();
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [saveError, setSaveError] = useState<string>();
   const [saving, setSaving] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    setSaveError(undefined);
     const parsed = parseManualEntry({ categoryId, start, end });
     if (!parsed.ok) {
-      setError(parsed.error);
+      setErrors({ [parsed.field]: parsed.error });
       return;
     }
-    setError(undefined);
+    setErrors({});
     setSaving(true);
     try {
       await onSave(parsed.value);
     } catch {
-      setError('Не удалось сохранить запись. Попробуйте ещё раз');
+      setSaveError('Не удалось сохранить запись. Попробуйте ещё раз');
     } finally {
       setSaving(false);
     }
@@ -39,9 +43,14 @@ export function ManualEntryForm({
 
   return (
     <form onSubmit={submit} noValidate>
-      <Field label="Категория">
+      <Field label="Категория" error={errors.categoryId}>
         {(id) => (
-          <Select id={id} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+          <Select
+            id={id}
+            value={categoryId}
+            aria-invalid={!!errors.categoryId}
+            onChange={(e) => setCategoryId(e.target.value)}
+          >
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -50,12 +59,33 @@ export function ManualEntryForm({
           </Select>
         )}
       </Field>
-      <Field label="Начало">
-        {(id) => <Input id={id} type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />}
+      <Field label="Начало" error={errors.start}>
+        {(id) => (
+          <Input
+            id={id}
+            type="datetime-local"
+            value={start}
+            aria-invalid={!!errors.start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        )}
       </Field>
-      <Field label="Конец" error={error}>
-        {(id) => <Input id={id} type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />}
+      <Field label="Конец" error={errors.end}>
+        {(id) => (
+          <Input
+            id={id}
+            type="datetime-local"
+            value={end}
+            aria-invalid={!!errors.end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
+        )}
       </Field>
+      {saveError && (
+        <p role="alert" className="mb-3 text-sm text-rose-600">
+          {saveError}
+        </p>
+      )}
       <Button type="submit" className="w-full" disabled={saving}>
         Сохранить
       </Button>

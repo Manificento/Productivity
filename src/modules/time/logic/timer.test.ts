@@ -37,6 +37,7 @@ describe('parseManualEntry', () => {
   it('конец раньше начала — ошибка', () => {
     expect(parseManualEntry({ categoryId: 'c1', start: '2026-11-02T10:00', end: '2026-11-02T09:00' })).toEqual({
       ok: false,
+      field: 'end',
       error: 'Конец должен быть позже начала',
     });
   });
@@ -49,6 +50,7 @@ describe('parseManualEntry', () => {
   it('без категории — ошибка', () => {
     expect(parseManualEntry({ categoryId: '', start: '2026-11-02T10:00', end: '2026-11-02T11:00' })).toEqual({
       ok: false,
+      field: 'categoryId',
       error: 'Выберите категорию',
     });
   });
@@ -56,8 +58,13 @@ describe('parseManualEntry', () => {
   it('пустое или неверное время — ошибка', () => {
     expect(parseManualEntry({ categoryId: 'c1', start: '', end: '2026-11-02T11:00' })).toEqual({
       ok: false,
-      error: 'Укажите начало и конец',
+      field: 'start',
+      error: 'Укажите начало',
     });
-    expect(parseManualEntry({ categoryId: 'c1', start: '2026-11-02T10:00', end: 'вчера' }).ok).toBe(false);
+    expect(parseManualEntry({ categoryId: 'c1', start: '2026-11-02T10:00', end: 'вчера' })).toEqual({
+      ok: false,
+      field: 'end',
+      error: 'Укажите конец',
+    });
   });
 });
