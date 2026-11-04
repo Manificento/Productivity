@@ -10,7 +10,8 @@ export { Chip, IconButton, Progress, Sheet, Tabs } from './widgets';
 export function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <section className="mx-auto w-full max-w-2xl px-4 pb-28 pt-4">
-      <header className="mb-4 flex items-center justify-between gap-2">
+      {/* pr-12: room for the fixed ⚙️ «Настройки» link of the app shell, so `actions` stay tappable. */}
+      <header className="mb-4 flex items-center justify-between gap-2 pr-12">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {actions}
       </header>

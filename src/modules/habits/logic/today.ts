@@ -1,6 +1,6 @@
 import { toDateKey } from '../../../core/dates';
 import type { DateKey, Habit, HabitLog } from '../../../core/types';
-import { doneDays, isScheduled } from './schedule';
+import { doneDays, isDue } from '../../../core/habitSchedule';
 import { streak, type Streak } from './streaks';
 
 export interface TodayHabit {
@@ -11,7 +11,8 @@ export interface TodayHabit {
 
 /**
  * Active habits planned for `today` with today's mark and streak, in creation order.
- * `other` are active habits not planned today (e.g. «пн, ср, пт» on a Tuesday).
+ * `other` are active habits not planned today (e.g. «пн, ср, пт» on a Tuesday, or «2 раза в неделю»
+ * whose weekly goal is already met). The rule is shared with «Сегодня» (`isDue` in src/core).
  */
 export function todayHabits(
   habits: readonly Habit[],
@@ -25,8 +26,8 @@ export function todayHabits(
     else byHabit.set(log.habitId, [log]);
   }
   const active = habits.filter((h) => !h.archived).sort((a, b) => a.createdAt - b.createdAt);
-  const planned = active.filter((h) => isScheduled(h.schedule, today));
-  const items = planned.map((habit) => {
+  const due = (h: Habit) => isDue(h.schedule, byHabit.get(h.id) ?? [], today);
+  const items = active.filter(due).map((habit) => {
     const own = byHabit.get(habit.id) ?? [];
     return {
       habit,
@@ -34,7 +35,7 @@ export function todayHabits(
       streak: streak({ schedule: habit.schedule, logs: own, since: toDateKey(habit.createdAt) }, today),
     };
   });
-  return { items, other: active.filter((h) => !isScheduled(h.schedule, today)) };
+  return { items, other: active.filter((h) => !due(h)) };
 }
 
 /** «🔥5» for days, «🔥2 нед.» for weekly habits. */

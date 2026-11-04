@@ -58,13 +58,16 @@ flowchart TB
 
 ```
 src/modules/<id>/
-  index.ts          манифест AppModule (маршрут, иконка, порядок в навигации)
+  index.ts          манифест AppModule (маршрут, иконка, порядок в навигации, фоновый компонент Background)
   CLAUDE.md         владение, таблицы, ссылки на issues — читается агентом автоматически
   logic/            ЧИСТЫЕ функции: вычисления, правила, парсеры (+ *.test.ts рядом)
   data/             чтение/запись своих таблиц Dexie, хуки useLiveQuery
   components/       React-компоненты модуля
   <Name>Page.tsx    страница и вложенные маршруты
 ```
+
+`Background` (необязательно) оболочка монтирует один раз на всех страницах, вне маршрутов: для работы,
+которая идёт, пока открыт другой модуль (таймер Pomodoro модуля `time`). Он ничего не рисует или рисует маленький fixed-элемент.
 
 Поток данных: **компонент → хук из `data/` → Dexie**; вычисления — **чистые функции из `logic/`**.
 Это «функциональное ядро, императивная оболочка» ([ADR-0003](adr/0003-adaptation-as-pure-rules.md)):
@@ -95,14 +98,20 @@ flowchart LR
 | --------- | ------------------------------------------------------------------------------------- |
 | tasks     | `projects`, `tasks`                                                                   |
 | habits    | `habits`, `habitLogs`                                                                 |
-| time      | `timeCategories`, `timeEntries`                                                       |
+| time      | `timeCategories`, `timeEntries`, `settings` (`time.*`, например `time.pomodoro`)      |
 | health    | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`, `workoutLogs`      |
 | today     | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep` |
 | cognition | `cognitiveTests`                                                                      |
 | settings  | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                  |
 
+Таблица `settings` делится по префиксу ключа: модуль пишет только свои ключи `<модуль>.*` (`adaptation.*` — today,
+`time.*` — time, `nutrition.*` — nutrition после SPEC 0.3), остальные ключи — модуль `settings`.
+
 Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
 ([ADR-0007](adr/0007-shared-write-paths.md)): сейчас это только сон.
+
+Чистое правило, которое нужно двум модулям одинаково, тоже живёт в ядре, а не копируется: расписание привычек
+(`isDue`, неделя с понедельника) — `src/core/habitSchedule.ts`, им считают и «Привычки», и «Привычки: X из Y» на «Сегодня».
 
 ## Расширение по SPEC 0.3
 

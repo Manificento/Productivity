@@ -15,4 +15,9 @@ export interface AppModule {
   /** Position in the bottom navigation; omit to hide from it. */
   navOrder?: number;
   Page: ComponentType;
+  /**
+   * Optional component the shell mounts once on every page, outside the routes — for work that must go on
+   * while another module is open (e.g. the Pomodoro timer). Render nothing visible, or something fixed and small.
+   */
+  Background?: ComponentType;
 }

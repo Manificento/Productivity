@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { addMealItem, createFood, hasLoggedFood, loadRecentMeals } from './food';
+import { addMealItem, createFood, hasLoggedFood, loadRecentMeals, removeMealItem, setMealItemGrams } from './food';
 
 const TODAY = '2026-11-04';
 const bread = { name: 'Хлеб', kcal: 250, protein: 10, fat: 5, carbs: 40 };
@@ -46,5 +46,43 @@ describe('food data', () => {
     await addMealItem('2026-09-06', 'lunch', { foodId: 'b', grams: 1 });
     await addMealItem('2026-09-05', 'lunch', { foodId: 'c', grams: 1 });
     expect((await loadRecentMeals(TODAY)).map((m) => m.date).sort()).toEqual(['2026-09-06', TODAY]);
+  });
+
+  it('Given a meal item When I delete it Then only that item is removed', async () => {
+    const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 }, 1);
+    await addMealItem(TODAY, 'lunch', { foodId: 'b', grams: 50 }, 2);
+    await removeMealItem({ mealId: meal.id, index: 0, foodId: 'a', grams: 150 }, 3);
+    expect(await db.mealLogs.get(meal.id)).toMatchObject({ items: [{ foodId: 'b', grams: 50 }], updatedAt: 3 });
+  });
+
+  it('deleting the last item of a meal removes the meal record', async () => {
+    const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 });
+    await removeMealItem({ mealId: meal.id, index: 0, foodId: 'a', grams: 150 });
+    expect(await db.mealLogs.count()).toBe(0);
+  });
+
+  it('Given a meal item When I change its weight Then the new grams are stored', async () => {
+    const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 }, 1);
+    await addMealItem(TODAY, 'lunch', { foodId: 'b', grams: 50 }, 2);
+    await setMealItemGrams({ mealId: meal.id, index: 1, foodId: 'b', grams: 50 }, 80, 3);
+    expect(await db.mealLogs.get(meal.id)).toMatchObject({
+      items: [
+        { foodId: 'a', grams: 150 },
+        { foodId: 'b', grams: 80 },
+      ],
+      updatedAt: 3,
+    });
+  });
+
+  it('changing the weight to zero, or an item that changed meanwhile, is an error and changes nothing', async () => {
+    const meal = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 });
+    const at = { mealId: meal.id, index: 0, foodId: 'a', grams: 150 };
+    await expect(setMealItemGrams(at, 0)).rejects.toThrow(/граммах/);
+    await expect(setMealItemGrams(at, Infinity)).rejects.toThrow(/граммах/);
+    await expect(setMealItemGrams({ ...at, index: 5 }, 10)).rejects.toThrow(/не найдена/);
+    await expect(setMealItemGrams({ ...at, grams: 100 }, 10)).rejects.toThrow(/не найдена/);
+    await expect(removeMealItem({ ...at, foodId: 'b' })).rejects.toThrow(/не найдена/);
+    await expect(removeMealItem({ ...at, mealId: 'missing' })).rejects.toThrow(/не найдена/);
+    expect((await db.mealLogs.get(meal.id))?.items).toEqual([{ foodId: 'a', grams: 150 }]);
   });
 });

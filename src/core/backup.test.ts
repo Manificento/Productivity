@@ -23,6 +23,18 @@ describe('backup', () => {
     expect((await db.settings.get('theme'))?.value).toBe('dark');
   });
 
+  it('Given модуль time сохраняет настройки Pomodoro в settings под ключом time.pomodoro When экспорт JSON Then они попадают в копию и восстанавливаются', async () => {
+    const pomodoro = { workMin: 50, shortBreakMin: 10, longBreakMin: 20, sessionsBeforeLongBreak: 4 };
+    await db.settings.put({ key: 'time.pomodoro', value: pomodoro });
+
+    const backup = JSON.parse(JSON.stringify(await exportAll()));
+    expect(backup.tables.settings).toContainEqual({ key: 'time.pomodoro', value: pomodoro });
+
+    await db.settings.clear();
+    await importAll(backup);
+    expect((await db.settings.get('time.pomodoro'))?.value).toEqual(pomodoro);
+  });
+
   it('rejects files that are not a backup', async () => {
     await expect(importAll({ hello: 'world' })).rejects.toThrow();
   });

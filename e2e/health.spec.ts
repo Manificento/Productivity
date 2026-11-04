@@ -172,4 +172,58 @@ test.describe('health', () => {
     await page.getByRole('dialog').getByLabel('Поиск продукта').fill('гречка');
     await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Open Food Facts сейчас не отвечает');
   });
+
+  test('corrections: re-weigh and delete a meal item, delete a workout and a night of sleep', async ({ page }) => {
+    await page.route(OFF_ROUTE, (route) => route.fulfill({ json: { products: [] } }));
+    await page.clock.setFixedTime(new Date('2026-11-04T19:00:00+05:00'));
+
+    // Sleep: log last night, then delete it.
+    await page.goto('/#/health');
+    await page.getByRole('button', { name: 'Сохранить сон' }).click();
+    await expect(page.getByRole('img', { name: /записей 1/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Удалить запись за 4 ноября' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Удалить' }).click();
+    await expect(page.getByText('Записей пока нет')).toBeVisible();
+
+    // Food: add 100 g of a product, change it to 150 g, then delete it.
+    await page.goto('/#/health/food');
+    await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Поиск продукта').fill('Хлеб');
+    await dialog.getByRole('button', { name: 'Создать свой продукт' }).click();
+    await dialog.getByLabel('Ккал').fill('250');
+    await dialog.getByLabel('Белки, г').fill('10');
+    await dialog.getByLabel('Жиры, г').fill('5');
+    await dialog.getByLabel('Углеводы, г').fill('40');
+    await dialog.getByRole('button', { name: 'Создать продукт' }).click();
+    await dialog.getByRole('button', { name: 'Добавить' }).click();
+    const lunch = page.getByRole('region', { name: 'Обед' });
+    const item = lunch.getByRole('button', { name: 'Изменить: Хлеб, 100 г' });
+    expect((await item.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    await item.click();
+    await dialog.getByLabel('Вес, г').fill('150');
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(lunch).toContainText('Итого: 375 ккал · Б 15 · Ж 7,5 · У 60');
+    await lunch.getByRole('button', { name: 'Изменить: Хлеб, 150 г' }).click();
+    await dialog.getByRole('button', { name: 'Удалить' }).click();
+    await dialog.getByRole('button', { name: 'Удалить' }).click();
+    await expect(lunch).toContainText('Пока пусто');
+    await expect(page.getByRole('region', { name: 'Итого за день' })).toContainText('0 ккал');
+
+    // Workouts: log one, then delete it.
+    await page.goto('/#/health/workouts');
+    await page.getByLabel('Тип').selectOption('Бег');
+    await page.getByLabel('Длительность, мин').fill('30');
+    await page.getByLabel('RPE (1–10)').selectOption('5');
+    await page.getByRole('button', { name: 'Сохранить тренировку' }).click();
+    const remove = page.getByRole('button', { name: 'Удалить: Бег, 4 ноября' });
+    expect((await remove.boundingBox())?.width).toBeGreaterThanOrEqual(44);
+    await remove.click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Удалить' }).click();
+    await expect(page.getByText('За последние 60 дней тренировок нет — запишите первую')).toBeVisible();
+    await expect(page.getByText('Минуты').locator('xpath=following-sibling::dd[1]')).toHaveText('0');
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
 });

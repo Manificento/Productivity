@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { loadRecentWorkouts, saveWorkout } from './workouts';
+import { deleteWorkout, loadRecentWorkouts, saveWorkout } from './workouts';
 
 const TODAY = '2026-11-04';
 
@@ -37,5 +37,12 @@ describe('workouts data', () => {
     await saveWorkout({ date: '2026-09-05', type: 'Бег', durationMin: 40, rpe: 6 }, 4); // 60 days back + 1
     const list = await loadRecentWorkouts(TODAY);
     expect(list.map((w) => `${w.date} ${w.type}`)).toEqual(['2026-11-04 Бег', '2026-11-04 Йога', '2026-11-03 Бег']);
+  });
+
+  it('Given a workout in the history When I delete it Then it is gone from the history', async () => {
+    const run = await saveWorkout({ date: TODAY, type: 'Бег', durationMin: 30, rpe: 5 }, 1);
+    await saveWorkout({ date: TODAY, type: 'Йога', durationMin: 20, rpe: 3 }, 2);
+    await deleteWorkout(run.id);
+    expect((await loadRecentWorkouts(TODAY)).map((w) => w.type)).toEqual(['Йога']);
   });
 });

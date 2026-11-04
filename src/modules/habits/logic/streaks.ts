@@ -1,6 +1,6 @@
 import { shiftDateKey } from '../../../core/dates';
 import type { DateKey, HabitLog, HabitSchedule } from '../../../core/types';
-import { doneDays, isScheduled, isWeekly, weeklyQuota, weekStart } from './schedule';
+import { doneDays, isScheduled, isWeekly, weeklyQuota, weekStart } from '../../../core/habitSchedule';
 
 export interface Streak {
   current: number;

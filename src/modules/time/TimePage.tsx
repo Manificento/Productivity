@@ -8,8 +8,8 @@ import { remainingMs } from './logic/pomodoro';
 import { formatDuration } from './logic/timer';
 
 export function TimePage() {
-  // Lives here, not in PomodoroView, so a focus session keeps ticking (and gets recorded and signalled)
-  // while the user is on the «Таймер» tab.
+  // The timer is shared (pomodoroRuntime) and also kept running on other pages by PomodoroBackground;
+  // read here so the «Таймер» tab can show the running focus session.
   const pomodoro = usePomodoro();
   const { state } = pomodoro;
   const focus =

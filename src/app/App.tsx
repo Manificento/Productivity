@@ -35,7 +35,12 @@ export function App() {
   return (
     <HashRouter>
       <div className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-        <Link to="/settings" aria-label="Настройки" className="fixed right-3 top-3 z-10 p-2 text-xl">
+        {/* Page headers keep their right edge free for this link (see `Page` in src/ui). */}
+        <Link
+          to="/settings"
+          aria-label="Настройки"
+          className="fixed right-3 top-3 z-10 flex size-11 items-center justify-center text-xl"
+        >
           ⚙️
         </Link>
         <Routes>
@@ -43,6 +48,7 @@ export function App() {
             <Route key={m.id} path={m.path} element={<m.Page />} />
           ))}
         </Routes>
+        {MODULES.map((m) => m.Background && <m.Background key={m.id} />)}
         <BottomNav />
       </div>
     </HashRouter>

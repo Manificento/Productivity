@@ -12,7 +12,7 @@ export function Tabs({ items }: { items: { to: string; label: string; end?: bool
               to={it.to}
               end={it.end}
               className={({ isActive }) =>
-                `inline-flex min-h-10 items-center whitespace-nowrap rounded-full px-4 text-sm font-medium ${
+                `inline-flex min-h-11 items-center whitespace-nowrap rounded-full px-4 text-sm font-medium ${
                   isActive
                     ? 'bg-indigo-600 text-white'
                     : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'

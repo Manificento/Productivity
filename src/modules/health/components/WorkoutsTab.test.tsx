@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
@@ -131,5 +131,42 @@ describe('workouts tab', () => {
     await screen.findByText(/тренировок нет/);
     expect(stat('Минуты')).toHaveTextContent('0');
     expect(stat('Средний RPE')).toHaveTextContent('—');
+  });
+
+  it('Given a workout in the history When I delete it (with confirmation) Then it disappears from the history and the week totals', async () => {
+    await saveWorkout({ date: TODAY, type: 'Бег', durationMin: 30, rpe: 6 }, 1);
+    await saveWorkout({ date: '2026-11-03', type: 'Йога', durationMin: 20, rpe: 2 }, 2);
+    renderTab();
+    const list = await history();
+    expect(stat('Минуты')).toHaveTextContent('50');
+
+    fireEvent.click(within(list).getByRole('button', { name: 'Удалить: Бег, 4 ноября' }));
+    const dialog = screen.getByRole('dialog', { name: 'Удалить тренировку?' });
+    expect(dialog).toHaveTextContent('«Бег, 4 ноября» будет удалена');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    expect(within(list).getByRole('listitem', { name: 'Бег, 4 ноября' })).toBeInTheDocument();
+
+    fireEvent.click(within(list).getByRole('button', { name: 'Удалить: Бег, 4 ноября' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+
+    await waitFor(() =>
+      expect(within(list).queryByRole('listitem', { name: 'Бег, 4 ноября' })).not.toBeInTheDocument(),
+    );
+    expect(within(list).getByRole('listitem', { name: 'Йога, 3 ноября' })).toBeInTheDocument();
+    expect(stat('Минуты')).toHaveTextContent('20');
+    expect(stat('Тренировки')).toHaveTextContent('1');
+    expect(stat('Средний RPE')).toHaveTextContent('2');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('a failed deletion shows an error and keeps the workout', async () => {
+    await saveWorkout({ date: TODAY, type: 'Бег', durationMin: 30, rpe: 6 }, 1);
+    renderTab();
+    fireEvent.click(within(await history()).getByRole('button', { name: 'Удалить: Бег, 4 ноября' }));
+    const del = vi.spyOn(db.workoutLogs, 'delete').mockRejectedValueOnce(new Error('quota'));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
+    expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Не удалось удалить');
+    expect(await db.workoutLogs.count()).toBe(1);
+    del.mockRestore();
   });
 });
