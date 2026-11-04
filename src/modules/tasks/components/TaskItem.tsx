@@ -6,6 +6,8 @@ import { isOverdue } from '../logic/lists';
 export interface TaskActions {
   onToggle: (task: Task) => void;
   onDelete: (task: Task) => void;
+  /** Opens the editor; tapping the task's title does this. */
+  onEdit: (task: Task) => void;
 }
 
 export function TaskItem({
@@ -42,12 +44,16 @@ export function TaskItem({
           onChange={() => actions.onToggle(task)}
         />
       </label>
-      <div className="min-w-0 flex-1 py-2">
-        <span className={`break-words text-base ${done ? 'text-zinc-400 line-through dark:text-zinc-500' : ''}`}>
+      <button
+        type="button"
+        className="min-h-11 min-w-0 flex-1 rounded-lg py-2 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+        onClick={() => actions.onEdit(task)}
+      >
+        <span className={`block break-words text-base ${done ? 'text-zinc-400 line-through dark:text-zinc-500' : ''}`}>
           {task.title}
         </span>
         {(overdue || due || projectName || task.recurrence) && (
-          <div className="mt-1 flex flex-wrap gap-1">
+          <span className="mt-1 flex flex-wrap gap-1">
             {overdue ? <Chip tone="danger">Просрочено · {due}</Chip> : due && <Chip>{due}</Chip>}
             {task.recurrence && (
               <Chip>
@@ -56,9 +62,9 @@ export function TaskItem({
               </Chip>
             )}
             {projectName && <Chip tone="accent">#{projectName}</Chip>}
-          </div>
+          </span>
         )}
-      </div>
+      </button>
       <IconButton label={`Удалить «${task.title}»`} className="text-zinc-400" onClick={() => actions.onDelete(task)}>
         🗑
       </IconButton>

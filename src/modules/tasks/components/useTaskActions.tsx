@@ -2,11 +2,13 @@ import { useState } from 'react';
 import type { Task } from '../../../core/types';
 import { deleteTask, toggleTask } from '../data/tasks';
 import { DeleteTaskSheet } from './DeleteTaskSheet';
+import { TaskEditor } from './TaskEditor';
 import type { TaskActions } from './TaskItem';
 
-/** Toggle and confirmed delete for task rows, plus the UI they need (error line, confirm sheet). */
+/** Toggle, edit and confirmed delete for task rows, plus the UI they need (error line, editor, confirm sheet). */
 export function useTaskActions(): { actions: TaskActions; ui: React.ReactNode } {
   const [toDelete, setToDelete] = useState<Task>();
+  const [editing, setEditing] = useState<Task>();
   const [error, setError] = useState<string>();
 
   async function run(action: () => Promise<void>) {
@@ -21,6 +23,7 @@ export function useTaskActions(): { actions: TaskActions; ui: React.ReactNode } 
   const actions: TaskActions = {
     onToggle: (task) => void run(() => toggleTask(task.id)),
     onDelete: setToDelete,
+    onEdit: setEditing,
   };
 
   const ui = (
@@ -30,6 +33,7 @@ export function useTaskActions(): { actions: TaskActions; ui: React.ReactNode } 
           {error}
         </p>
       )}
+      <TaskEditor task={editing} onClose={() => setEditing(undefined)} />
       <DeleteTaskSheet
         task={toDelete}
         onCancel={() => setToDelete(undefined)}
