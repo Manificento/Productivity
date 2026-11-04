@@ -1,4 +1,5 @@
 import type { AppModule } from '../../app/moduleTypes';
+import { InstallPromptListener } from './components/InstallPromptListener';
 import { SettingsPage } from './SettingsPage';
 
 export const settingsModule: AppModule = {
@@ -9,4 +10,5 @@ export const settingsModule: AppModule = {
   group: 'system',
   summary: 'Резервная копия, демо-данные и установка',
   Page: SettingsPage,
+  Background: InstallPromptListener,
 };

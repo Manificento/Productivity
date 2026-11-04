@@ -3,6 +3,7 @@ import { exportAll, importAll } from '../../core/backup';
 import { todayKey } from '../../core/dates';
 import { Button, Card, Page } from '../../ui';
 import { DemoDataCard } from './components/DemoDataCard';
+import { InstallCard } from './components/InstallCard';
 
 export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -32,6 +33,7 @@ export function SettingsPage() {
 
   return (
     <Page title="Настройки">
+      <InstallCard />
       <Card title="Резервная копия">
         <p className="mb-3 text-sm text-zinc-500">
           Все данные хранятся только на этом устройстве. Делайте копию регулярно и перед сменой телефона.
