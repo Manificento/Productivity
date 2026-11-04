@@ -38,7 +38,7 @@ describe('UI kit', () => {
     expect(within(header).getByRole('button', { name: 'Добавить' })).toBeInTheDocument();
   });
 
-  it('the settings page does not link to itself', () => {
+  it('Given экран «Настройки» When он открыт Then ⚙️ в шапке не показывается', () => {
     render(
       <MemoryRouter initialEntries={['/settings']}>
         <Page title="Настройки">

@@ -24,6 +24,7 @@ export function Page({ title, actions, children }: { title: string; actions?: Re
             <Link
               to="/settings"
               aria-label="Настройки"
+              // -mr-2: the 44 px tap area overhangs the gutter so the emoji lines up with the right edge.
               className="-mr-2 flex size-11 items-center justify-center text-xl"
             >
               ⚙️

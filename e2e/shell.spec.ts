@@ -23,7 +23,8 @@ test('Given страница модуля передаёт actions в Page When 
       action.textContent = '+';
       action.setAttribute('aria-label', 'Действие');
       action.style.cssText = 'min-width:44px;min-height:44px;flex-shrink:0';
-      el.append(action);
+      // Where `actions` render: the right-hand group, before ⚙️.
+      el.querySelector('div')!.prepend(action);
     });
     const action = await box(header.getByRole('button', { name: 'Действие' }));
     const settings = await box(page.getByRole('link', { name: 'Настройки' }));
