@@ -16,6 +16,7 @@ export function TaskItem({
   actions,
   projectName,
   showDate = true,
+  focus = false,
 }: {
   task: Task;
   today: DateKey;
@@ -24,6 +25,8 @@ export function TaskItem({
   projectName?: string;
   /** Show the due day; inside a day group only the time matters. */
   showDate?: boolean;
+  /** The task belongs to today's focus project. */
+  focus?: boolean;
 }) {
   const done = task.completedAt !== undefined;
   const overdue = isOverdue(task, today);
@@ -52,8 +55,9 @@ export function TaskItem({
         <span className={`block break-words text-base ${done ? 'text-zinc-400 line-through dark:text-zinc-500' : ''}`}>
           {task.title}
         </span>
-        {(overdue || due || projectName || task.recurrence) && (
+        {(overdue || due || projectName || task.recurrence || focus) && (
           <span className="mt-1 flex flex-wrap gap-1">
+            {focus && <Chip tone="warning">фокус</Chip>}
             {overdue ? <Chip tone="danger">Просрочено · {due}</Chip> : due && <Chip>{due}</Chip>}
             {task.recurrence && (
               <Chip>

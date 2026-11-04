@@ -4,6 +4,7 @@ import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { DateKey, Id, Project, Task } from '../../../core/types';
 import type { TaskPatch } from '../logic/editForm';
+import { deferDate } from '../logic/capacity';
 import { findActiveProject } from '../logic/projects';
 import { isNextCopyOf, nextOccurrence } from '../logic/recurrence';
 import type { QuickDraft } from '../logic/quickDraft';
@@ -106,6 +107,33 @@ export async function postponeToTomorrow(id: Id, today: DateKey, now: number = D
 /** Live single task; undefined while loading or when it does not exist. */
 export function useTask(id: Id | undefined): Task | undefined {
   return useLiveQuery(() => (id ? db.tasks.get(id) : undefined), [id]);
+}
+
+/** Moves the given tasks to `dueDate` (one transaction). Returns how many were moved. */
+export async function deferTasks(ids: Id[], dueDate: DateKey, now: number = Date.now()): Promise<number> {
+  return db.transaction('rw', db.tasks, async () => {
+    let moved = 0;
+    for (const id of ids) moved += await db.tasks.update(id, touch({ dueDate }, now));
+    return moved;
+  });
+}
+
+/**
+ * «Перенести P3–P4»: moves the tasks to the day after the active event (or tomorrow). The event's date
+ * is read in the same transaction (read-only — events belong to `today`), never from a stale render.
+ * Returns the target day and how many tasks moved.
+ */
+export async function deferLowPriority(
+  ids: Id[],
+  today: DateKey,
+  activeEventId: Id | undefined,
+  now: number = Date.now(),
+): Promise<{ to: DateKey; moved: number }> {
+  return db.transaction('rw', db.tasks, db.lifeEvents, async () => {
+    const event = activeEventId ? await db.lifeEvents.get(activeEventId) : undefined;
+    const to = deferDate(today, event?.date);
+    return { to, moved: await deferTasks(ids, to, now) };
+  });
 }
 
 export async function deleteTask(id: Id): Promise<void> {
