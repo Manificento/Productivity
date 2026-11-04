@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import type { LifeEvent, LifeEventType, Project } from '../../../core/types';
+import type { Baseline } from '../../../core/adaptation/types';
+import type { DateKey, LifeEvent, LifeEventType, Project } from '../../../core/types';
 import { Button, Field, Input, Segmented, Select } from '../../../ui';
 import {
   EVENT_TYPE_LABEL,
@@ -9,6 +10,7 @@ import {
   type EventFormErrors,
   type EventFormValues,
 } from '../logic/events';
+import { PlanPreview } from './PlanPreview';
 
 const TYPE_OPTIONS = Object.entries(EVENT_TYPE_LABEL) as [LifeEventType, string][];
 const IMPORTANCE_OPTIONS = ([1, 2, 3] as const).map((n) => ({ value: String(n), label: IMPORTANCE_LABEL[n] }));
@@ -17,10 +19,13 @@ export function EventForm({
   initial,
   projects,
   onSubmit,
+  preview,
 }: {
   initial: EventFormValues;
   projects: Project[];
   onSubmit: (fields: EventFields) => Promise<void>;
+  /** When given, a live 10-day plan is shown under the fields and follows every change. */
+  preview?: { baseline: Baseline; today: DateKey; others: LifeEvent[] };
 }) {
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState<EventFormErrors>({});
@@ -32,6 +37,12 @@ export function EventForm({
 
   const set = <K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) =>
     setValues((v) => ({ ...v, [key]: value }));
+
+  // The preview does not need a title; everything else must be valid.
+  const previewFields = parseEventForm({ ...values, title: values.title.trim() || 'Событие' });
+  const previewEvent: LifeEvent | undefined = previewFields.ok
+    ? { ...previewFields.data, id: 'preview', createdAt: 0, updatedAt: 0 }
+    : undefined;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -117,6 +128,21 @@ export function EventForm({
           />
         )}
       </Field>
+      {preview && (
+        <section aria-label="Как изменятся следующие 10 дней" className="mb-3">
+          <h3 className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Как изменятся следующие 10 дней</h3>
+          {previewEvent ? (
+            <PlanPreview
+              event={previewEvent}
+              others={preview.others}
+              baseline={preview.baseline}
+              today={preview.today}
+            />
+          ) : (
+            <p className="text-sm text-zinc-500">Укажите дату и дни подготовки, чтобы увидеть план.</p>
+          )}
+        </section>
+      )}
       {saveError && (
         <p role="alert" className="mb-3 text-sm text-rose-600">
           {saveError}
