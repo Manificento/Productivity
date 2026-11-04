@@ -7,6 +7,7 @@ import { CheckInCard } from './components/CheckInCard';
 import { BaselineEditor } from './components/BaselineEditor';
 import { EventDetail } from './components/EventDetail';
 import { EventsList } from './components/EventsList';
+import { EventBanner, SummaryCards } from './components/SummaryCards';
 import { INTENSITY_LABEL } from './logic/baseline';
 
 const PHASE_LABEL: Record<Phase, string> = {
@@ -74,8 +75,16 @@ function TodayHome() {
   const targets = useDailyTargets(today);
   return (
     <Page title="Сегодня">
+      {targets && <EventBanner targets={targets} today={today} />}
       <CheckInCard date={today} />
-      {targets ? <TargetsCard t={targets} /> : <Card>Загрузка…</Card>}
+      {targets ? (
+        <>
+          <TargetsCard t={targets} />
+          <SummaryCards targets={targets} today={today} />
+        </>
+      ) : (
+        <Card>Загрузка…</Card>
+      )}
       <nav aria-label="Настройки дня" className="space-y-2">
         <NavRow to="/today/events" icon="📅" label="События" />
         <NavRow to="/today/baseline" icon="⚖️" label="Базовый режим" />
