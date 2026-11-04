@@ -7,6 +7,7 @@ import { MorningCard } from './components/MorningCard';
 import { BaselineEditor } from './components/BaselineEditor';
 import { EventDetail } from './components/EventDetail';
 import { EventsList } from './components/EventsList';
+import { InsightsPage } from './components/InsightsPage';
 import { EventBanner, SummaryCards } from './components/SummaryCards';
 import { INTENSITY_LABEL } from './logic/baseline';
 
@@ -88,6 +89,7 @@ function TodayHome() {
       <nav aria-label="Настройки дня" className="space-y-2">
         <NavRow to="/today/events" icon="📅" label="События" />
         <NavRow to="/today/baseline" icon="⚖️" label="Базовый режим" />
+        <NavRow to="/today/insights" icon="📈" label="Инсайты" />
       </nav>
     </Page>
   );
@@ -104,6 +106,7 @@ export function TodayPage() {
       <Route path="today/events" element={<EventsList />} />
       <Route path="today/events/:id" element={<EventDetail />} />
       <Route path="today/baseline" element={<BaselineEditor />} />
+      <Route path="today/insights" element={<InsightsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
