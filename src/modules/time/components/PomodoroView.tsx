@@ -56,8 +56,7 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
     );
   }
 
-  const quota =
-    targets && todayEntries ? focusQuota(targets, countFocusSessions(todayEntries, day, settings.workMin)) : undefined;
+  const quota = targets && todayEntries ? focusQuota(targets, countFocusSessions(todayEntries, day)) : undefined;
   const focusProjectId = targets?.focusProjectId;
   const ordered = focusProjectFirst(tasks, focusProjectId);
   const focusTasks = focusProjectId ? ordered.filter((t) => t.projectId === focusProjectId) : [];
@@ -132,7 +131,7 @@ export function PomodoroView({ pomodoro }: { pomodoro: Pomodoro }) {
                 {focusTasks.length > 0 ? (
                   <>
                     <optgroup label="Фокус-проект дня">{focusTasks.map(option)}</optgroup>
-                    <optgroup label="Остальные задачи">{otherTasks.map(option)}</optgroup>
+                    {otherTasks.length > 0 && <optgroup label="Остальные задачи">{otherTasks.map(option)}</optgroup>}
                   </>
                 ) : (
                   otherTasks.map(option)

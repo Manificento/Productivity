@@ -17,16 +17,16 @@ const e = (over: Partial<TimeEntry>): TimeEntry => ({
 });
 
 describe('countFocusSessions', () => {
-  it('считает фокус-сессии дня: только Pomodoro, только этот день, не короче половины фокуса', () => {
+  it('считает фокус-сессии дня: только Pomodoro, только этот день, от 10 минут', () => {
     const entries = [
       e({}),
-      e({ end: 13 * MIN }), // half of 25 min (12.5) — counts
-      e({ end: 10 * MIN }), // stopped early — does not count
+      e({ end: 10 * MIN }), // exactly the threshold — counts
+      e({ end: 10 * MIN - 1 }), // stopped early — does not count
       e({ source: 'timer' }),
       e({ date: '2026-11-04' }),
       e({ end: undefined }),
     ];
-    expect(countFocusSessions(entries, '2026-11-05', 25)).toBe(2);
+    expect(countFocusSessions(entries, '2026-11-05')).toBe(2);
   });
 });
 
@@ -38,7 +38,6 @@ describe('focusQuota', () => {
   it('focusPomodoros = 0 (день события): без фокус-сессий с причиной из reasons', () => {
     expect(focusQuota({ focusPomodoros: 0, reasons: ['Сегодня «IELTS»: только самое важное'] }, 0)).toEqual({
       kind: 'none',
-      done: 0,
       reasons: ['Сегодня «IELTS»: только самое важное'],
     });
   });

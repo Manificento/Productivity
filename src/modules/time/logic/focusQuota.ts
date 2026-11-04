@@ -3,22 +3,27 @@ import type { DateKey, Id, Millis, Task, TimeEntry } from '../../../core/types';
 export type FocusQuota =
   | { kind: 'quota'; done: number; target: number }
   /** The adaptation says: no focus sessions today (e.g. the event day). `reasons` explain why. */
-  | { kind: 'none'; done: number; reasons: string[] };
+  | { kind: 'none'; reasons: string[] };
 
 /**
- * Focus sessions done on `day`: Pomodoro entries lasting at least half of the current focus length,
- * so a session stopped after a few minutes does not count as a full one.
+ * A Pomodoro entry counts as a focus session from this length on. Fixed (not tied to the current
+ * focus setting), so changing the setting never rewrites sessions already done today.
  */
-export function countFocusSessions(entries: readonly TimeEntry[], day: DateKey, workMin: number): number {
-  const minMs: Millis = (workMin * 60_000) / 2;
+export const MIN_FOCUS_SESSION_MS: Millis = 10 * 60_000;
+
+/**
+ * Focus sessions done on `day`. An entry belongs to the day it started (`date`), like all time entries:
+ * a 23:50–00:15 session counts for the evening it began.
+ */
+export function countFocusSessions(entries: readonly TimeEntry[], day: DateKey): number {
   return entries.filter(
-    (e) => e.source === 'pomodoro' && e.date === day && e.end !== undefined && e.end - e.start >= minMs,
+    (e) => e.source === 'pomodoro' && e.date === day && e.end !== undefined && e.end - e.start >= MIN_FOCUS_SESSION_MS,
   ).length;
 }
 
 export function focusQuota(targets: { focusPomodoros: number; reasons: string[] }, done: number): FocusQuota {
   return targets.focusPomodoros <= 0
-    ? { kind: 'none', done, reasons: targets.reasons }
+    ? { kind: 'none', reasons: targets.reasons }
     : { kind: 'quota', done, target: targets.focusPomodoros };
 }
 

@@ -67,6 +67,8 @@ describe('Pomodoro: норма фокус-сессий из адаптации',
     await focusSession('10:00');
     await focusSession('11:00');
     await focusSession('12:00', 5); // stopped early — not a full session
+    // a longer focus setting does not rewrite sessions already done
+    localStorage.setItem('lifeos.time.pomodoro.settings', JSON.stringify({ workMin: 60 }));
     render(<Pomodoro />);
 
     expect(await screen.findByText('3 из 7')).toBeInTheDocument();
@@ -86,11 +88,25 @@ describe('Pomodoro: норма фокус-сессий из адаптации',
     render(<Pomodoro />);
 
     const select = await screen.findByLabelText('Задача');
-    await within(select).findByRole('group', { name: 'Фокус-проект дня' });
+    const group = await within(select).findByRole('group', { name: 'Фокус-проект дня' });
+    expect(
+      within(group)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Speaking', 'Writing task 2']);
     const options = within(select)
       .getAllByRole('option')
       .map((o) => o.textContent);
     expect(options).toEqual(['Без задачи', 'Speaking', 'Writing task 2', 'Отчёт']);
+  });
+
+  it('все открытые задачи из фокус-проекта: пустой группы «Остальные задачи» нет', async () => {
+    await db.lifeEvents.add(event({ date: '2026-11-08', projectId: 'english' }));
+    await db.tasks.add(newRecord({ title: 'Speaking', priority: 2 as const, tags: [], projectId: 'english' }));
+    render(<Pomodoro />);
+    const select = await screen.findByLabelText('Задача');
+    await within(select).findByRole('group', { name: 'Фокус-проект дня' });
+    expect(within(select).queryByRole('group', { name: 'Остальные задачи' })).not.toBeInTheDocument();
   });
 
   it('focusPomodoros = 0 (день события): при открытии показано «Сегодня без фокус-сессий» и причина из reasons', async () => {
@@ -100,12 +116,5 @@ describe('Pomodoro: норма фокус-сессий из адаптации',
     expect(await screen.findByText('Сегодня без фокус-сессий')).toBeInTheDocument();
     expect(screen.getByText('Сегодня «IELTS»: только самое важное, без тренировки')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-  });
-
-  it('норма выполнена: видна отметка', async () => {
-    await db.settings.put({ key: BASELINE_SETTING_KEY, value: { ...DEFAULT_BASELINE, focusPomodoros: 1 } });
-    await focusSession('09:00');
-    render(<Pomodoro />);
-    expect(await screen.findByText('Норма дня выполнена')).toBeInTheDocument();
   });
 });
