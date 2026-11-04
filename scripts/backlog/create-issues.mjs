@@ -6,15 +6,22 @@
  *
  *   node scripts/backlog/create-issues.mjs            # create
  *   node scripts/backlog/create-issues.mjs --dry-run  # print what would be created
+ *   node scripts/backlog/create-issues.mjs --update=HL2,HL5  # also rewrite title/body/labels/milestone of existing issues
  */
 import { execFileSync } from 'node:child_process';
 import { BACKLOG, MILESTONES } from './backlog.mjs';
 
 const REPO = process.env.REPO ?? 'Manificento/Productivity';
 const DRY = process.argv.includes('--dry-run');
+const UPDATE = new Set(
+  (process.argv.find((a) => a.startsWith('--update=')) ?? '--update=')
+    .slice('--update='.length)
+    .split(',')
+    .filter(Boolean),
+);
 
 const LABELS = [
-  ...['core', 'tasks', 'habits', 'time', 'health', 'today', 'settings', 'infra'].map((a) => ({
+  ...['core', 'tasks', 'habits', 'time', 'health', 'today', 'cognition', 'settings', 'infra'].map((a) => ({
     name: `area:${a}`,
     color: '1d76db',
     description: `Lane: ${a}`,
@@ -52,8 +59,10 @@ function sleep(ms) {
 
 /** Finds an issue created from this backlog key (a failed POST may still have created it). */
 function findByKey(key) {
-  const recent = JSON.parse(gh([`repos/${REPO}/issues?state=all&per_page=20&sort=created&direction=desc`]));
-  return recent.find((i) => (i.body ?? '').includes(`backlog-key: ${key} `))?.number;
+  // Search every issue, not just the latest page: a timed-out POST can land a few seconds later.
+  return paged(`repos/${REPO}/issues?state=all&per_page=100`).find((i) =>
+    (i.body ?? '').includes(`backlog-key: ${key} `),
+  )?.number;
 }
 
 /** POST with retries on 5xx; never creates duplicates. */
@@ -62,13 +71,17 @@ function createIssue(key, payload) {
     try {
       return JSON.parse(gh([`repos/${REPO}/issues`, '--input', '-'], payload)).number;
     } catch (e) {
-      sleep(5000 * attempt);
+      sleep(10000 * attempt);
       const existing = findByKey(key);
       if (existing) return existing;
       if (attempt >= 4) throw e;
       console.log(`retry  ~ ${key} (attempt ${attempt + 1})`);
     }
   }
+}
+
+function labelsFor(item) {
+  return [`area:${item.area}`, `type:${item.type ?? 'feature'}`, `priority:${item.priority}`, `size:${item.size}`];
 }
 
 function bodyFor(item, numbers) {
@@ -116,7 +129,21 @@ for (const issue of paged(`repos/${REPO}/issues?state=all&per_page=100`)) {
 }
 for (const item of BACKLOG) {
   if (numbers.has(item.key)) {
-    console.log(`issue  = ${item.key} #${numbers.get(item.key)} (exists)`);
+    const n = numbers.get(item.key);
+    if (UPDATE.has(item.key)) {
+      // Keep workflow labels (status:*) that agents may have set; rewrite everything else from the backlog.
+      const current = DRY ? [] : JSON.parse(gh([`repos/${REPO}/issues/${n}`])).labels.map((l) => l.name);
+      const keep = current.filter((l) => l.startsWith('status:'));
+      gh([`repos/${REPO}/issues/${n}`, '-X', 'PATCH', '--input', '-'], {
+        title: item.title,
+        body: bodyFor(item, numbers),
+        labels: [...labelsFor(item), ...keep],
+        milestone: milestoneNumbers.get(item.milestone),
+      });
+      console.log(`issue  ~ ${item.key} #${n} updated`);
+    } else {
+      console.log(`issue  = ${item.key} #${n} (exists)`);
+    }
     continue;
   }
   const missing = (item.deps ?? []).filter((k) => !numbers.has(k) && !DRY);
@@ -124,7 +151,7 @@ for (const item of BACKLOG) {
   const payload = {
     title: item.title,
     body: bodyFor(item, numbers),
-    labels: [`area:${item.area}`, `type:${item.type ?? 'feature'}`, `priority:${item.priority}`, `size:${item.size}`],
+    labels: labelsFor(item),
     milestone: milestoneNumbers.get(item.milestone),
   };
   if (DRY) {

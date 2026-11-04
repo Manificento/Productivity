@@ -27,6 +27,7 @@ flowchart TB
     habits[habits]
     time[time]
     health[health]
+    cognition[cognition<br/>тесты внимания]
     settings[settings]
   end
   subgraph kernel[core — общее ядро]
@@ -89,13 +90,15 @@ flowchart LR
 
 ## Владение таблицами
 
-| Модуль   | Пишет в таблицы                                                      |
-| -------- | -------------------------------------------------------------------- |
-| tasks    | `projects`, `tasks`                                                  |
-| habits   | `habits`, `habitLogs`                                                |
-| time     | `timeCategories`, `timeEntries`                                      |
-| health   | `sleepLogs`, `foods`, `mealLogs`, `workoutLogs`                      |
-| today    | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`)                |
-| settings | `settings` (остальные ключи), импорт всех таблиц через `core/backup` |
+| Модуль    | Пишет в таблицы                                                                       |
+| --------- | ------------------------------------------------------------------------------------- |
+| tasks     | `projects`, `tasks`                                                                   |
+| habits    | `habits`, `habitLogs`                                                                 |
+| time      | `timeCategories`, `timeEntries`                                                       |
+| health    | `sleepLogs` (через `core/logging/saveSleep`), `foods`, `mealLogs`, `workoutLogs`      |
+| today     | `lifeEvents`, `checkIns`, `settings` (`adaptation.*`); сон — только через `saveSleep` |
+| cognition | `cognitiveTests`                                                                      |
+| settings  | `settings` (остальные ключи), импорт всех таблиц через `core/backup`                  |
 
-Читать можно любые таблицы.
+Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
+([ADR-0007](adr/0007-shared-write-paths.md)): сейчас это только сон.

@@ -27,3 +27,6 @@ dist-ssr
 coverage
 playwright-report
 test-results
+
+# Local Claude Code state
+.claude/*.local.*

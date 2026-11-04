@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type {
   CheckIn,
+  CognitiveTest,
   Food,
   Habit,
   HabitLog,
@@ -17,7 +18,7 @@ import type {
 
 /**
  * The single local database. ALL tables for ALL modules are declared here up front,
- * so modules can be built in parallel without editing this file.
+ * so modules can be built in parallel without editing this file. Versions are append-only.
  *
  * Index strings list only the fields used in queries; other fields are stored anyway.
  * To add an index: bump the version with a new `this.version(n).stores(...)` call
@@ -35,6 +36,7 @@ export class LifeDB extends Dexie {
   mealLogs!: EntityTable<MealLog, 'id'>;
   workoutLogs!: EntityTable<WorkoutLog, 'id'>;
   checkIns!: EntityTable<CheckIn, 'id'>;
+  cognitiveTests!: EntityTable<CognitiveTest, 'id'>;
   lifeEvents!: EntityTable<LifeEvent, 'id'>;
   settings!: EntityTable<Setting, 'key'>;
 
@@ -55,6 +57,10 @@ export class LifeDB extends Dexie {
       lifeEvents: 'id, date, projectId',
       settings: 'key',
     });
+    // v2 (contract C1): cognitive tests for the `cognition` module.
+    this.version(2).stores({
+      cognitiveTests: 'id, date, kind, [kind+date]',
+    });
   }
 }
 
@@ -73,6 +79,7 @@ export const TABLE_NAMES = [
   'mealLogs',
   'workoutLogs',
   'checkIns',
+  'cognitiveTests',
   'lifeEvents',
   'settings',
 ] as const;
