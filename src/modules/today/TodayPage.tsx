@@ -2,11 +2,12 @@ import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import type { DailyTargets, Phase } from '../../core/adaptation/types';
 import { todayKey } from '../../core/dates';
-import type { WorkoutIntensity } from '../../core/types';
 import { Card, Page } from '../../ui';
 import { CheckInCard } from './components/CheckInCard';
+import { BaselineEditor } from './components/BaselineEditor';
 import { EventDetail } from './components/EventDetail';
 import { EventsList } from './components/EventsList';
+import { INTENSITY_LABEL } from './logic/baseline';
 
 const PHASE_LABEL: Record<Phase, string> = {
   normal: 'Обычный день',
@@ -14,13 +15,6 @@ const PHASE_LABEL: Record<Phase, string> = {
   taper: 'Разгрузка перед событием',
   event: 'День события',
   recovery: 'Восстановление',
-};
-
-const INTENSITY_LABEL: Record<WorkoutIntensity, string> = {
-  rest: 'отдых',
-  light: 'лёгкая',
-  moderate: 'умеренная',
-  hard: 'любая',
 };
 
 function hours(min: number): string {
@@ -59,6 +53,22 @@ export function TargetsCard({ t }: { t: DailyTargets }) {
   );
 }
 
+function NavRow({ to, icon, label }: { to: string; icon: string; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="flex min-h-11 items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-medium shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <span>
+        <span aria-hidden>{icon}</span> {label}
+      </span>
+      <span aria-hidden className="text-zinc-400">
+        →
+      </span>
+    </Link>
+  );
+}
+
 function TodayHome() {
   const today = todayKey();
   const targets = useDailyTargets(today);
@@ -66,17 +76,10 @@ function TodayHome() {
     <Page title="Сегодня">
       <CheckInCard date={today} />
       {targets ? <TargetsCard t={targets} /> : <Card>Загрузка…</Card>}
-      <Link
-        to="/today/events"
-        className="flex min-h-11 items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-medium shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-      >
-        <span>
-          <span aria-hidden>📅</span> События
-        </span>
-        <span aria-hidden className="text-zinc-400">
-          →
-        </span>
-      </Link>
+      <nav aria-label="Настройки дня" className="space-y-2">
+        <NavRow to="/today/events" icon="📅" label="События" />
+        <NavRow to="/today/baseline" icon="⚖️" label="Базовый режим" />
+      </nav>
     </Page>
   );
 }
@@ -91,6 +94,7 @@ export function TodayPage() {
       <Route index element={<TodayHome />} />
       <Route path="today/events" element={<EventsList />} />
       <Route path="today/events/:id" element={<EventDetail />} />
+      <Route path="today/baseline" element={<BaselineEditor />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
