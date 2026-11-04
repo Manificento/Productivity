@@ -54,6 +54,14 @@ describe('PVT screen', () => {
     expect(screen.getByText(/^\d+ мс$/)).toBeInTheDocument();
   });
 
+  it('the full-screen test keeps clear of side cutouts in landscape (safe-area-inset-left/right)', () => {
+    renderAt('/cognition/pvt');
+    fireEvent.click(screen.getByRole('button', { name: 'Начать' }));
+    // jsdom has no env(): the insets are checked via their Tailwind classes on the overlay root.
+    const overlay = tapArea().closest('.fixed');
+    expect(overlay).toHaveClass('pl-[env(safe-area-inset-left)]', 'pr-[env(safe-area-inset-right)]');
+  });
+
   it('Given I tap before the stimulus When the test runs Then it is a false start with a short message', () => {
     renderAt('/cognition/pvt');
     fireEvent.click(screen.getByRole('button', { name: 'Начать' }));

@@ -15,7 +15,7 @@ export { Chip, IconButton, Progress, Sheet, Tabs } from './widgets';
 export function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   const onSettings = useMatch('/settings/*') !== null;
   return (
-    <section className="mx-auto w-full max-w-2xl px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))]">
+    <section className="mx-auto w-full max-w-2xl pb-28 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
       <header className="mb-4 flex items-center justify-between gap-2">
         <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight">{title}</h1>
         <div className="flex shrink-0 items-center gap-2">

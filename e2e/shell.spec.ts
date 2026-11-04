@@ -74,3 +74,10 @@ test('Given длинный список When я прокручиваю экра�
   const settings = await page.getByRole('link', { name: 'Настройки' }).boundingBox();
   expect(settings === null || settings.y + settings.height <= 0).toBe(true);
 });
+
+test('Given index.html When приложение открыто на телефоне Then в meta viewport есть viewport-fit=cover', async ({
+  page,
+}) => {
+  await page.goto('/#/tasks');
+  await expect(page.locator('meta[name="viewport"]')).toHaveAttribute('content', /viewport-fit=cover/);
+});
