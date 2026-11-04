@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
-import type { Id, Millis, TimeCategory, TimeEntry } from '../../../core/types';
+import type { Id, Millis, Task, TimeCategory, TimeEntry } from '../../../core/types';
+import type { FocusRecord } from '../logic/pomodoro';
 import { DEFAULT_CATEGORY_NAMES, type ManualEntry } from '../logic/timer';
 import { startTimer, type NewTimer } from '../logic/totals';
 
@@ -74,5 +75,41 @@ export function useRunningEntry(): TimeEntry | null | undefined {
   return useLiveQuery(async () => {
     const running = await runningEntries();
     return running.sort((a, b) => b.start - a.start)[0] ?? null;
+  }, []);
+}
+
+/**
+ * Writes finished focus sessions. A session already recorded (same start, source 'pomodoro')
+ * is skipped, so a repeated tick or a second open tab cannot double-count it.
+ */
+export async function addFocusRecords(records: readonly FocusRecord[], now: Millis = Date.now()): Promise<void> {
+  if (records.length === 0) return;
+  await db.transaction('rw', db.timeEntries, async () => {
+    for (const r of records) {
+      const same = await db.timeEntries
+        .where('start')
+        .equals(r.start)
+        .filter((e) => e.source === 'pomodoro')
+        .count();
+      if (same === 0) await db.timeEntries.add(newRecord({ ...r, source: 'pomodoro' as const }, now));
+    }
+  });
+}
+
+/** Stops every running stopwatch so a focus session does not overlap it. */
+export async function stopRunningTimers(now: Millis = Date.now()): Promise<void> {
+  for (const e of await runningEntries()) await stopTimer(e.id, now);
+}
+
+/** Not yet completed tasks (read-only, owned by `tasks`): highest priority first, then by due date. */
+export function useOpenTasks(): Task[] | undefined {
+  return useLiveQuery(async () => {
+    const tasks = await db.tasks.filter((t) => t.completedAt === undefined).toArray();
+    return tasks.sort(
+      (a, b) =>
+        a.priority - b.priority ||
+        (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999') ||
+        a.title.localeCompare(b.title),
+    );
   }, []);
 }
