@@ -29,8 +29,14 @@ export async function renameProject(id: Id, name: string, now: number = Date.now
   });
 }
 
+/** Archives or restores a project. Restoring is refused when an active project already has its name. */
 export async function setProjectArchived(id: Id, archived: boolean, now: number = Date.now()): Promise<void> {
-  await db.projects.update(id, touch({ archived }, now));
+  await db.transaction('rw', db.projects, async () => {
+    const project = await db.projects.get(id);
+    if (!project) return;
+    if (!archived) await checkName(project.name, id);
+    await db.projects.update(id, touch({ archived }, now));
+  });
 }
 
 /** Live list of all projects (archived included); undefined while loading. */

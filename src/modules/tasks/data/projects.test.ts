@@ -24,4 +24,16 @@ describe('projects data', () => {
     await expect(renameProject(id, ' ')).rejects.toThrow('Введите название проекта');
     expect(await db.projects.count()).toBe(1);
   });
+
+  it('refuses to restore an archived project whose name is taken', async () => {
+    const old = await addProject('Учёба');
+    await setProjectArchived(old, true);
+    await addProject('учёба');
+    await expect(setProjectArchived(old, false)).rejects.toThrow('Такой проект уже есть');
+    expect((await db.projects.get(old))?.archived).toBe(true);
+  });
+
+  it('ignores a missing project', async () => {
+    await expect(setProjectArchived('nope', true)).resolves.toBeUndefined();
+  });
 });

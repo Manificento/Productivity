@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { findSection, renderTasks, section, seedProject, seedTask, TODAY, setupTasksTestEnv } from '../testing';
 
@@ -83,8 +83,12 @@ describe('task lists', () => {
   });
 
   it('shows empty states', async () => {
-    renderTasks('/tasks/upcoming');
+    const { unmount } = renderTasks('/tasks/upcoming');
     expect(await screen.findByText('Нет задач со сроком в будущем')).toBeInTheDocument();
+    unmount();
+
+    renderTasks('/tasks');
+    expect(await screen.findByText('На сегодня задач нет')).toBeInTheDocument();
   });
 });
 
@@ -98,7 +102,7 @@ describe('projects', () => {
     renderTasks('/tasks');
 
     await user.click(screen.getByRole('link', { name: 'Проекты' }));
-    await user.click(await screen.findByRole('link', { name: /#Учёба/ }));
+    await user.click(await screen.findByRole('link', { name: '#Учёба' }));
 
     expect(await screen.findByRole('heading', { name: '#Учёба' })).toBeInTheDocument();
     const list = await findSection('Задачи проекта');
@@ -113,7 +117,7 @@ describe('projects', () => {
 
     await user.type(screen.getByLabelText('Новый проект'), 'Учёба');
     await user.click(screen.getByRole('button', { name: 'Создать проект' }));
-    expect(await screen.findByRole('link', { name: /#Учёба/ })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: '#Учёба' })).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Новый проект'), 'учёба');
     await user.click(screen.getByRole('button', { name: 'Создать проект' }));
@@ -151,7 +155,7 @@ describe('projects', () => {
     expect((await db.projects.get(study.id))?.archived).toBe(true);
 
     await user.click(within(archive).getByRole('button', { name: 'Вернуть' }));
-    expect(await within(section('Проекты')).findByRole('link', { name: /#Учёба/ })).toBeInTheDocument();
+    expect(await within(section('Проекты')).findByRole('link', { name: '#Учёба' })).toBeInTheDocument();
   });
 
   it('adds a task inside a project to that project and shows the project chip in other lists', async () => {
@@ -166,6 +170,53 @@ describe('projects', () => {
 
     await user.click(screen.getByRole('link', { name: 'Входящие' }));
     expect(await within(await findSection('Входящие')).findByText('#Учёба')).toBeInTheDocument();
+  });
+
+  it('shows an empty project', async () => {
+    const study = await seedProject('Учёба');
+    renderTasks(`/tasks/projects/${study.id}`);
+    expect(await screen.findByText('В проекте пока нет задач')).toBeInTheDocument();
+  });
+
+  it('shows an error when archiving fails and stays on the project', async () => {
+    const user = userEvent.setup();
+    const study = await seedProject('Учёба');
+    vi.spyOn(db.projects, 'update').mockRejectedValueOnce(new Error('quota'));
+    renderTasks(`/tasks/projects/${study.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'В архив' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить изменения');
+    expect(screen.getByRole('heading', { name: '#Учёба' })).toBeInTheDocument();
+  });
+
+  it('refuses to restore an archived project when an active one has its name', async () => {
+    const user = userEvent.setup();
+    await seedProject('Учёба', { archived: true });
+    await seedProject('учёба');
+    renderTasks('/tasks/projects');
+
+    await user.click(await within(await findSection('Архив проектов')).findByRole('button', { name: 'Вернуть' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Такой проект уже есть');
+    expect(within(section('Проекты')).getAllByRole('link')).toHaveLength(1);
+  });
+
+  it('a double tap on «Создать проект» creates one project', async () => {
+    const user = userEvent.setup();
+    renderTasks('/tasks/projects');
+    await user.type(await screen.findByLabelText('Новый проект'), 'Учёба');
+    await user.dblClick(screen.getByRole('button', { name: 'Создать проект' }));
+
+    expect(await screen.findByRole('link', { name: '#Учёба' })).toBeInTheDocument();
+    expect(await db.projects.count()).toBe(1);
+  });
+
+  it('shows an archived project as archived, not as active', async () => {
+    const study = await seedProject('Учёба', { archived: true });
+    renderTasks(`/tasks/projects/${study.id}`);
+    expect(await screen.findByText(/Проект в архиве/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'В архив' })).not.toBeInTheDocument();
   });
 
   it('shows «Проект не найден» for an unknown project', async () => {

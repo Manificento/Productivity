@@ -63,6 +63,15 @@ describe('lists', () => {
     expect(ids(todayList(list, TODAY))[0]).toBe('overdue-p4');
   });
 
+  it('within one priority an earlier due date comes first, undated tasks last', () => {
+    const list = [
+      task('undated', { projectId: 'study' }),
+      task('next-month-09:00', { projectId: 'study', dueDate: '2026-12-04', dueTime: '09:00' }),
+      task('today-no-time', { projectId: 'study', dueDate: TODAY }),
+    ];
+    expect(ids(projectList(list, 'study', TODAY))).toEqual(['today-no-time', 'next-month-09:00', 'undated']);
+  });
+
   it('Given проект «Учёба» с задачами When я выбираю его Then вижу только его задачи', () => {
     const study = [
       task('s2', { projectId: 'study', priority: 2 }),

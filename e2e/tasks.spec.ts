@@ -22,7 +22,7 @@ test.describe('tasks', () => {
     await page.getByRole('navigation', { name: 'Разделы' }).getByRole('link', { name: 'Проекты' }).click();
     await page.getByLabel('Новый проект').fill('Учёба');
     await page.getByRole('button', { name: 'Создать проект' }).click();
-    await page.getByRole('link', { name: /#Учёба/ }).click();
+    await page.getByRole('link', { name: '#Учёба' }).click();
 
     await expect(page.getByRole('heading', { name: '#Учёба' })).toBeVisible();
     await page.getByLabel('Новая задача').fill('Конспект');

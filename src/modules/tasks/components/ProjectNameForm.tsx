@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Button, Field, Input } from '../../../ui';
 
 /** Name input for creating or renaming a project. `onSubmit` throws with a Russian message on invalid names. */
@@ -17,15 +17,24 @@ export function ProjectNameForm({
 }) {
   const [name, setName] = useState(initial);
   const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  // A ref, not state: a second tap can arrive before React re-renders with saving = true.
+  const busy = useRef(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (busy.current) return;
+    busy.current = true;
+    setSaving(true);
     try {
       await onSubmit(name);
       setName('');
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'Не удалось сохранить проект');
+    } finally {
+      busy.current = false;
+      setSaving(false);
     }
   }
 
@@ -51,7 +60,7 @@ export function ProjectNameForm({
             Отмена
           </Button>
         )}
-        <Button type="submit" className={onCancel ? 'flex-1' : ''}>
+        <Button type="submit" className={onCancel ? 'flex-1' : ''} disabled={saving}>
           {submitLabel}
         </Button>
       </div>

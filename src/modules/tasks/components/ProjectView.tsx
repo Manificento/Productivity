@@ -18,13 +18,14 @@ export function ProjectView() {
   const today = todayKey();
   const { actions, ui } = useTaskActions();
   const [renaming, setRenaming] = useState(false);
+  const [error, setError] = useState<string>();
 
   if (!data) return <Empty>Загрузка…</Empty>;
   const project = data.projects.find((p) => p.id === projectId);
-  if (!project) {
+  if (!project || project.archived) {
     return (
       <Empty>
-        Проект не найден.{' '}
+        {project ? 'Проект в архиве — вернуть его можно во вкладке «Проекты».' : 'Проект не найден.'}{' '}
         <Link to="/tasks/projects" className="text-indigo-600 underline dark:text-indigo-400">
           Все проекты
         </Link>
@@ -42,13 +43,22 @@ export function ProjectView() {
         <Button
           variant="secondary"
           onClick={async () => {
-            await setProjectArchived(project.id, true);
-            navigate('/tasks/projects');
+            try {
+              await setProjectArchived(project.id, true);
+              navigate('/tasks/projects');
+            } catch {
+              setError('Не удалось сохранить изменения — попробуйте ещё раз');
+            }
           }}
         >
           В архив
         </Button>
       </div>
+      {error && (
+        <p role="alert" className="mb-3 text-sm text-rose-600">
+          {error}
+        </p>
+      )}
       <AddTaskForm defaults={{ projectId: project.id }} hint={`Попадёт в проект «${project.name}»`} />
       {ui}
       <TaskSection title="Задачи проекта">

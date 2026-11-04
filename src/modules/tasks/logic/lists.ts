@@ -11,16 +11,21 @@ export function isOverdue(task: Task, today: DateKey): boolean {
   return isActive(task) && task.dueDate !== undefined && task.dueDate < today;
 }
 
-/** Sort order for every list: overdue → priority 1…4 → due time (timed first) → creation date. */
+/**
+ * Sort order for every list: overdue → priority 1…4 → due date and time (earlier first, undated last;
+ * on one day timed tasks come first) → creation date.
+ */
 export function compareTasks(today: DateKey): (a: Task, b: Task) => number {
   return (a, b) =>
     Number(isOverdue(b, today)) - Number(isOverdue(a, today)) ||
     a.priority - b.priority ||
-    compareTime(a.dueTime, b.dueTime) ||
+    compareOptional(a.dueDate, b.dueDate) ||
+    compareOptional(a.dueTime, b.dueTime) ||
     a.createdAt - b.createdAt;
 }
 
-function compareTime(a: string | undefined, b: string | undefined): number {
+/** Ascending; undefined sorts last. */
+function compareOptional(a: string | undefined, b: string | undefined): number {
   if (a === b) return 0;
   if (a === undefined) return 1;
   if (b === undefined) return -1;

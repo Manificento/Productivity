@@ -35,13 +35,13 @@ export function renderTasks(path = '/tasks') {
 }
 
 export async function seedTask(title: string, over: Partial<Task> = {}): Promise<Task> {
-  const task = newRecord<Omit<Task, 'id' | 'createdAt' | 'updatedAt'>>({ title, priority: 4, tags: [], ...over }, NOW);
+  const task: Task = { ...newRecord({ title, priority: 4 as const, tags: [] }, NOW), ...over };
   await db.tasks.add(task);
   return task;
 }
 
 export async function seedProject(name: string, over: Partial<Project> = {}): Promise<Project> {
-  const project = newRecord<Omit<Project, 'id' | 'createdAt' | 'updatedAt'>>({ name, archived: false, ...over }, NOW);
+  const project: Project = { ...newRecord({ name, archived: false }, NOW), ...over };
   await db.projects.add(project);
   return project;
 }
