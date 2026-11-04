@@ -14,9 +14,10 @@ const TODAY = '2026-11-04';
  * arrive in later live-query ticks. So wait for the final text, not for the card itself.
  */
 async function goalCardWithText(...texts: string[]) {
-  const card = await screen.findByRole('region', { name: 'Цель сна' });
-  await waitFor(() => texts.forEach((t) => expect(card).toHaveTextContent(t)));
-  return card;
+  const card = () => screen.getByRole('region', { name: 'Цель сна' });
+  // Re-query on every attempt: a re-mounted card must not leave us asserting on a detached node.
+  await waitFor(() => texts.forEach((t) => expect(card()).toHaveTextContent(t)));
+  return card();
 }
 
 /** The user's normal day — written here only as test setup (the `today` module owns this setting). */
