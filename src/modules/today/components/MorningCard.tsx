@@ -6,6 +6,8 @@ import type { DateKey, SleepLog } from '../../../core/types';
 import { Button, Card, Field, Input, Rating } from '../../../ui';
 import { saveMorningSleep, skipMorningStep, useMorning } from '../data/morning';
 import {
+  isMorningOpen,
+  MORNING_OPENS_AT_HOUR,
   morningSteps,
   parseMorningSleep,
   suggestSleep,
@@ -64,13 +66,26 @@ function SleepStep({
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState(suggestion);
   const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+
+  /** Opens the editor pre-filled with the saved night, or with the current suggestion. */
+  function edit() {
+    setValues(
+      sleep
+        ? { bedtime: format(sleep.bedtime, 'HH:mm'), wake: format(sleep.wakeTime, 'HH:mm'), quality: sleep.quality }
+        : suggestion,
+    );
+    setError(undefined);
+    setEditing(true);
+  }
 
   async function save(v: SleepSuggestion) {
-    const parsed = parseMorningSleep(today, v);
+    const parsed = parseMorningSleep(today, v, Date.now());
     if (!parsed.ok) {
       setError(parsed.error);
       return;
     }
+    setSaving(true);
     try {
       const r = await saveMorningSleep(parsed.input);
       if (r.ok) {
@@ -79,6 +94,8 @@ function SleepStep({
       } else setError(r.error);
     } catch {
       setError('Не удалось сохранить сон. Попробуйте ещё раз.');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -87,9 +104,9 @@ function SleepStep({
       <div className="flex items-center justify-between gap-3 text-sm">
         <p>
           <span className="font-semibold">Сон</span> · {format(sleep.bedtime, 'HH:mm')}–
-          {format(sleep.wakeTime, 'HH:mm')}, {fmtHours(sleepHours(sleep))}
+          {format(sleep.wakeTime, 'HH:mm')}, {fmtHours(sleepHours(sleep))}, качество {sleep.quality}/5
         </p>
-        <Button variant="secondary" onClick={() => setEditing(true)}>
+        <Button variant="secondary" onClick={edit}>
           Изменить
         </Button>
       </div>
@@ -137,7 +154,7 @@ function SleepStep({
             <Button variant="secondary" className="flex-1" onClick={() => setEditing(false)}>
               Отмена
             </Button>
-            <Button className="flex-1" onClick={() => save(values)}>
+            <Button className="flex-1" disabled={saving} onClick={() => save(values)}>
               Сохранить сон
             </Button>
           </div>
@@ -145,7 +162,7 @@ function SleepStep({
       ) : (
         <div>
           <p className="mb-2 text-sm">
-            Лёг {suggestion.bedtime} · встал {suggestion.wake}
+            Лёг {suggestion.bedtime} · встал {suggestion.wake} · качество {suggestion.quality}/5
             {state === 'skipped' && <span className="text-zinc-500"> · пропущено</span>}
           </p>
           {error && (
@@ -154,8 +171,10 @@ function SleepStep({
             </p>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => save(suggestion)}>Подтвердить</Button>
-            <Button variant="secondary" onClick={() => setEditing(true)}>
+            <Button disabled={saving} onClick={() => save(suggestion)}>
+              Подтвердить
+            </Button>
+            <Button variant="secondary" onClick={edit}>
               Изменить
             </Button>
             {state === 'pending' && (
@@ -207,6 +226,14 @@ export function MorningCard({ today }: { today: DateKey }) {
   const [expanded, setExpanded] = useState(false);
   const [skipError, setSkipError] = useState<string>();
 
+  if (!isMorningOpen(Date.now())) {
+    return (
+      <p className="mb-3 px-1 text-sm text-zinc-500">
+        Утренний поток откроется в {String(MORNING_OPENS_AT_HOUR).padStart(2, '0')}:00 — сначала выспитесь.
+      </p>
+    );
+  }
+
   if (!m) {
     return (
       <Card title={TITLE}>
@@ -246,7 +273,7 @@ export function MorningCard({ today }: { today: DateKey }) {
               today={today}
               state={state('sleep')}
               sleep={m.sleep}
-              suggestion={suggestSleep(m.lastSleep, m.baselineBedtime)}
+              suggestion={suggestSleep(m.lastSleep, m.baselineBedtime, Date.now())}
               onSkip={skip('sleep')}
             />
           </Step>

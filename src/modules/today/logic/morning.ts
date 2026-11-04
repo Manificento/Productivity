@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { z } from 'zod';
 import { sleepWindow } from '../../../core/logging/sleepTime';
-import type { DateKey, SleepLog } from '../../../core/types';
+import type { DateKey, Millis, SleepLog } from '../../../core/types';
 
 export type MorningStep = 'sleep' | 'checkIn' | 'test';
 export const MORNING_STEPS: MorningStep[] = ['sleep', 'checkIn', 'test'];
@@ -16,10 +16,30 @@ export interface SleepSuggestion {
 
 const DEFAULT_WAKE = '07:30';
 
-/** One-tap suggestion: last night's clock times, or the baseline bedtime and 07:30. */
-export function suggestSleep(last: SleepLog | undefined, baselineBedtime: string): SleepSuggestion {
-  if (!last) return { bedtime: baselineBedtime, wake: DEFAULT_WAKE, quality: 3 };
-  return { bedtime: format(last.bedtime, 'HH:mm'), wake: format(last.wakeTime, 'HH:mm'), quality: last.quality };
+/** The morning flow opens at 04:00: before that the user has usually not slept yet. */
+export const MORNING_OPENS_AT_HOUR = 4;
+
+export function isMorningOpen(now: Millis): boolean {
+  return new Date(now).getHours() >= MORNING_OPENS_AT_HOUR;
+}
+
+/** Current local time 'HH:mm', rounded down to 5 minutes. */
+function nowHHmm(now: Millis): string {
+  const d = new Date(now);
+  d.setMinutes(d.getMinutes() - (d.getMinutes() % 5));
+  return format(d, 'HH:mm');
+}
+
+/**
+ * One-tap suggestion: last night's clock times, or the baseline bedtime and 07:30.
+ * The wake time is never later than now, so «Подтвердить» cannot save a night that has not ended.
+ */
+export function suggestSleep(last: SleepLog | undefined, baselineBedtime: string, now: Millis): SleepSuggestion {
+  const s = last
+    ? { bedtime: format(last.bedtime, 'HH:mm'), wake: format(last.wakeTime, 'HH:mm'), quality: last.quality }
+    : { bedtime: baselineBedtime, wake: DEFAULT_WAKE, quality: 3 };
+  const current = nowHHmm(now);
+  return s.wake > current ? { ...s, wake: current } : s;
 }
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -31,13 +51,16 @@ export interface MorningSleepInput {
   quality: number;
 }
 
-/** Clock times → the night that ended on `today`. */
+/** Clock times → the night that ended on `today`; the wake-up must not be in the future. */
 export function parseMorningSleep(
   today: DateKey,
   s: SleepSuggestion,
+  now: Millis,
 ): { ok: true; input: MorningSleepInput } | { ok: false; error: string } {
   if (!HHMM.test(s.bedtime) || !HHMM.test(s.wake)) return { ok: false, error: 'Укажите время отбоя и подъёма' };
-  return { ok: true, input: { ...sleepWindow(today, s.bedtime, s.wake), quality: s.quality } };
+  const window = sleepWindow(today, s.bedtime, s.wake);
+  if (window.wakeTime > now) return { ok: false, error: 'Время подъёма ещё не наступило' };
+  return { ok: true, input: { ...window, quality: s.quality } };
 }
 
 export type StepState = 'done' | 'skipped' | 'pending';

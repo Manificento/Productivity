@@ -76,7 +76,7 @@ function TodayHome() {
   return (
     <Page title="Сегодня">
       {targets && <EventBanner targets={targets} today={today} />}
-      <MorningCard today={today} />
+      <MorningCard key={today} today={today} />
       {targets ? (
         <>
           <TargetsCard t={targets} />

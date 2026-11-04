@@ -1,10 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { ZodError } from 'zod';
-import { BASELINE_SETTING_KEY, DEFAULT_BASELINE } from '../../../core/adaptation/rules';
-import type { Baseline } from '../../../core/adaptation/types';
 import { db } from '../../../core/db';
 import { saveSleep } from '../../../core/logging/sleep';
 import type { DateKey, SleepLog } from '../../../core/types';
+import { loadBaseline } from './baseline';
 import { withSkipped, readSkipped, type MorningSleepInput, type MorningStep } from '../logic/morning';
 
 export const MORNING_SETTING_KEY = 'adaptation.morning';
@@ -26,12 +25,12 @@ export async function loadMorning(today: DateKey): Promise<MorningData> {
     db.checkIns.where('date').equals(today).first(),
     db.cognitiveTests.where('[kind+date]').equals(['pvt', today]).count(),
     db.settings.get(MORNING_SETTING_KEY),
-    db.settings.get(BASELINE_SETTING_KEY),
+    loadBaseline(),
   ]);
   return {
     sleep,
     lastSleep,
-    baselineBedtime: { ...DEFAULT_BASELINE, ...((baseline?.value as Partial<Baseline>) ?? {}) }.bedtime,
+    baselineBedtime: baseline.bedtime,
     done: { sleep: sleep !== undefined, checkIn: checkIn !== undefined, test: tests > 0 },
     skipped: readSkipped(skips?.value, today),
   };
