@@ -45,6 +45,22 @@ afterEach(() => {
 });
 
 describe('HabitsPage', () => {
+  it('Given привычка timesPerWeek уже выполнила недельную цель и не отмечена сегодня When открыт экран «Привычки» Then в «Не сегодня» рядом с ней написано «цель недели выполнена»', async () => {
+    const gym = await addHabit('Зал', { kind: 'timesPerWeek', timesPerWeek: 1 });
+    await addHabit('Бег', { kind: 'weekdays', weekdays: [1, 3, 5] });
+    await mark(gym, '2026-11-02');
+    renderPage();
+
+    const card = (await screen.findByText('Не сегодня')).closest('section,div') as HTMLElement;
+    const row = (await within(card).findByRole('link', { name: 'Открыть «Зал»' })).closest('li') as HTMLElement;
+    expect(within(row).getByText('цель недели выполнена')).toBeInTheDocument();
+    expect(within(row).getByRole('link', { name: 'Открыть «Зал»' })).toHaveAccessibleDescription(
+      'цель недели выполнена',
+    );
+    const other = within(card).getByRole('link', { name: 'Открыть «Бег»' });
+    expect(other).not.toHaveTextContent('цель недели выполнена');
+  });
+
   it('есть привычки, запланированные на сегодня: при открытии видны с крупной кнопкой-отметкой и серией 🔥N', async () => {
     const read = await addHabit('Чтение');
     await mark(read, '2026-11-01');

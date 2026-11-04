@@ -25,6 +25,14 @@ const log = (habitId: string, date: string, done = true): HabitLog => ({
 });
 
 describe('todayHabits', () => {
+  it('Given привычка timesPerWeek выполнила цель недели и не отмечена сегодня When открыт экран «Привычки» Then она в «Не сегодня» с признаком «цель недели выполнена»', () => {
+    const weekly = habit('gym', { schedule: { kind: 'timesPerWeek', timesPerWeek: 1 } });
+    const weekdays = habit('zal', { schedule: { kind: 'weekdays', weekdays: [1, 3, 5] } });
+    const r = todayHabits([weekly, weekdays], [log('gym', '2026-11-02')], TODAY);
+    expect(r.other.map((h) => h.id)).toEqual(['gym', 'zal']);
+    expect([...r.goalMet]).toEqual(['gym']);
+  });
+
   it('есть привычки, запланированные на сегодня: видны с отметкой и серией', () => {
     const habits = [
       habit('run', { createdAt: created + 1 }),
