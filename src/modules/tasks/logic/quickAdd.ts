@@ -1,4 +1,4 @@
-import { addDays, addMonths, getDay, isValid } from 'date-fns';
+import { addDays, addMonths, getDay } from 'date-fns';
 import { fromDateKey, shiftDateKey, toDateKey } from '../../../core/dates';
 import type { DateKey, Priority, Recurrence } from '../../../core/types';
 
@@ -16,36 +16,33 @@ export interface ParsedTask {
   recurrence?: Recurrence;
 }
 
-// JS `\b` does not understand Cyrillic, so word edges are spelled out.
+// JS `\b` does not understand Cyrillic, so word edges are spelled out. A fragment must not end
+// right before «.5», «:30» or «-2» either — otherwise «18.30» would match as «18» and leave «.30».
 const START = '(?<![\\p{L}\\p{N}@#])';
-const END = '(?![\\p{L}\\p{N}])';
+const END = '(?![\\p{L}\\p{N}]|[.:,\\-]\\d)';
 const re = (body: string) => new RegExp(`${START}(?:${body})${END}`, 'iu');
 
-const WEEKDAYS: [RegExp, number][] = [
-  [/^(пн|понедельник|mon|monday)$/i, 1],
-  [/^(вт|вторник|tue|tuesday)$/i, 2],
-  [/^(ср|среда|среду|wed|wednesday)$/i, 3],
-  [/^(чт|четверг|thu|thursday)$/i, 4],
-  [/^(пт|пятница|пятницу|fri|friday)$/i, 5],
-  [/^(сб|суббота|субботу|sat|saturday)$/i, 6],
-  [/^(вс|воскресенье|sun|sunday)$/i, 0],
+/** Every spelling of a weekday we understand (one-off dates and recurrences). */
+const WEEKDAY_FORMS: [number, string[]][] = [
+  [1, ['пн', 'понедельник', 'понедельникам', 'mon', 'monday']],
+  [2, ['вт', 'вторник', 'вторникам', 'tue', 'tuesday']],
+  [3, ['ср', 'среда', 'среду', 'средам', 'wed', 'wednesday']],
+  [4, ['чт', 'четверг', 'четвергам', 'thu', 'thursday']],
+  [5, ['пт', 'пятница', 'пятницу', 'пятницам', 'fri', 'friday']],
+  [6, ['сб', 'суббота', 'субботу', 'субботам', 'sat', 'saturday']],
+  [0, ['вс', 'воскресенье', 'воскресеньям', 'sun', 'sunday']],
 ];
-const WEEKDAY_WORD =
+const weekdayOf = (word: string) => WEEKDAY_FORMS.find(([, forms]) => forms.includes(word.toLowerCase()))?.[0];
+
+const DATE_WEEKDAY =
   'пн|вт|ср|чт|пт|сб|вс|понедельник|вторник|среда|среду|четверг|пятница|пятницу|суббота|субботу|воскресенье|' +
   'mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday';
-
-/** Dative plural for «по вторникам», and the singular after «каждый/каждую/каждое». */
-const WEEKDAY_PLURAL: [RegExp, number][] = [
-  [/^(понедельникам|понедельник)$/i, 1],
-  [/^(вторникам|вторник)$/i, 2],
-  [/^(средам|среду)$/i, 3],
-  [/^(четвергам|четверг)$/i, 4],
-  [/^(пятницам|пятницу)$/i, 5],
-  [/^(субботам|субботу)$/i, 6],
-  [/^(воскресеньям|воскресенье)$/i, 0],
-];
-const PLURAL_WORD = 'понедельникам|вторникам|средам|четвергам|пятницам|субботам|воскресеньям';
-const EACH_WORD = 'понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье';
+const PLURAL_WEEKDAY = 'понедельникам|вторникам|средам|четвергам|пятницам|субботам|воскресеньям';
+const EACH_WEEKDAY =
+  'понедельник|вторник|среду|среда|четверг|пятницу|пятница|субботу|суббота|воскресенье|' +
+  'monday|tuesday|wednesday|thursday|friday|saturday|sunday';
+/** «вторник», «вторник и четверг», «пн, ср и пт». */
+const listOf = (word: string) => `(?:${word})(?:\\s*(?:,|\\sи\\s|\\sand\\s)\\s*(?:${word}))*`;
 
 const MONTHS: [RegExp, number][] = [
   [/^янв/i, 1],
@@ -64,8 +61,13 @@ const MONTHS: [RegExp, number][] = [
 const MONTH_WORD =
   'января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря|' +
   'янв|фев|мар|апр|июн|июл|авг|сен|сент|окт|ноя|нояб|дек';
+const monthOf = (word: string) => MONTHS.find(([r]) => r.test(word))?.[1] ?? 0;
 
-const lookup = (table: [RegExp, number][], word: string) => table.find(([r]) => r.test(word))?.[1];
+/** Nouns that turn «в 2 …» into a quantity («в 2 раза»), not a time. */
+const NOT_AN_HOUR =
+  '(?!\\s*(?:раз|процент|%|лет|год|класс|этаж|ряд|клик|шаг|минут|секунд|кабинет|корпус|аудитори|очеред|колон|строк))';
+const PART_OF_DAY = 'утра|дня|вечера|ночи';
+const HOUR_WORD = '(?:\\s*(?:часа|часов|час|ч))?';
 
 /** Mutable parse state: text still unclaimed + what was found so far. */
 interface State {
@@ -87,17 +89,23 @@ function nextWeekday(today: DateKey, weekday: number, includeToday: boolean): Da
   return shiftDateKey(today, diff === 0 && !includeToday ? 7 : diff);
 }
 
-/** A day/month(/year) date; without a year, a day already past this year means next year. */
-function calendarDate(today: DateKey, day: number, month: number, year?: number): DateKey | undefined {
+function exactDate(year: number, month: number, day: number): DateKey | undefined {
+  const d = new Date(year, month - 1, day);
+  return d.getMonth() === month - 1 && d.getDate() === day ? toDateKey(d) : undefined;
+}
+
+/**
+ * A day + month (+ year). Without a year it is the nearest such day from today on — a date already
+ * past this year means next year, and 29 February waits for the next leap year.
+ */
+function calendarDate(today: DateKey, day: number, month: number, year?: string): DateKey | undefined {
+  if (year !== undefined) return exactDate(year.length === 2 ? 2000 + Number(year) : Number(year), month, day);
   const thisYear = Number(today.slice(0, 4));
-  const build = (y: number) => {
-    const d = new Date(y, month - 1, day);
-    return isValid(d) && d.getMonth() === month - 1 && d.getDate() === day ? toDateKey(d) : undefined;
-  };
-  if (year !== undefined) return build(year);
-  const candidate = build(thisYear);
-  if (candidate === undefined) return undefined;
-  return candidate < today ? build(thisYear + 1) : candidate;
+  for (let y = thisYear; y <= thisYear + 8; y++) {
+    const date = exactDate(y, month, day);
+    if (date !== undefined && date >= today) return date;
+  }
+  return undefined;
 }
 
 function parseRecurrence(s: State): void {
@@ -105,27 +113,23 @@ function parseRecurrence(s: State): void {
     s.out.recurrence = r;
     return true;
   };
+  const weekdays = (words: string) => {
+    const days = words.split(/\s*(?:,|\sи\s|\sand\s)\s*/iu).map((w) => weekdayOf(w.trim()));
+    return [...new Set(days.filter((d) => d !== undefined))].sort((a, b) => a - b);
+  };
   take(s, re('каждый\\s+день|ежедневно|every\\s+day|daily'), () => set({ kind: 'daily' })) ||
     take(s, re('каждую\\s+неделю|еженедельно|every\\s+week|weekly'), () => set({ kind: 'weekly' })) ||
     take(s, re('каждый\\s+месяц|ежемесячно|every\\s+month|monthly'), () => set({ kind: 'monthly' })) ||
     take(s, re('по\\s+будням'), () => set({ kind: 'weekly', weekdays: [1, 2, 3, 4, 5] })) ||
     take(s, re('по\\s+выходным'), () => set({ kind: 'weekly', weekdays: [0, 6] })) ||
-    take(s, re(`по\\s+((?:${PLURAL_WORD})(?:\\s*(?:,|и)\\s*(?:${PLURAL_WORD}))*)`), (m) =>
-      set({ kind: 'weekly', weekdays: weekdayList(m[1]) }),
+    take(s, re(`по\\s+(${listOf(PLURAL_WEEKDAY)})`), (m) => set({ kind: 'weekly', weekdays: weekdays(m[1]) })) ||
+    take(s, re(`(?:кажд(?:ый|ую|ое|ая)|every)\\s+(${listOf(EACH_WEEKDAY)})`), (m) =>
+      set({ kind: 'weekly', weekdays: weekdays(m[1]) }),
     ) ||
-    take(s, re(`кажд(?:ый|ую|ое)\\s+(${EACH_WORD})`), (m) => set({ kind: 'weekly', weekdays: weekdayList(m[1]) })) ||
     take(s, re('каждые\\s+(\\d{1,3})\\s+(дн(?:я|ей)|недел[иь])'), (m) => {
       const n = Number(m[1]) * (m[2].toLowerCase().startsWith('нед') ? 7 : 1);
       return n > 0 && set({ kind: 'everyNDays', interval: n });
     });
-}
-
-function weekdayList(words: string): number[] {
-  const days = words
-    .split(/\s*(?:,|\sи\s)\s*/iu)
-    .map((w) => lookup(WEEKDAY_PLURAL, w.trim()))
-    .filter((d): d is number => d !== undefined);
-  return [...new Set(days)].sort((a, b) => a - b);
 }
 
 function parseDate(s: State): void {
@@ -145,25 +149,41 @@ function parseDate(s: State): void {
       if (unit.startsWith('мес')) return set(toDateKey(addMonths(fromDateKey(today), n)));
       return set(toDateKey(addDays(fromDateKey(today), unit.startsWith('нед') ? n * 7 : n)));
     }) ||
-    take(s, re(`(?:(?:в|во|on)\\s+)?(${WEEKDAY_WORD})`), (m) =>
-      set(nextWeekday(today, lookup(WEEKDAYS, m[1]) ?? 0, false)),
+    take(
+      s,
+      re(`((?:в|во|on)\\s+)?(?:(?:следующ(?:ий|ую|ее|ая)|next)\\s+)?(${DATE_WEEKDAY})`),
+      // A bare upper-case abbreviation («СБ», «ЧТ») is more likely an acronym than a weekday.
+      (m) =>
+        (m[1] !== undefined || m[2].length > 2 || m[2] === m[2].toLowerCase()) &&
+        set(nextWeekday(today, weekdayOf(m[2]) ?? 0, false)),
     ) ||
-    take(s, re('(\\d{1,2})\\.(\\d{1,2})(?:\\.(\\d{4}))?'), (m) =>
-      set(calendarDate(today, Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : undefined)),
+    take(s, re('(\\d{1,2})\\.(\\d{2})(?:\\.(\\d{4}|\\d{2}))?'), (m) =>
+      set(calendarDate(today, Number(m[1]), Number(m[2]), m[3])),
     ) ||
     take(s, re(`(\\d{1,2})\\s+(${MONTH_WORD})\\.?(?:\\s+(\\d{4}))?`), (m) =>
-      set(calendarDate(today, Number(m[1]), lookup(MONTHS, m[2]) ?? 0, m[3] ? Number(m[3]) : undefined)),
+      set(calendarDate(today, Number(m[1]), monthOf(m[2]), m[3])),
     );
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+/** 24-hour 'HH:mm' from an hour, minutes and an optional «утра/дня/вечера/ночи»; undefined if impossible. */
 function toTime(hour: number, minute: number, part?: string): string | undefined {
-  let h = hour;
-  const p = part?.toLowerCase();
-  if ((p === 'вечера' || p === 'дня') && h < 12) h += 12;
-  if ((p === 'утра' || p === 'ночи') && h === 12) h = 0;
-  return h < 24 && minute < 60 ? `${pad(h)}:${pad(minute)}` : undefined;
+  if (minute > 59) return undefined;
+  if (part === undefined) return hour < 24 ? `${pad(hour)}:${pad(minute)}` : undefined;
+  const h = ((): number | undefined => {
+    switch (part.toLowerCase()) {
+      case 'утра':
+        return hour >= 1 && hour <= 11 ? hour : undefined;
+      case 'дня':
+        return hour === 12 ? 12 : hour >= 1 && hour <= 5 ? hour + 12 : undefined;
+      case 'вечера':
+        return hour >= 4 && hour <= 11 ? hour + 12 : undefined;
+      default: // ночи
+        return hour === 12 ? 0 : hour >= 1 && hour <= 5 ? hour : hour >= 9 && hour <= 11 ? hour + 12 : undefined;
+    }
+  })();
+  return h === undefined ? undefined : `${pad(h)}:${pad(minute)}`;
 }
 
 function parseTime(s: State): void {
@@ -172,12 +192,12 @@ function parseTime(s: State): void {
     s.out.dueTime = time;
     return true;
   };
-  take(s, re('(?:в|at)\\s+(\\d{1,2})(?::(\\d{2}))?(?:\\s+(утра|дня|вечера|ночи))?'), (m) =>
+  // «в 9», «в 18:30», «в 18.30», «в 9 часов утра», «at 6».
+  take(s, re(`(?:в|at)\\s+(\\d{1,2})(?:[:.](\\d{2}))?${NOT_AN_HOUR}${HOUR_WORD}(?:\\s+(${PART_OF_DAY}))?`), (m) =>
     set(toTime(Number(m[1]), Number(m[2] ?? 0), m[3])),
   ) ||
-    take(s, re('(\\d{1,2}):(\\d{2})(?:\\s+(утра|дня|вечера|ночи))?'), (m) =>
-      set(toTime(Number(m[1]), Number(m[2]), m[3])),
-    );
+    // «9:00», «18:30 вечера» (a colon is needed — «12.11» without «в» is a date).
+    take(s, re(`(\\d{1,2}):(\\d{2})(?:\\s+(${PART_OF_DAY}))?`), (m) => set(toTime(Number(m[1]), Number(m[2]), m[3])));
 }
 
 function parseMarkers(s: State): void {
@@ -189,15 +209,17 @@ function parseMarkers(s: State): void {
     s.out.priority = Number(m[1]) as Priority;
     return true;
   });
-  take(s, re('~\\s?(\\d+(?:[.,]\\d+)?)\\s?(ч|час|часа|часов|h|м|мин|m|min)'), (m) => {
-    const value = Number(m[1].replace(',', '.'));
-    const hours = /^(ч|h)/i.test(m[2]);
-    s.out.estimateMin = Math.round(hours ? value * 60 : value);
+  const HOURS = '(?:часа|часов|час|ч|h)';
+  const MINUTES = '(?:минуты|минут|мин|м|min|m)';
+  take(s, re(`~\\s?(?:(\\d+(?:[.,]\\d+)?)\\s?${HOURS})?\\s?(?:(\\d+)\\s?${MINUTES})?`), (m) => {
+    const minutes = Math.round(Number((m[1] ?? '0').replace(',', '.')) * 60 + Number(m[2] ?? 0));
+    if (minutes <= 0) return false;
+    s.out.estimateMin = minutes;
     return true;
   });
   while (
     take(s, new RegExp(`${START}@([\\p{L}\\p{N}_-]+)${END}`, 'u'), (m) => {
-      s.out.tags.push(m[1]);
+      if (!s.out.tags.includes(m[1])) s.out.tags.push(m[1]);
       return true;
     })
   );
@@ -209,7 +231,7 @@ function firstOccurrence(r: Recurrence, today: DateKey): DateKey {
   return r.weekdays.map((d) => nextWeekday(today, d, true)).sort()[0];
 }
 
-const QUOTED = /"[^"]*"|«[^»]*»|“[^”]*”/g;
+const QUOTED = /"[^"]*"|«[^»]*»|“[^”]*”|„[^“”]*[“”]|'[^']*'/g;
 
 /**
  * Parses one line of quick add, e.g. «завтра 9:00 позвонить научнику #учёба !1».
@@ -217,14 +239,16 @@ const QUOTED = /"[^"]*"|«[^»]*»|“[^”]*”/g;
  */
 export function parseQuickAdd(input: string, today: DateKey): ParsedTask {
   const quotes: string[] = [];
-  // Placeholders contain no letters or digits, so they never match a pattern.
-  const masked = input.replace(QUOTED, (q) => `\u0000${'\u0001'.repeat(quotes.push(q))}\u0000`);
+  // Quoted text is swapped for placeholders made of control characters (never matched by any pattern).
+  const masked = input
+    .replace(/[\u0000\u0001]/g, ' ')
+    .replace(QUOTED, (q) => `\u0000${'\u0001'.repeat(quotes.push(q))}\u0000`);
   const s: State = { text: ` ${masked} `, today, out: { title: '', tags: [] } };
 
   parseMarkers(s);
   parseRecurrence(s);
+  parseTime(s); // before dates: «в 10.10» is a time, «10.10» alone is a date
   parseDate(s);
-  parseTime(s);
 
   const { out } = s;
   if (out.dueTime && !out.dueDate) out.dueDate = today;

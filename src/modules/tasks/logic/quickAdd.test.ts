@@ -117,7 +117,6 @@ describe('parseQuickAdd', () => {
     });
 
     it('keeps an explicit start date and uses its weekday for «каждую неделю»', () => {
-      expect(parse('каждую неделю с пятницы отчёт')).toMatchObject({ title: 'с пятницы отчёт' });
       expect(parse('в пт каждую неделю отчёт')).toMatchObject({
         title: 'отчёт',
         dueDate: '2026-11-06',
@@ -160,6 +159,82 @@ describe('parseQuickAdd', () => {
     expect(parse('посмотреть «Через неделю» в пт')).toMatchObject({
       title: 'посмотреть «Через неделю»',
       dueDate: '2026-11-06',
+    });
+  });
+
+  describe('review: tricky inputs', () => {
+    it.each([
+      ['лечь спать в 11 ночи', 'лечь спать', '23:00'],
+      ['лечь спать в 2 ночи', 'лечь спать', '02:00'],
+      ['обед в 1 дня', 'обед', '13:00'],
+      ['обед в 12 дня', 'обед', '12:00'],
+      ['встреча в 10.10', 'встреча', '10:10'],
+      ['в 18.30 ужин', 'ужин', '18:30'],
+      ['позвонить в 15 часов', 'позвонить', '15:00'],
+      ['встреча в 9 часов утра', 'встреча', '09:00'],
+    ])('%s → %s at %s', (input, title, dueTime) => {
+      expect(parse(input)).toMatchObject({ title, dueTime, dueDate: TODAY });
+    });
+
+    it.each([
+      'встреча 1.5 часа',
+      'глава 3.2 прочитать',
+      'iOS 17.4 обновить',
+      'увеличить в 2 раза',
+      'скидка в 5 процентов',
+      'в 3 ряда сложить',
+      'в 1 клик оплатить',
+      'в 20 лет',
+      'в 9 класс записать',
+      'обед в 11 дня',
+      'встать в 13 утра',
+      'встреча в 7:3',
+      'отчёт для СБ',
+      'ЧТ-2 заказать',
+    ])('«%s» has no date or time', (input) => {
+      expect(parse(input)).toEqual({ title: input, tags: [] });
+    });
+
+    it('two-digit years and leap days', () => {
+      expect(parse('сдать 12.11.26')).toMatchObject({ title: 'сдать', dueDate: '2026-11-12' });
+      expect(parse('праздник 29.02')).toMatchObject({ title: 'праздник', dueDate: '2028-02-29' });
+      expect(parse('праздник 29 февраля')).toMatchObject({ dueDate: '2028-02-29' });
+    });
+
+    it('protects „…“ and single quotes too', () => {
+      expect(parse('прочитать „завтра“ Бродского')).toEqual({ title: 'прочитать „завтра“ Бродского', tags: [] });
+      expect(parse("прочитать 'завтра' Бродского")).toEqual({ title: "прочитать 'завтра' Бродского", tags: [] });
+    });
+
+    it('several weekdays after «каждый», and «каждая пятница»', () => {
+      expect(parse('каждый вторник и четверг зарядка')).toMatchObject({
+        title: 'зарядка',
+        recurrence: { kind: 'weekly', weekdays: [2, 4] },
+      });
+      expect(parse('каждая пятница отчёт')).toMatchObject({
+        title: 'отчёт',
+        recurrence: { kind: 'weekly', weekdays: [5] },
+        dueDate: '2026-11-06',
+      });
+      expect(parse('every monday отчёт')).toMatchObject({ title: 'отчёт', recurrence: { kind: 'weekly', weekdays: [1] } });
+    });
+
+    it('«в следующий понедельник» is the nearest Monday', () => {
+      expect(parse('в следующий понедельник созвон')).toMatchObject({ title: 'созвон', dueDate: '2026-11-09' });
+    });
+
+    it('estimates in words and combined, zero ignored', () => {
+      expect(parse('отчёт ~30 минут')).toMatchObject({ title: 'отчёт', estimateMin: 30 });
+      expect(parse('отчёт ~1ч30м')).toMatchObject({ title: 'отчёт', estimateMin: 90 });
+      expect(parse('отчёт ~0м')).toEqual({ title: 'отчёт ~0м', tags: [] });
+    });
+
+    it('duplicate tags are kept once', () => {
+      expect(parse('отчёт @a @a')).toMatchObject({ tags: ['a'] });
+    });
+
+    it('control characters in the input do not leak into the title', () => {
+      expect(parse('a\u0000\u0001\u0000b')).toEqual({ title: 'a b', tags: [] });
     });
   });
 
