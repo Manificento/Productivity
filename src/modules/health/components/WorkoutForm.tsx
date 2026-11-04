@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
+import { saveWorkout } from '../../../core/logging/workout';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Field, IconButton, Input, Select, Textarea } from '../../../ui';
-import { saveWorkout } from '../data/workouts';
 import { intensityWarning } from '../logic/adaptation';
 import { WORKOUT_TYPES, parseDraft, type ExerciseDraft, type WorkoutDraft } from '../logic/workouts';
 

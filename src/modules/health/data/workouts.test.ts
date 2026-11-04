@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { deleteWorkout, loadRecentWorkouts, saveWorkout } from './workouts';
+import { saveWorkout } from '../../../core/logging/workout';
+import { deleteWorkout, loadRecentWorkouts } from './workouts';
 
 const TODAY = '2026-11-04';
 
@@ -9,7 +10,7 @@ beforeEach(async () => {
 });
 
 describe('workouts data', () => {
-  it('Given the form When I save Then the workout is stored with its exercises', async () => {
+  it('Given модуль health сохраняет тренировку When через saveWorkout() из core Then запись в workoutLogs с упражнениями', async () => {
     const saved = await saveWorkout(
       {
         date: TODAY,

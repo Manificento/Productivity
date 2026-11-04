@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
-import { saveWorkout } from '../data/workouts';
+import { saveWorkout } from '../../../core/logging/workout';
 import { WorkoutsTab } from './WorkoutsTab';
 
 const TODAY = '2026-11-04'; // Wednesday
