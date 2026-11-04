@@ -1,24 +1,14 @@
-import { useState } from 'react';
 import type { Food } from '../../../core/types';
-import { cacheOffFood, useOffSearch } from '../data/openFoodFacts';
+import { useOffSearch } from '../data/openFoodFacts';
 import type { OffFood } from '../logic/openFoodFacts';
 
 /**
  * Open Food Facts results for the query (debounced). Products already cached in `foods` are left
- * out — they are listed among the user's own foods. Picking one caches it, so it works offline.
+ * out — they are listed among the user's own foods. A picked product is cached only when added.
  */
-export function OffResults({ query, foods, onPick }: { query: string; foods: Food[]; onPick: (food: Food) => void }) {
+export function OffResults({ query, foods, onPick }: { query: string; foods: Food[]; onPick: (p: OffFood) => void }) {
   const search = useOffSearch(query);
-  const [error, setError] = useState<string>();
   const cached = new Set(foods.flatMap((f) => (f.externalId ? [f.externalId] : [])));
-
-  const pick = async (p: OffFood) => {
-    try {
-      onPick(await cacheOffFood(p));
-    } catch {
-      setError('Не удалось сохранить продукт — попробуйте ещё раз');
-    }
-  };
 
   if (search.status === 'idle') return null;
   const results = search.status === 'done' ? search.results.filter((p) => !cached.has(p.externalId)) : [];
@@ -50,20 +40,15 @@ export function OffResults({ query, foods, onPick }: { query: string; foods: Foo
             <li key={p.externalId}>
               <button
                 type="button"
-                onClick={() => void pick(p)}
+                onClick={() => onPick(p)}
                 className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
               >
-                <span>{p.name}</span>
+                <span className="min-w-0 break-words">{p.name}</span>
                 <span className="shrink-0 text-xs text-zinc-500">{Math.round(p.kcal)} ккал / 100 г</span>
               </button>
             </li>
           ))}
         </ul>
-      )}
-      {error && (
-        <p role="alert" className="py-2 text-sm text-rose-600 dark:text-rose-400">
-          {error}
-        </p>
       )}
     </section>
   );

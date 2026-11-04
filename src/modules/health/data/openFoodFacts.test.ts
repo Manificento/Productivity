@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
-import { OffError, cacheOffFood, searchOff } from './openFoodFacts';
+import { OffError, addOffFoodToMeal, cacheOffFood, searchOff } from './openFoodFacts';
 
 const buckwheat = { externalId: '460', name: 'Гречка', kcal: 313, protein: 12.6, fat: 3.3, carbs: 57.1 };
 
 const jsonResponse = (body: unknown, ok = true) => ({ ok, json: () => Promise.resolve(body) }) as unknown as Response;
 
 beforeEach(async () => {
-  await db.foods.clear();
+  await Promise.all([db.foods.clear(), db.mealLogs.clear()]);
 });
 
 afterEach(() => {
@@ -33,12 +33,21 @@ describe('searchOff', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('a network error from fetch is «offline»; an HTTP error or a bad body is «failed»', async () => {
+  it('fetch failing while the browser is online (e.g. OFF 503 page without CORS) is «failed», not «offline»', async () => {
     await expect(
       searchOff('x', undefined, vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))),
-    ).rejects.toMatchObject({
-      kind: 'offline',
-    });
+    ).rejects.toMatchObject({ kind: 'failed' });
+  });
+
+  it('fetch failing while the browser is offline is «offline»', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValueOnce(true).mockReturnValue(false);
+    await expect(
+      searchOff('x', undefined, vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))),
+    ).rejects.toMatchObject({ kind: 'offline' });
+    online.mockRestore();
+  });
+
+  it('an HTTP error or a bad body is «failed»', async () => {
     await expect(searchOff('x', undefined, vi.fn().mockResolvedValue(jsonResponse({}, false)))).rejects.toMatchObject({
       kind: 'failed',
     });
@@ -63,6 +72,18 @@ describe('cacheOffFood', () => {
       source: 'openfoodfacts',
       createdAt: 7,
     });
+  });
+
+  it('addOffFoodToMeal caches the product and adds it to the meal in one step', async () => {
+    const food = await addOffFoodToMeal('2026-11-04', 'lunch', buckwheat, 80);
+    const [meal] = await db.mealLogs.toArray();
+    expect(meal.items).toEqual([{ foodId: food.id, grams: 80 }]);
+    expect(food.source).toBe('openfoodfacts');
+  });
+
+  it('addOffFoodToMeal with zero grams caches nothing', async () => {
+    await expect(addOffFoodToMeal('2026-11-04', 'lunch', buckwheat, 0)).rejects.toThrow(/граммах/);
+    expect(await db.foods.count()).toBe(0);
   });
 
   it('picking the same product again reuses the cached food', async () => {

@@ -129,6 +129,12 @@ test.describe('health', () => {
               nutriments: { 'energy-kcal_100g': 313, proteins_100g: 12.6, fat_100g: 3.3, carbohydrates_100g: 57.1 },
             },
             { code: '4600000000002', product_name_ru: 'Гречка без калорий', nutriments: {} },
+            {
+              code: '4600000000003',
+              product_name_ru:
+                'Гречневые хлопья быстрого приготовления 5х40г/пакетики_без_пробелов_очень_длинное_название',
+              nutriments: { 'energy-kcal_100g': 330 },
+            },
           ],
         },
       }),
@@ -138,7 +144,8 @@ test.describe('health', () => {
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Поиск продукта').fill('гречка');
     const off = dialog.getByRole('list', { name: 'Результаты Open Food Facts' });
-    await expect(off.getByRole('button')).toHaveCount(1);
+    await expect(off.getByRole('button')).toHaveCount(2);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
     await off.getByRole('button', { name: /Гречка ядрица/ }).click();
     await dialog.getByLabel('Вес, г').fill('80');
     await dialog.getByRole('button', { name: 'Добавить' }).click();
@@ -146,12 +153,23 @@ test.describe('health', () => {
 
     await context.setOffline(true);
     await page.getByRole('button', { name: '+ Добавить в «Ужин»' }).click();
-    await dialog.getByLabel('Поиск продукта').fill('гречка');
+    // A new query (results of «гречка» are already cached for this session).
+    await dialog.getByLabel('Поиск продукта').fill('греч');
     await expect(
       dialog.getByRole('region', { name: 'Мои продукты' }).getByRole('button', { name: /Гречка ядрица/ }),
     ).toBeVisible();
     await expect(dialog.getByText(/Нет сети — поиск в Open Food Facts недоступен/)).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Создать свой продукт' })).toBeVisible();
     await context.setOffline(false);
+  });
+
+  test('food search: OFF rate-limit page without CORS says «не отвечает», not «нет сети»', async ({ page }) => {
+    await page.route(OFF_ROUTE, (route) =>
+      route.fulfill({ status: 503, contentType: 'text/html', body: 'Too many requests' }),
+    );
+    await page.goto('/#/health/food');
+    await page.getByRole('button', { name: '+ Добавить в «Обед»' }).click();
+    await page.getByRole('dialog').getByLabel('Поиск продукта').fill('гречка');
+    await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Open Food Facts сейчас не отвечает');
   });
 });

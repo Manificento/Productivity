@@ -1,9 +1,9 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { createFood } from '../data/food';
-import { SEARCH_DEBOUNCE_MS } from '../data/openFoodFacts';
+import { SEARCH_DEBOUNCE_MS, clearOffSearchCache } from '../data/openFoodFacts';
 import { FoodTab } from './FoodTab';
 
 const TODAY = '2026-11-04';
@@ -39,6 +39,7 @@ const search = (value: string) => fireEvent.change(screen.getByLabelText('Пои
 
 beforeEach(async () => {
   await Promise.all([db.foods.clear(), db.mealLogs.clear()]);
+  clearOffSearchCache();
   fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(OFF_BODY) });
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -112,7 +113,8 @@ describe('food search with Open Food Facts', () => {
       kcal: 313,
     });
 
-    // Offline now: the cached product is still found among my foods.
+    // A new session, offline: the cached product is still found among my foods.
+    clearOffSearchCache();
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     dialog = await openSearch();
     search('гречка');
@@ -141,13 +143,53 @@ describe('food search with Open Food Facts', () => {
     expect(within(dialog).getAllByRole('button', { name: /Гречка ядрица/ })).toHaveLength(1);
   });
 
-  it('Given no network When I search Then a clear message and the «Создать свой продукт» button are shown', async () => {
+  it('picking an API product and going back does not cache it', async () => {
+    renderTab();
+    const dialog = await openSearch();
+    search('гречка');
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Гречка ядрица/ }));
+    await within(dialog).findByLabelText('Вес, г');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Назад' }));
+    expect(await db.foods.count()).toBe(0);
+  });
+
+  it('going back to an earlier query reuses its results without a new request', async () => {
+    renderTab();
+    const dialog = await openSearch();
+    search('гречка');
+    await within(dialog).findByRole('list', { name: 'Результаты Open Food Facts' });
+    search('');
+    search('гречка');
+    expect(within(dialog).getByRole('list', { name: 'Результаты Open Food Facts' })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('when OFF is unreachable while online (rate-limit page without CORS) it says OFF is not responding', async () => {
     fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderTab();
+    const dialog = await openSearch();
+    search('гречка');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Open Food Facts сейчас не отвечает');
+  });
+
+  it('Given no network When I search Then a clear message and the «Создать свой продукт» button are shown', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     renderTab();
     const dialog = await openSearch();
     search('гречка');
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Нет сети — поиск в Open Food Facts недоступен');
     expect(within(dialog).getByRole('button', { name: 'Создать свой продукт' })).toBeInTheDocument();
+  });
+
+  it('when the network comes back the search runs again', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    renderTab();
+    const dialog = await openSearch();
+    search('гречка');
+    expect(await within(dialog).findByText(/Нет сети/)).toBeInTheDocument();
+    online.mockReturnValue(true);
+    act(() => void window.dispatchEvent(new Event('online')));
+    expect(await within(dialog).findByRole('list', { name: 'Результаты Open Food Facts' })).toBeInTheDocument();
   });
 
   it('an API error is reported without breaking the search', async () => {
@@ -158,10 +200,10 @@ describe('food search with Open Food Facts', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Open Food Facts сейчас не отвечает');
   });
 
-  it('one-letter queries are not sent to the API', async () => {
+  it('queries shorter than 3 letters are not sent to the API', async () => {
     renderTab();
     await openSearch();
-    search('г');
+    search('гр');
     await new Promise((r) => setTimeout(r, SEARCH_DEBOUNCE_MS + 50));
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
   });
