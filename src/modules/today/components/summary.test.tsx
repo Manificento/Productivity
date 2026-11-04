@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
@@ -141,6 +141,57 @@ describe('Сводка на «Сегодня»', () => {
     });
     renderToday();
     expect(await screen.findByText('⏱ Идёт таймер · Учёба, с 11:15')).toBeInTheDocument();
+  });
+
+  it('Given идёт Pomodoro-сессия (не секундомер) When я открываю «Сегодня» Then карточка «Фокус» показывает идущую сессию и сколько осталось', async () => {
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 12 * 60_000, endsAt: now + 13 * 60_000 },
+    });
+    renderToday();
+    const card = await screen.findByRole('region', { name: 'Фокус' });
+    expect(card).toHaveTextContent('Идёт Pomodoro · фокус, осталось 13:00');
+    expect(card).not.toHaveTextContent('Идёт таймер');
+  });
+
+  it('Given Pomodoro с истёкшим endsAt Then «Идёт Pomodoro» не показывается', async () => {
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 30 * 60_000, endsAt: now - 5 * 60_000 },
+    });
+    renderToday();
+    expect(await screen.findByText('Фокус-сессий сегодня ещё не было.')).toBeInTheDocument();
+    expect(screen.queryByText(/Идёт Pomodoro/)).not.toBeInTheDocument();
+  });
+
+  it('Given сессия закончилась, пока открыт «Сегодня» When она записана Then «Фокус: X из Y» увеличивается без перехода на «Время»', async () => {
+    await db.settings.put({ key: 'adaptation.baseline', value: { focusPomodoros: 6 } });
+    await db.timeCategories.add({ id: 'study', name: 'Учёба', archived: false, ...base });
+    const now = Date.now();
+    await db.settings.put({
+      key: 'time.pomodoro.running',
+      value: { phase: 'work', startedAt: now - 24 * 60_000, endsAt: now + 60_000 },
+    });
+    renderToday();
+    const card = await screen.findByRole('region', { name: 'Фокус' });
+    expect(card).toHaveTextContent('Идёт Pomodoro');
+    expect(card).toHaveTextContent('Фокус: 0 из 6');
+
+    // «Время» (a background component) records the session and removes the running mirror.
+    await db.timeEntries.add({
+      id: 'p1',
+      categoryId: 'study',
+      start: now - 25 * 60_000,
+      end: now,
+      date: today,
+      source: 'pomodoro',
+      ...base,
+    });
+    await db.settings.delete('time.pomodoro.running');
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Фокус' })).toHaveTextContent('Фокус: 1 из 6'));
+    expect(screen.queryByText(/Идёт Pomodoro/)).not.toBeInTheDocument();
   });
 
   it('Given сон прошлой ночи и тренировки сегодня When экран открыт Then факт против цели', async () => {

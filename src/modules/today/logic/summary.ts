@@ -86,3 +86,34 @@ export function workoutSummary(workouts: WorkoutLog[]): WorkoutSummary | undefin
     maxRpe: Math.max(...workouts.map((w) => w.rpe)),
   };
 }
+
+export type PomodoroPhase = 'work' | 'shortBreak' | 'longBreak';
+
+/** The running Pomodoro phase mirrored by the «Время» module in `settings` (`time.pomodoro.running`). */
+export interface RunningPomodoro {
+  phase: PomodoroPhase;
+  startedAt: number;
+  endsAt: number;
+}
+
+export const POMODORO_PHASE_LABEL: Record<PomodoroPhase, string> = {
+  work: 'фокус',
+  shortBreak: 'короткий перерыв',
+  longBreak: 'длинный перерыв',
+};
+
+/** Validates the setting value; a phase whose `endsAt` has passed is not running (the app may have been closed). */
+export function parseRunningPomodoro(value: unknown, now: number): RunningPomodoro | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const v = value as Record<string, unknown>;
+  const { phase, startedAt, endsAt } = v;
+  if (phase !== 'work' && phase !== 'shortBreak' && phase !== 'longBreak') return undefined;
+  if (typeof startedAt !== 'number' || typeof endsAt !== 'number' || !Number.isFinite(endsAt)) return undefined;
+  return endsAt > now ? { phase, startedAt, endsAt } : undefined;
+}
+
+/** Time left as «м:сс» (rounded up to a second). */
+export function pomodoroLeft(endsAt: number, now: number): string {
+  const sec = Math.max(0, Math.ceil((endsAt - now) / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}

@@ -24,3 +24,26 @@ test('Today shows the active event on top and hints for blocks without data', as
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('Given идёт Pomodoro-сессия When я открываю «Сегодня» Then карточка «Фокус» показывает её и сколько осталось; после конца «Фокус: 1 из 4»', async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date('2026-11-04T09:00:00+05:00') });
+  await page.goto('/#/time/pomodoro');
+  await page.getByRole('button', { name: 'Добавить стартовый набор' }).click();
+  await page.getByRole('button', { name: 'Начать фокус' }).click();
+  await expect(page.getByRole('timer', { name: 'Pomodoro' })).toContainText('Фокус · сессия 1 из 4');
+
+  await page.getByRole('link', { name: 'Сегодня' }).first().click();
+  await page.getByRole('button', { name: 'Пропустить' }).click(); // first-run onboarding
+  const card = page.getByRole('region', { name: 'Фокус' });
+  await expect(card).toContainText('Идёт Pomodoro · фокус, осталось');
+  await expect(card).toContainText('Фокус: 0 из 4');
+
+  await page.clock.fastForward('25:05');
+  await expect(card).toContainText('Фокус: 1 из 4');
+  await expect(card).not.toContainText('Идёт Pomodoro · фокус');
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

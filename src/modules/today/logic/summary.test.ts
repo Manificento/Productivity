@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Habit, HabitLog, LifeEvent, Task, TimeEntry } from '../../../core/types';
-import { eventBanner, focusSummary, habitsSummary, tasksSummary, workoutSummary } from './summary';
+import {
+  eventBanner,
+  focusSummary,
+  habitsSummary,
+  parseRunningPomodoro,
+  pomodoroLeft,
+  tasksSummary,
+  workoutSummary,
+} from './summary';
 
 const base = { createdAt: 0, updatedAt: 0 };
 
@@ -130,6 +138,33 @@ describe('habitsSummary', () => {
       { ...log('a', today, false), id: 'a-again', updatedAt: 2 },
     ];
     expect(habitsSummary([habit({ id: 'a' })], unmarked, today)).toEqual({ done: 0, total: 1 });
+  });
+});
+
+describe('parseRunningPomodoro', () => {
+  const NOW = 1_000_000;
+  const ok = { phase: 'work', startedAt: NOW - 60_000, endsAt: NOW + 60_000 };
+
+  it('Given идущая фаза в settings When now < endsAt Then она возвращается', () => {
+    expect(parseRunningPomodoro(ok, NOW)).toEqual(ok);
+  });
+
+  it('Given endsAt <= now (приложение было закрыто) Then сессия не идёт', () => {
+    expect(parseRunningPomodoro({ ...ok, endsAt: NOW }, NOW)).toBeUndefined();
+  });
+
+  it('Given мусор вместо значения Then undefined', () => {
+    for (const v of [undefined, null, 5, {}, { ...ok, phase: 'x' }, { ...ok, endsAt: 'a' }]) {
+      expect(parseRunningPomodoro(v, NOW)).toBeUndefined();
+    }
+  });
+});
+
+describe('pomodoroLeft', () => {
+  it('сколько осталось в формате м:сс, округляя вверх до секунды', () => {
+    expect(pomodoroLeft(754_100, 0)).toBe('12:35');
+    expect(pomodoroLeft(5_000, 0)).toBe('0:05');
+    expect(pomodoroLeft(-1, 0)).toBe('0:00');
   });
 });
 

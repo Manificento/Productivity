@@ -19,11 +19,13 @@ export interface SummaryData {
   /** Hours slept last night, if logged. */
   sleepHours?: number;
   workouts: WorkoutLog[];
+  /** Raw value of `settings` `time.pomodoro.running` (written by «Время»); validate with `parseRunningPomodoro`. */
+  pomodoroRunning?: unknown;
 }
 
 export async function loadSummaryData(today: DateKey): Promise<SummaryData> {
   const monday = weekStart(today);
-  const [tasks, habits, habitLogs, todayEntries, running, categories, sleep, workouts] = await Promise.all([
+  const [tasks, habits, habitLogs, todayEntries, running, categories, sleep, workouts, pomodoro] = await Promise.all([
     db.tasks
       .where('dueDate')
       .belowOrEqual(today)
@@ -37,6 +39,7 @@ export async function loadSummaryData(today: DateKey): Promise<SummaryData> {
     db.timeCategories.toArray(),
     db.sleepLogs.where('date').equals(today).first(),
     db.workoutLogs.where('date').equals(today).toArray(),
+    db.settings.get('time.pomodoro.running'),
   ]);
   return {
     tasks,
@@ -46,6 +49,7 @@ export async function loadSummaryData(today: DateKey): Promise<SummaryData> {
     categories: Object.fromEntries(categories.map((c) => [c.id, c.name])),
     sleepHours: sleep ? sleepHours(sleep) : undefined,
     workouts,
+    pomodoroRunning: pomodoro?.value,
   };
 }
 
