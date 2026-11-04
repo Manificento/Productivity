@@ -110,7 +110,7 @@ export function PvtTest({
     const { run, secondsLeft } = view;
     const stimulus = run.shownAt !== undefined;
     return (
-      <div className="fixed inset-0 z-30 flex flex-col bg-zinc-50 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] dark:bg-zinc-950">
+      <div className="fixed inset-0 z-30 flex flex-col bg-zinc-50 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] dark:bg-zinc-950">
         <div className="flex items-center justify-between px-4 py-2">
           <span className="text-sm text-zinc-500" aria-live="off">
             Осталось {secondsLeft} с
