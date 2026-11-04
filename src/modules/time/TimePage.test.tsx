@@ -1,23 +1,29 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
-import { newRecord } from '../../core/ids';
 import { atLocalTime } from '../../core/logging/sleepTime';
 import { TimePage } from './TimePage';
-import { createDefaultCategories, listCategories } from './data/timeStore';
+import { createDefaultCategories } from './data/timeStore';
 
-const NOW = atLocalTime('2026-11-02', '10:00');
+const NOW = atLocalTime('2026-11-02', '09:00');
 
-async function categoryId(name: string) {
-  const c = (await listCategories()).find((x) => x.name === name);
-  if (!c) throw new Error(`no category ${name}`);
-  return c.id;
+function renderAt(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/time/*" element={<TimePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
+  localStorage.clear();
   await Promise.all([db.timeCategories.clear(), db.timeEntries.clear()]);
 });
 
@@ -26,153 +32,67 @@ afterEach(() => {
 });
 
 describe('TimePage', () => {
-  it('категорий нет: при открытии «Время» предлагают стартовый набор Учёба, Работа, Спорт, Отдых, Быт', async () => {
+  it('переключает вкладки «Таймер» и «Pomodoro»', async () => {
     const user = userEvent.setup();
-    render(<TimePage />);
-    expect(await screen.findByText(/Учёба, Работа, Спорт, Отдых, Быт/)).toBeInTheDocument();
+    renderAt('/time');
+    expect(await screen.findByRole('button', { name: 'Добавить стартовый набор' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Добавить стартовый набор' }));
-
-    for (const name of ['Учёба', 'Работа', 'Спорт', 'Отдых', 'Быт']) {
-      expect(await screen.findByRole('button', { name })).toBeInTheDocument();
-    }
-    expect(await db.timeCategories.count()).toBe(5);
+    await user.click(screen.getByRole('link', { name: 'Pomodoro' }));
+    expect(await screen.findByText(/Фокус-сессии пишутся в учёт времени/)).toBeInTheDocument();
   });
 
-  it('есть категории: тап «Учёба» создаёт TimeEntry без end, вверху виден идущий таймер с длительностью', async () => {
-    await createDefaultCategories();
+  it('фокус-сессия продолжается на вкладке «Таймер»: по окончании запись создана и звучит сигнал', async () => {
+    await createDefaultCategories(NOW - 1000);
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
     const user = userEvent.setup();
-    render(<TimePage />);
+    renderAt('/time/pomodoro');
+    await user.click(await screen.findByRole('button', { name: 'Начать фокус' }));
+    await user.click(screen.getByRole('link', { name: 'Таймер' }));
+    expect(await screen.findByRole('status', { name: 'Фокус-сессия' })).toHaveTextContent('осталось 25:00');
 
-    await user.click(await screen.findByRole('button', { name: 'Учёба' }));
-
-    const timer = await screen.findByRole('timer', { name: 'Идущий таймер' });
-    expect(within(timer).getByText('Учёба')).toBeInTheDocument();
-    expect(within(timer).getByText('00:00')).toBeInTheDocument();
-    const entries = await db.timeEntries.toArray();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      categoryId: await categoryId('Учёба'),
-      start: NOW,
-      date: '2026-11-02',
-      source: 'timer',
+    vi.setSystemTime(NOW + 25 * 60_000);
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
     });
-    expect(entries[0]?.end).toBeUndefined();
-    expect(screen.getByRole('button', { name: 'Учёба' })).toHaveAttribute('aria-current', 'true');
+    await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
+    expect((await db.timeEntries.toArray())[0]).toMatchObject({ source: 'pomodoro', start: NOW });
+    await waitFor(() => expect(vibrate).toHaveBeenCalledTimes(1));
   });
 
-  it('идёт таймер: после перезагрузки страницы таймер продолжается с правильного времени', async () => {
-    await createDefaultCategories();
-    const work = await categoryId('Работа');
-    await db.timeEntries.add(
-      newRecord({ categoryId: work, start: NOW - (5 * 60_000 + 7_000), date: '2026-11-02', source: 'timer' as const }),
-    );
-
-    const first = render(<TimePage />);
-    expect(await screen.findByText('05:07')).toBeInTheDocument();
-    first.unmount();
-
-    vi.setSystemTime(NOW + 60 * 60_000);
-    render(<TimePage />);
-    const timer = await screen.findByRole('timer', { name: 'Идущий таймер' });
-    expect(within(timer).getByText('Работа')).toBeInTheDocument();
-    expect(within(timer).getByText('1:05:07')).toBeInTheDocument();
-  });
-
-  it('идёт таймер: нажатие «Стоп» проставляет end', async () => {
-    await createDefaultCategories();
+  it('запуск таймера учёта во время фокуса останавливает фокус и сохраняет его минуты', async () => {
+    await createDefaultCategories(NOW - 1000);
     const user = userEvent.setup();
-    render(<TimePage />);
-    await user.click(await screen.findByRole('button', { name: 'Спорт' }));
-    await screen.findByRole('timer');
-
-    vi.setSystemTime(NOW + 30 * 60_000);
-    await user.click(screen.getByRole('button', { name: 'Стоп' }));
-
-    await waitFor(() => expect(screen.queryByRole('timer')).not.toBeInTheDocument());
-    const [entry] = await db.timeEntries.toArray();
-    expect(entry?.end).toBe(NOW + 30 * 60_000);
-  });
-
-  it('тап другой категории при идущем таймере завершает первый в момент старта второго', async () => {
-    await createDefaultCategories();
-    const user = userEvent.setup();
-    render(<TimePage />);
-    await user.click(await screen.findByRole('button', { name: 'Учёба' }));
-    await screen.findByRole('timer');
+    renderAt('/time/pomodoro');
+    await user.click(await screen.findByRole('button', { name: 'Начать фокус' }));
+    await user.click(screen.getByRole('link', { name: 'Таймер' }));
 
     vi.setSystemTime(NOW + 10 * 60_000);
-    await user.click(screen.getByRole('button', { name: 'Работа' }));
+    await user.click(await screen.findByRole('button', { name: 'Работа' }));
 
-    await waitFor(async () => expect(await db.timeEntries.count()).toBe(2));
+    await screen.findByRole('timer', { name: 'Идущий таймер' });
+    expect(screen.queryByRole('status', { name: 'Фокус-сессия' })).not.toBeInTheDocument();
     const entries = (await db.timeEntries.toArray()).sort((a, b) => a.start - b.start);
-    expect(entries[0]?.end).toBe(NOW + 10 * 60_000);
-    expect(entries[1]).toMatchObject({ categoryId: await categoryId('Работа'), start: NOW + 10 * 60_000 });
-    expect(entries[1]?.end).toBeUndefined();
-
-    // tapping the running category again does not split the entry
-    await user.click(screen.getByRole('button', { name: 'Работа' }));
-    expect(await db.timeEntries.count()).toBe(2);
+    expect(entries.map((e) => [e.source, e.start, e.end])).toEqual([
+      ['pomodoro', NOW, NOW + 10 * 60_000],
+      ['timer', NOW + 10 * 60_000, undefined],
+    ]);
   });
 
-  it('добавляю запись вручную: категория, начало и конец → запись сохраняется', async () => {
-    await createDefaultCategories();
+  it('фокус не удалось остановить: таймер учёта не запускается, показана ошибка', async () => {
+    await createDefaultCategories(NOW - 1000);
     const user = userEvent.setup();
-    render(<TimePage />);
-    await user.click(await screen.findByRole('button', { name: '+ Запись вручную' }));
+    renderAt('/time/pomodoro');
+    await user.click(await screen.findByRole('button', { name: 'Начать фокус' }));
+    await user.click(screen.getByRole('link', { name: 'Таймер' }));
 
-    const dialog = screen.getByRole('dialog', { name: 'Запись вручную' });
-    await user.selectOptions(within(dialog).getByLabelText('Категория'), 'Отдых');
-    await user.clear(within(dialog).getByLabelText('Начало'));
-    await user.type(within(dialog).getByLabelText('Начало'), '2026-11-01T23:30');
-    await user.clear(within(dialog).getByLabelText('Конец'));
-    await user.type(within(dialog).getByLabelText('Конец'), '2026-11-02T00:30');
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
-
-    expect(await screen.findByRole('status')).toHaveTextContent('Запись сохранена');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    const [entry] = await db.timeEntries.toArray();
-    expect(entry).toMatchObject({
-      categoryId: await categoryId('Отдых'),
-      start: atLocalTime('2026-11-01', '23:30'),
-      end: atLocalTime('2026-11-02', '00:30'),
-      date: '2026-11-01',
-      source: 'manual',
-    });
-  });
-
-  it('добавляю запись вручную: конец раньше начала — ошибка, запись не сохраняется', async () => {
-    await createDefaultCategories();
-    const user = userEvent.setup();
-    render(<TimePage />);
-    await user.click(await screen.findByRole('button', { name: '+ Запись вручную' }));
-
-    const dialog = screen.getByRole('dialog', { name: 'Запись вручную' });
-    await user.clear(within(dialog).getByLabelText('Начало'));
-    await user.type(within(dialog).getByLabelText('Начало'), '2026-11-02T09:00');
-    await user.clear(within(dialog).getByLabelText('Конец'));
-    await user.type(within(dialog).getByLabelText('Конец'), '2026-11-02T08:00');
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
-
-    expect(within(dialog).getByRole('alert')).toHaveTextContent('Конец должен быть позже начала');
-    expect(await db.timeEntries.count()).toBe(0);
-  });
-
-  it('ошибка записи в базу: показывается сообщение на русском', async () => {
-    await createDefaultCategories();
-    const user = userEvent.setup();
-    render(<TimePage />);
+    vi.setSystemTime(NOW + 10 * 60_000);
     const add = vi.spyOn(db.timeEntries, 'add').mockRejectedValue(new Error('disk full'));
+    await user.click(await screen.findByRole('button', { name: 'Работа' }));
 
-    await user.click(await screen.findByRole('button', { name: 'Учёба' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось сохранить. Попробуйте ещё раз');
-
-    await user.click(screen.getByRole('button', { name: '+ Запись вручную' }));
-    const dialog = screen.getByRole('dialog', { name: 'Запись вручную' });
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      'Не удалось сохранить запись. Попробуйте ещё раз',
-    );
+    expect(await screen.findByText('Не удалось сохранить. Попробуйте ещё раз')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Фокус-сессия' })).toHaveTextContent('Идёт Pomodoro (фокус)');
+    expect(screen.queryByRole('timer', { name: 'Идущий таймер' })).not.toBeInTheDocument();
     add.mockRestore();
   });
 });

@@ -45,3 +45,32 @@ test.describe('time', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe('pomodoro', () => {
+  test('focus runs 25 minutes, then a 5-minute break; durations persist', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-11-02T09:00:00') });
+    await page.goto('/#/time/pomodoro');
+    await page.getByRole('button', { name: 'Добавить стартовый набор' }).click();
+
+    const timer = page.getByRole('timer', { name: 'Pomodoro' });
+    await expect(timer).toContainText('25:00');
+    await page.getByRole('button', { name: 'Начать фокус' }).click();
+    await expect(timer).toContainText('Фокус · сессия 1 из 4');
+
+    await page.clock.fastForward('25:00');
+    await expect(timer).toContainText('Перерыв');
+    await expect(timer).toContainText(/0[45]:\d\d/);
+
+    await page.getByRole('button', { name: 'Пропустить перерыв' }).click();
+    await page.getByRole('button', { name: /^Длительности/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Настройки Pomodoro' });
+    await dialog.getByLabel('Фокус, мин').fill('50');
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(timer).toContainText('50:00');
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Длительности: 50 / 5 / 15 мин' })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
