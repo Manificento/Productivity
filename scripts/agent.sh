@@ -83,8 +83,20 @@ cmd_pr() {
 
 cmd_ci() {
   local pr=${1:?usage: ci <pr>}
-  local sha deadline=$((SECONDS + ${CI_TIMEOUT:-1500}))
+  local sha head_ref deadline=$((SECONDS + ${CI_TIMEOUT:-1500}))
   sha=$(api "repos/$R/pulls/$pr" --jq .head.sha)
+  head_ref=$(api "repos/$R/pulls/$pr" --jq .head.ref)
+  # Right after a push GitHub may still report the previous head commit; when we are on the PR
+  # branch, wait until the PR points at our local HEAD so we never read stale CI results.
+  if [[ "$(git branch --show-current 2>/dev/null)" == "$head_ref" ]]; then
+    local local_sha
+    local_sha=$(git rev-parse HEAD)
+    while [[ "$sha" != "$local_sha" ]]; do
+      (( SECONDS > deadline )) && die "PR #$pr does not point at local HEAD — did the push succeed?"
+      sleep 5
+      sha=$(api "repos/$R/pulls/$pr" --jq .head.sha)
+    done
+  fi
   echo "waiting for CI on PR #$pr ($sha)…"
   while :; do
     local runs pending
