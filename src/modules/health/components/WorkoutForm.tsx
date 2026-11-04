@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
+import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Field, IconButton, Input, Select, Textarea } from '../../../ui';
 import { saveWorkout } from '../data/workouts';
+import { intensityWarning } from '../logic/adaptation';
 import { WORKOUT_TYPES, parseDraft, type ExerciseDraft, type WorkoutDraft } from '../logic/workouts';
 
 const RPE_HINTS: Record<number, string> = {
@@ -34,6 +36,11 @@ export function WorkoutForm({
   const [draft, setDraft] = useState(initial);
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+
+  // Today's plan (adaptation only through useDailyTargets); a workout logged for a past day gets no advice.
+  const targets = useDailyTargets(today);
+  const warning =
+    targets && draft.date === today ? intensityWarning(draft.rpe ? Number(draft.rpe) : undefined, targets) : undefined;
 
   const set = (patch: Partial<WorkoutDraft>) => {
     setDraft((d) => ({ ...d, ...patch }));
@@ -113,6 +120,27 @@ export function WorkoutForm({
               </Select>
             )}
           </Field>
+        </div>
+        <div aria-live="polite">
+          {warning && (
+            <div
+              role="note"
+              aria-label="Предупреждение об интенсивности"
+              className="mb-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+            >
+              <p className="font-medium">
+                {warning.limit === 0
+                  ? 'Сегодня рекомендован отдых без тренировки.'
+                  : `Сегодня рекомендована ${warning.label} интенсивность — RPE до ${warning.limit}.`}{' '}
+                Сохранить всё равно можно.
+              </p>
+              <ul className="mt-1 list-disc pl-5">
+                {warning.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {draft.exercises.map((ex, i) => (

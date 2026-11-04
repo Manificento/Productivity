@@ -65,4 +65,20 @@ test.describe('health', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+
+  test('adaptation: short sleep shows the gap to the goal and a soft warning for a hard workout', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.goto('/#/health');
+    await page.getByLabel('Отбой', { exact: true }).fill('02:00');
+    await page.getByLabel('Подъём', { exact: true }).fill('07:00');
+    await page.getByRole('button', { name: 'Сохранить сон' }).click();
+    await expect(page.getByText('Прошлая ночь: 5 ч')).toBeVisible();
+    await expect(page.getByText('(−2,5 ч)')).toBeVisible();
+
+    await page.getByRole('link', { name: 'Тренировки' }).click();
+    await page.getByLabel('RPE (1–10)').selectOption('7');
+    const warning = page.getByRole('note', { name: 'Предупреждение об интенсивности' });
+    await expect(warning).toContainText('RPE до 4');
+    await expect(warning).toContainText('тренировка не выше лёгкой');
+  });
 });
