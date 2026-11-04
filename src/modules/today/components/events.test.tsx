@@ -47,7 +47,7 @@ describe('События', () => {
     renderAt('/today/events');
     expect(await screen.findByText(/Пока нет событий/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Добавить событие' }));
+    await user.click(screen.getByRole('button', { name: /Добавить событие/ }));
     const dialog = screen.getByRole('dialog', { name: 'Новое событие' });
     await user.type(within(dialog).getByLabelText('Название'), 'IELTS');
     await user.selectOptions(within(dialog).getByLabelText('Тип'), 'exam');
@@ -77,7 +77,7 @@ describe('События', () => {
   it('shows validation errors and does not save an event without a title', async () => {
     const user = userEvent.setup();
     renderAt('/today/events');
-    await user.click(await screen.findByRole('button', { name: 'Добавить событие' }));
+    await user.click(await screen.findByRole('button', { name: /Добавить событие/ }));
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Введите название');
     expect(await db.lifeEvents.count()).toBe(0);
