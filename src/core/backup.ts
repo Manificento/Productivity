@@ -24,7 +24,9 @@ export async function exportAll(now: number = Date.now()): Promise<Backup> {
 export function isBackup(value: unknown): value is Backup {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Partial<Backup>;
-  return v.format === BACKUP_FORMAT && typeof v.version === 'number' && typeof v.tables === 'object' && v.tables !== null;
+  return (
+    v.format === BACKUP_FORMAT && typeof v.version === 'number' && typeof v.tables === 'object' && v.tables !== null
+  );
 }
 
 /**
@@ -34,12 +36,16 @@ export function isBackup(value: unknown): value is Backup {
 export async function importAll(backup: unknown): Promise<void> {
   if (!isBackup(backup)) throw new Error('Файл не похож на резервную копию LifeOS');
   if (backup.version > BACKUP_VERSION) throw new Error('Резервная копия из более новой версии приложения');
-  await db.transaction('rw', TABLE_NAMES.map((n) => db.table(n)), async () => {
-    for (const name of TABLE_NAMES) {
-      const table = db.table(name);
-      await table.clear();
-      const rows = backup.tables[name];
-      if (Array.isArray(rows) && rows.length) await table.bulkAdd(rows);
-    }
-  });
+  await db.transaction(
+    'rw',
+    TABLE_NAMES.map((n) => db.table(n)),
+    async () => {
+      for (const name of TABLE_NAMES) {
+        const table = db.table(name);
+        await table.clear();
+        const rows = backup.tables[name];
+        if (Array.isArray(rows) && rows.length) await table.bulkAdd(rows);
+      }
+    },
+  );
 }
