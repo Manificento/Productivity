@@ -39,6 +39,37 @@ export async function addMealItem(
   });
 }
 
+/** Changes the weight of one item (by its position in the meal). */
+export async function setMealItemGrams(
+  mealId: string,
+  index: number,
+  grams: number,
+  now: number = Date.now(),
+): Promise<void> {
+  if (!(grams > 0)) throw new Error('Укажите вес в граммах');
+  await updateItems(mealId, index, now, (items) => items.with(index, { ...items[index], grams }));
+}
+
+/** Removes one item (by its position); a meal left without items is removed too. */
+export async function removeMealItem(mealId: string, index: number, now: number = Date.now()): Promise<void> {
+  await updateItems(mealId, index, now, (items) => items.toSpliced(index, 1));
+}
+
+async function updateItems(
+  mealId: string,
+  index: number,
+  now: number,
+  change: (items: MealLog['items']) => MealLog['items'],
+): Promise<void> {
+  await db.transaction('rw', db.mealLogs, async () => {
+    const meal = await db.mealLogs.get(mealId);
+    if (!meal || !meal.items[index]) throw new Error('Позиция не найдена — обновите экран');
+    const items = change(meal.items);
+    if (items.length === 0) await db.mealLogs.delete(mealId);
+    else await db.mealLogs.put({ ...meal, ...touch({ items }, now) });
+  });
+}
+
 /** Whether this food was ever logged in a meal. */
 export async function hasLoggedFood(foodId: string): Promise<boolean> {
   return (await db.mealLogs.filter((m) => m.items.some((i) => i.foodId === foodId)).count()) > 0;

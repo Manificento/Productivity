@@ -14,6 +14,10 @@ export async function saveWorkout(input: WorkoutInput, now: number = Date.now())
   return record;
 }
 
+export async function deleteWorkout(id: string): Promise<void> {
+  await db.workoutLogs.delete(id);
+}
+
 /**
  * Workouts of the last 60 days (this covers the current week too), newest first
  * (same day: latest saved first).
