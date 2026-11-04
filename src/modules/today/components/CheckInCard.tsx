@@ -70,37 +70,45 @@ function CheckInForm({ initial, date, onDone }: { initial?: CheckIn; date: DateK
   );
 }
 
-/** Daily energy/focus check-in at the top of «Сегодня»; one record per day. */
-export function CheckInCard({ date }: { date: DateKey }) {
+/** Daily energy/focus check-in; one record per day. `embedded` drops the card frame (inside the morning card). */
+export function CheckInCard({ date, embedded = false }: { date: DateKey; embedded?: boolean }) {
   const checkIn = useCheckIn(date);
   const [editing, setEditing] = useState(false);
 
+  const body =
+    checkIn === undefined ? (
+      <p className="text-sm text-zinc-500">Загрузка…</p>
+    ) : checkIn && !editing ? (
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 text-sm">
+          <p className="font-medium">
+            Энергия {checkIn.energy}/5 · фокус {checkIn.focus}/5
+          </p>
+          {checkIn.note && <p className="truncate text-zinc-500">{checkIn.note}</p>}
+        </div>
+        <Button variant="secondary" onClick={() => setEditing(true)}>
+          Изменить
+        </Button>
+      </div>
+    ) : (
+      <CheckInForm
+        key={checkIn?.id ?? 'new'}
+        initial={checkIn ?? undefined}
+        date={date}
+        onDone={() => setEditing(false)}
+      />
+    );
+
   return (
     <section aria-label={TITLE}>
-      <Card title={TITLE}>
-        {checkIn === undefined ? (
-          <p className="text-sm text-zinc-500">Загрузка…</p>
-        ) : checkIn && !editing ? (
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 text-sm">
-              <p className="font-medium">
-                Энергия {checkIn.energy}/5 · фокус {checkIn.focus}/5
-              </p>
-              {checkIn.note && <p className="truncate text-zinc-500">{checkIn.note}</p>}
-            </div>
-            <Button variant="secondary" onClick={() => setEditing(true)}>
-              Изменить
-            </Button>
-          </div>
-        ) : (
-          <CheckInForm
-            key={checkIn?.id ?? 'new'}
-            initial={checkIn ?? undefined}
-            date={date}
-            onDone={() => setEditing(false)}
-          />
-        )}
-      </Card>
+      {embedded ? (
+        <>
+          <h3 className="mb-2 text-sm font-semibold">{TITLE}</h3>
+          {body}
+        </>
+      ) : (
+        <Card title={TITLE}>{body}</Card>
+      )}
     </section>
   );
 }
