@@ -1,7 +1,9 @@
+import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import { shiftDateKey, todayKey } from '../../../core/dates';
 import { Empty } from '../../../ui';
 import { useTasksData } from '../data/useTasksData';
 import { dayHeading } from '../logic/format';
+import { focusFirst } from '../logic/capacity';
 import { upcomingGroups } from '../logic/lists';
 import { AddTaskForm } from './AddTaskForm';
 import { TaskRows } from './TaskRows';
@@ -12,6 +14,7 @@ export function UpcomingView() {
   const data = useTasksData();
   const today = todayKey();
   const { actions, ui } = useTaskActions();
+  const focusProjectId = useDailyTargets(today)?.focusProjectId;
   const groups = data ? upcomingGroups(data.tasks, today) : [];
   return (
     <>
@@ -25,11 +28,12 @@ export function UpcomingView() {
         groups.map((g) => (
           <TaskSection key={g.date} title={dayHeading(g.date, today)}>
             <TaskRows
-              tasks={g.tasks}
+              tasks={focusFirst(g.tasks, focusProjectId)}
               today={today}
               actions={actions}
               projectNames={data.projectNames}
               showDate={false}
+              focusProjectId={focusProjectId}
             />
           </TaskSection>
         ))

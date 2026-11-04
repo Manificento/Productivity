@@ -108,6 +108,20 @@ export function useTask(id: Id | undefined): Task | undefined {
   return useLiveQuery(() => (id ? db.tasks.get(id) : undefined), [id]);
 }
 
+/** Moves the given tasks to `dueDate` (one transaction). Returns how many were moved. */
+export async function deferTasks(ids: Id[], dueDate: DateKey, now: number = Date.now()): Promise<number> {
+  return db.transaction('rw', db.tasks, async () => {
+    let moved = 0;
+    for (const id of ids) moved += await db.tasks.update(id, touch({ dueDate }, now));
+    return moved;
+  });
+}
+
+/** Date of a life event (read-only: events belong to `today`); undefined while loading or if absent. */
+export function useEventDate(eventId: Id | undefined): DateKey | undefined {
+  return useLiveQuery(async () => (eventId ? (await db.lifeEvents.get(eventId))?.date : undefined), [eventId]);
+}
+
 export async function deleteTask(id: Id): Promise<void> {
   await db.tasks.delete(id);
 }

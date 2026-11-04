@@ -93,3 +93,21 @@ test.describe('editing', () => {
     await expect(page.getByRole('region', { name: /^Завтра/ }).getByText('Конспект главы 3')).toBeVisible();
   });
 });
+
+test.describe('day capacity', () => {
+  test('«Сегодня» shows the plan against the day’s capacity', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(2026, 10, 4, 12, 0));
+    await page.goto('/#/tasks');
+    const field = page.getByLabel('Новая задача');
+    await field.fill('Курсовая ~4ч');
+    await page.getByRole('button', { name: 'Добавить' }).click();
+    await field.fill('Отчёт ~3ч');
+    await page.getByRole('button', { name: 'Добавить' }).click();
+    await field.fill('Позвонить');
+    await page.getByRole('button', { name: 'Добавить' }).click();
+
+    await expect(page.getByText('450 из 360 мин')).toBeVisible();
+    await expect(page.getByText('План больше ёмкости дня')).toBeVisible();
+    await expect(page.getByText('Без оценки: 1 задача — считаю по 30 мин')).toBeVisible();
+  });
+});

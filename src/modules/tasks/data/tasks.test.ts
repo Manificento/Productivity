@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
 import type { Task } from '../../../core/types';
-import { addQuickTask, addTask, deleteTask, postponeToTomorrow, toggleTask, updateTask } from './tasks';
+import { addQuickTask, addTask, deferTasks, deleteTask, postponeToTomorrow, toggleTask, updateTask } from './tasks';
 
 beforeEach(async () => {
   await Promise.all([db.tasks.clear(), db.projects.clear()]);
@@ -270,5 +270,12 @@ describe('tasks data', () => {
       await postponeToTomorrow(id, '2026-11-04', 5000);
       expect(await db.tasks.get(id)).toMatchObject({ dueDate: '2026-11-05', dueTime: '18:00', updatedAt: 5000 });
     });
+  });
+
+  it('deferTasks moves the given tasks and skips missing ones', async () => {
+    const a = await addTask({ title: 'a', dueDate: '2026-11-04' });
+    const b = await addTask({ title: 'b', dueDate: '2026-11-04' });
+    expect(await deferTasks([a, b, 'nope'], '2026-11-08', 5000)).toBe(2);
+    expect(await db.tasks.get(a)).toMatchObject({ dueDate: '2026-11-08', updatedAt: 5000 });
   });
 });

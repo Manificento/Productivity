@@ -8,12 +8,15 @@ export function TaskRows({
   actions,
   projectNames,
   showDate,
+  focusProjectId,
 }: {
   tasks: Task[];
   today: DateKey;
   actions: TaskActions;
   projectNames?: Map<Id, string>;
   showDate?: boolean;
+  /** Rows of this project get the «фокус» chip (from DailyTargets). */
+  focusProjectId?: Id;
 }) {
   return (
     <ul>
@@ -24,6 +27,7 @@ export function TaskRows({
           today={today}
           actions={actions}
           showDate={showDate}
+          focus={focusProjectId !== undefined && t.projectId === focusProjectId}
           projectName={t.projectId ? projectNames?.get(t.projectId) : undefined}
         />
       ))}

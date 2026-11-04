@@ -16,7 +16,8 @@ export function setupTasksTestEnv(): void {
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
-    await Promise.all([db.tasks.clear(), db.projects.clear()]);
+    // lifeEvents/settings belong to `today`; tests clear them only to start from a normal day.
+    await Promise.all([db.tasks.clear(), db.projects.clear(), db.lifeEvents.clear(), db.settings.clear()]);
   });
   afterEach(() => {
     vi.restoreAllMocks();
