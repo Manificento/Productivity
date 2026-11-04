@@ -80,6 +80,7 @@ flowchart LR
   ev[(lifeEvents)] --> load
   sl[(sleepLogs)] --> load
   ci[(checkIns)] --> load
+  wl[(workoutLogs)] --> load
   bl[(settings:<br/>adaptation.baseline)] --> load
   load[loadDailyTargets] --> eng[computeDailyTargets<br/>чистая функция]
   eng --> dt{{DailyTargets}}
@@ -88,6 +89,9 @@ flowchart LR
   dt --> h[health: сон, тренировка, еда]
   dt --> td[today: цели и причины]
 ```
+
+`workoutLogs` нужны правилу «вчера тяжёлая тренировка (RPE ≥ 8) → сегодня не выше умеренной»; полный список
+правил — [SPEC, раздел 5.4](SPEC.md#54-правила-декларативные-расширяемые).
 
 Модули только **читают** `DailyTargets`. Новое правило добавляется в `core/adaptation/rules.ts`
 с тестом — ни один модуль не меняется.
