@@ -1,6 +1,6 @@
 import { toDateKey } from '../../../core/dates';
 import type { DateKey, Habit, HabitLog } from '../../../core/types';
-import { doneDays, isDue } from '../../../core/habitSchedule';
+import { doneDays, isDue, isWeekly } from '../../../core/habitSchedule';
 import { streak, type Streak } from './streaks';
 
 export interface TodayHabit {
@@ -18,7 +18,7 @@ export function todayHabits(
   habits: readonly Habit[],
   logs: readonly HabitLog[],
   today: DateKey,
-): { items: TodayHabit[]; other: Habit[] } {
+): { items: TodayHabit[]; other: Habit[]; goalMet: Set<string> } {
   const byHabit = new Map<string, HabitLog[]>();
   for (const log of logs) {
     const list = byHabit.get(log.habitId);
@@ -35,7 +35,10 @@ export function todayHabits(
       streak: streak({ schedule: habit.schedule, logs: own, since: toDateKey(habit.createdAt) }, today),
     };
   });
-  return { items, other: active.filter((h) => !due(h)) };
+  const other = active.filter((h) => !due(h));
+  // A weekly habit is never «not scheduled», so being out of today's list means its weekly goal is met.
+  const goalMet = new Set(other.filter((h) => isWeekly(h.schedule)).map((h) => h.id));
+  return { items, other, goalMet };
 }
 
 /** «🔥5» for days, «🔥2 нед.» for weekly habits. */

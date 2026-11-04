@@ -64,4 +64,29 @@ test.describe('habits', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+  test('weekly goal met: hint under «Не сегодня», an extra mark goes through the habit card', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-11-05T20:00:00+05:00') });
+    await page.goto('/#/habits');
+    await page.getByRole('button', { name: '+ Привычка' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Новая привычка' });
+    await dialog.getByLabel('Название').fill('Зал');
+    await dialog.getByRole('radio', { name: 'N раз в неделю' }).click();
+    await dialog.getByLabel('Сколько раз в неделю').fill('1');
+    await dialog.getByRole('button', { name: 'Сохранить' }).click();
+
+    // goal met by a mark on an earlier day of this week → the habit leaves today's list
+    await page.getByRole('link', { name: 'Открыть «Зал»' }).click();
+    await page.getByRole('button', { name: /^4 ноября:/ }).click();
+    await expect(page.getByRole('button', { name: '4 ноября: выполнено' })).toBeVisible();
+    await page.goBack();
+
+    const row = page.getByRole('link', { name: 'Открыть «Зал»' });
+    await expect(row).toContainText('цель недели выполнена');
+    await expect(page.getByRole('button', { name: 'Отметить «Зал»' })).toHaveCount(0);
+
+    // an extra mark: open the card and mark the day in the calendar
+    await row.click();
+    await page.getByRole('button', { name: /^5 ноября:/ }).click();
+    await expect(page.getByRole('button', { name: '5 ноября: выполнено' })).toBeVisible();
+  });
 });
