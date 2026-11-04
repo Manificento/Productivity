@@ -113,3 +113,26 @@ export function useOpenTasks(): Task[] | undefined {
     );
   }, []);
 }
+
+/** All categories, archived included (old entries still need their names). */
+export function useAllCategories(): TimeCategory[] | undefined {
+  return useLiveQuery(() => db.timeCategories.toArray(), []);
+}
+
+/**
+ * Entries that may overlap [from, …): those started up to a week before `from`
+ * (long entries crossing into `from` are included), plus running ones.
+ */
+export function useEntriesOverlapping(from: Millis): TimeEntry[] | undefined {
+  return useLiveQuery(async () => {
+    const [recent, running] = await Promise.all([
+      db.timeEntries
+        .where('start')
+        .aboveOrEqual(from - 7 * 24 * 3_600_000)
+        .toArray(),
+      runningEntries(),
+    ]);
+    const byId = new Map([...recent, ...running].map((e) => [e.id, e]));
+    return [...byId.values()];
+  }, [from]);
+}

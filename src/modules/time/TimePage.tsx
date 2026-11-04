@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom';
 import { Page, Tabs } from '../../ui';
+import { BalanceView } from './components/BalanceView';
 import { PomodoroView } from './components/PomodoroView';
 import { TrackerView } from './components/TrackerView';
 import { usePomodoro } from './components/usePomodoro';
@@ -26,11 +27,13 @@ export function TimePage() {
         items={[
           { to: '/time', label: 'Таймер', end: true },
           { to: '/time/pomodoro', label: 'Pomodoro' },
+          { to: '/time/balance', label: 'Баланс' },
         ]}
       />
       <Routes>
         <Route index element={<TrackerView focus={focus} />} />
         <Route path="pomodoro" element={<PomodoroView pomodoro={pomodoro} />} />
+        <Route path="balance" element={<BalanceView />} />
       </Routes>
     </Page>
   );
