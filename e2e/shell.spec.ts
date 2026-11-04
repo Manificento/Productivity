@@ -53,3 +53,23 @@ test('Given любой экран с Tabs When он отображается н�
     }
   }
 });
+
+test('Given длинный список When я прокручиваю экран 360 px Then ⚙️ не перекрывает кнопки строк', async ({ page }) => {
+  await page.goto('/#/tasks');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  // A long page: tall filler after the header, so the page can scroll past the header.
+  await page
+    .locator('section')
+    .first()
+    .evaluate((el) => {
+      const filler = document.createElement('div');
+      filler.style.height = '3000px';
+      el.append(filler);
+    });
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+  // The link lives in the Page header and scrolls away with it instead of floating over the rows.
+  await expect(page.locator('section > header').first().getByRole('link', { name: 'Настройки' })).toHaveCount(1);
+  const settings = await page.getByRole('link', { name: 'Настройки' }).boundingBox();
+  expect(settings === null || settings.y + settings.height <= 0).toBe(true);
+});

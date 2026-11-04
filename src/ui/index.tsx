@@ -3,17 +3,33 @@
  * Adding a component here is a contract change — prefer building inside your module first.
  */
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Link, useMatch } from 'react-router-dom';
 
 export { Field, Input, Rating, Segmented, Select, Textarea } from './forms';
 export { Chip, IconButton, Progress, Sheet, Tabs } from './widgets';
 
+/**
+ * A screen: title, optional `actions` and the ⚙️ «Настройки» link in the header. The link is part of the
+ * header (not fixed), so it scrolls away with it and never covers the content below.
+ */
 export function Page({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+  const onSettings = useMatch('/settings/*') !== null;
   return (
-    <section className="mx-auto w-full max-w-2xl px-4 pb-28 pt-4">
-      {/* pr-12: room for the fixed ⚙️ «Настройки» link of the app shell, so `actions` stay tappable. */}
-      <header className="mb-4 flex items-center justify-between gap-2 pr-12">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {actions}
+    <section className="mx-auto w-full max-w-2xl px-4 pb-28 pt-[max(1rem,env(safe-area-inset-top))]">
+      <header className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="min-w-0 break-words text-2xl font-semibold tracking-tight">{title}</h1>
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          {!onSettings && (
+            <Link
+              to="/settings"
+              aria-label="Настройки"
+              className="-mr-2 flex size-11 items-center justify-center text-xl"
+            >
+              ⚙️
+            </Link>
+          )}
+        </div>
       </header>
       {children}
     </section>

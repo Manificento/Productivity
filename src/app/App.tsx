@@ -1,4 +1,4 @@
-import { HashRouter, Link, NavLink, Route, Routes } from 'react-router-dom';
+import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { MODULES, NAV_MODULES } from './modules';
 
 /** Nav links point at the module root, without the '/*' suffix. */
@@ -35,14 +35,6 @@ export function App() {
   return (
     <HashRouter>
       <div className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-        {/* Page headers keep their right edge free for this link (see `Page` in src/ui). */}
-        <Link
-          to="/settings"
-          aria-label="Настройки"
-          className="fixed right-3 top-3 z-10 flex size-11 items-center justify-center text-xl"
-        >
-          ⚙️
-        </Link>
         <Routes>
           {MODULES.map((m) => (
             <Route key={m.id} path={m.path} element={<m.Page />} />

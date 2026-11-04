@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import { Field, Input, Progress, Rating, Segmented, Sheet, Tabs } from '.';
+import { Field, Input, Page, Progress, Rating, Segmented, Sheet, Tabs } from '.';
 
 describe('UI kit', () => {
   it('Field associates its label with the control', () => {
@@ -19,6 +19,34 @@ describe('UI kit', () => {
     );
     expect(screen.getByRole('alert')).toHaveTextContent('Введите число');
     expect(screen.queryByText('на порцию')).not.toBeInTheDocument();
+  });
+
+  it('Given телефон с вырезом When открыто приложение Then шапка Page с ⚙️ учитывает safe-area-inset-top', () => {
+    render(
+      <MemoryRouter>
+        <Page title="Задачи" actions={<button type="button">Добавить</button>}>
+          <p>список</p>
+        </Page>
+      </MemoryRouter>,
+    );
+    const header = screen.getByRole('banner');
+    // jsdom has no layout or env(): the safe-area padding is checked via its Tailwind class.
+    expect(header.closest('section')).toHaveClass('pt-[max(1rem,env(safe-area-inset-top))]');
+    const settings = within(header).getByRole('link', { name: 'Настройки' });
+    expect(settings).toHaveAttribute('href', '/settings');
+    expect(settings).toHaveClass('size-11');
+    expect(within(header).getByRole('button', { name: 'Добавить' })).toBeInTheDocument();
+  });
+
+  it('the settings page does not link to itself', () => {
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <Page title="Настройки">
+          <p>…</p>
+        </Page>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: 'Настройки' })).not.toBeInTheDocument();
   });
 
   it('Given любой экран с Tabs When он отображается на 360 px Then высота каждой вкладки ≥ 44 px (min-h-11)', () => {
