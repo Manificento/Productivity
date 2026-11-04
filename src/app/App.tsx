@@ -48,6 +48,7 @@ export function App() {
             <Route key={m.id} path={m.path} element={<m.Page />} />
           ))}
         </Routes>
+        {MODULES.map((m) => m.Background && <m.Background key={m.id} />)}
         <BottomNav />
       </div>
     </HashRouter>
