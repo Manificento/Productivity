@@ -4,6 +4,7 @@ import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { DateKey, Id, Project, Task } from '../../../core/types';
 import type { TaskPatch } from '../logic/editForm';
+import { deferDate } from '../logic/capacity';
 import { findActiveProject } from '../logic/projects';
 import { isNextCopyOf, nextOccurrence } from '../logic/recurrence';
 import type { QuickDraft } from '../logic/quickDraft';
@@ -117,9 +118,22 @@ export async function deferTasks(ids: Id[], dueDate: DateKey, now: number = Date
   });
 }
 
-/** Date of a life event (read-only: events belong to `today`); undefined while loading or if absent. */
-export function useEventDate(eventId: Id | undefined): DateKey | undefined {
-  return useLiveQuery(async () => (eventId ? (await db.lifeEvents.get(eventId))?.date : undefined), [eventId]);
+/**
+ * «Перенести P3–P4»: moves the tasks to the day after the active event (or tomorrow). The event's date
+ * is read in the same transaction (read-only — events belong to `today`), never from a stale render.
+ * Returns the target day and how many tasks moved.
+ */
+export async function deferLowPriority(
+  ids: Id[],
+  today: DateKey,
+  activeEventId: Id | undefined,
+  now: number = Date.now(),
+): Promise<{ to: DateKey; moved: number }> {
+  return db.transaction('rw', db.tasks, db.lifeEvents, async () => {
+    const event = activeEventId ? await db.lifeEvents.get(activeEventId) : undefined;
+    const to = deferDate(today, event?.date);
+    return { to, moved: await deferTasks(ids, to, now) };
+  });
 }
 
 export async function deleteTask(id: Id): Promise<void> {

@@ -47,7 +47,12 @@ describe('capacity', () => {
     expect(deferrable(list, TODAY).map((t) => t.id)).toEqual(['overdue-p4', 'p3', 'p4']);
   });
 
-  it('Given активное событие When переношу P3–P4 Then на день после события, иначе на завтра (но не раньше завтра)', () => {
+  it('P3–P4 tasks of the focus project are not deferred', () => {
+    const list = [task('eng-p3', { priority: 3, projectId: 'eng' }), task('other-p3', { priority: 3 })];
+    expect(deferrable(list, TODAY, 'eng').map((t) => t.id)).toEqual(['other-p3']);
+  });
+
+  it('Given allowDeferLowPriority = true и план превышает ёмкость When я нажимаю «Перенести P3–P4» Then задачи P3–P4 на сегодня переносятся на день после активного события (или на завтра, если события нет)', () => {
     expect(deferDate(TODAY, '2026-11-07')).toBe('2026-11-08');
     expect(deferDate(TODAY, undefined)).toBe('2026-11-05');
     expect(deferDate(TODAY, TODAY)).toBe('2026-11-05'); // event today → tomorrow

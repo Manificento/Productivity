@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
 import type { Task } from '../../../core/types';
-import { addQuickTask, addTask, deferTasks, deleteTask, postponeToTomorrow, toggleTask, updateTask } from './tasks';
+import {
+  addQuickTask,
+  addTask,
+  deferLowPriority,
+  deferTasks,
+  deleteTask,
+  postponeToTomorrow,
+  toggleTask,
+  updateTask,
+} from './tasks';
 
 beforeEach(async () => {
   await Promise.all([db.tasks.clear(), db.projects.clear()]);
@@ -277,5 +286,23 @@ describe('tasks data', () => {
     const b = await addTask({ title: 'b', dueDate: '2026-11-04' });
     expect(await deferTasks([a, b, 'nope'], '2026-11-08', 5000)).toBe(2);
     expect(await db.tasks.get(a)).toMatchObject({ dueDate: '2026-11-08', updatedAt: 5000 });
+  });
+
+  it('deferLowPriority reads the event date itself: day after the event, or tomorrow without one', async () => {
+    await db.lifeEvents.clear();
+    await db.lifeEvents.add({
+      id: 'exam',
+      createdAt: 0,
+      updatedAt: 0,
+      title: 'Экзамен',
+      type: 'exam',
+      date: '2026-11-07',
+      importance: 2,
+      prepDays: 7,
+    });
+    const a = await addTask({ title: 'a', dueDate: '2026-11-04' });
+    expect(await deferLowPriority([a], '2026-11-04', 'exam')).toEqual({ to: '2026-11-08', moved: 1 });
+    expect(await deferLowPriority([a], '2026-11-04', undefined)).toEqual({ to: '2026-11-05', moved: 1 });
+    await db.lifeEvents.clear();
   });
 });

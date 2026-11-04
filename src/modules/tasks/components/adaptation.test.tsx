@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import type { Project } from '../../../core/types';
 import { findSection, NOW, renderTasks, seedProject, seedTask, setupTasksTestEnv, TODAY } from '../testing';
@@ -64,6 +64,12 @@ describe('tasks adapt to the day', () => {
     const big = await seedTask('Пробный экзамен', { dueDate: TODAY, priority: 1, estimateMin: 300 });
     const p3 = await seedTask('Разобрать почту', { dueDate: TODAY, priority: 3, estimateMin: 60 });
     const p4 = await seedTask('Полить цветы', { dueDate: TODAY, priority: 4, estimateMin: 30 });
+    const prep = await seedTask('Слова, 50 штук', {
+      dueDate: TODAY,
+      priority: 3,
+      projectId: english.id,
+      estimateMin: 30,
+    });
     renderTasks('/tasks');
 
     await user.click(await screen.findByRole('button', { name: 'Перенести P3–P4' }));
@@ -72,7 +78,9 @@ describe('tasks adapt to the day', () => {
     expect((await db.tasks.get(p3.id))?.dueDate).toBe('2026-11-08');
     expect((await db.tasks.get(p4.id))?.dueDate).toBe('2026-11-08');
     expect((await db.tasks.get(big.id))?.dueDate).toBe(TODAY);
-    expect(await screen.findByText('300 из 360 мин')).toBeInTheDocument();
+    // The exam's own preparation (focus project) stays on today.
+    expect((await db.tasks.get(prep.id))?.dueDate).toBe(TODAY);
+    expect(await screen.findByText('330 из 360 мин')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Перенести P3–P4' })).not.toBeInTheDocument();
   });
 
@@ -93,5 +101,18 @@ describe('tasks adapt to the day', () => {
 
     expect(await screen.findByText('120 из 360 мин')).toBeInTheDocument();
     expect(screen.getByText('Без оценки: 2 задачи — считаю по 30 мин')).toBeInTheDocument();
+  });
+
+  it('shows an error when deferring fails', async () => {
+    const user = userEvent.setup();
+    const english = await seedProject('Английский');
+    await seedExam(english);
+    await seedTask('Пробный экзамен', { dueDate: TODAY, priority: 1, estimateMin: 400 });
+    await seedTask('Полить цветы', { dueDate: TODAY, priority: 4 });
+    vi.spyOn(db.tasks, 'update').mockRejectedValueOnce(new Error('quota'));
+    renderTasks('/tasks');
+
+    await user.click(await screen.findByRole('button', { name: 'Перенести P3–P4' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось перенести задачи');
   });
 });

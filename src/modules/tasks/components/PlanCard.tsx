@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { DailyTargets } from '../../../core/adaptation/types';
 import type { DateKey, Task } from '../../../core/types';
 import { Button, Progress } from '../../../ui';
-import { deferTasks, useEventDate } from '../data/tasks';
-import { deferDate, deferrable, DEFAULT_ESTIMATE_MIN, planFor } from '../logic/capacity';
+import { deferLowPriority } from '../data/tasks';
+import { deferrable, DEFAULT_ESTIMATE_MIN, planFor } from '../logic/capacity';
 import { dueLabel } from '../logic/format';
 
 function tasksWord(n: number): string {
@@ -16,31 +16,34 @@ function tasksWord(n: number): string {
 
 /** Today's plan against the day's capacity, and «Перенести P3–P4» when the day is overloaded. */
 export function PlanCard({ tasks, today, targets }: { tasks: Task[]; today: DateKey; targets: DailyTargets }) {
-  const eventDate = useEventDate(targets.activeEventId);
+  const [pending, setPending] = useState(false);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const plan = planFor(tasks, targets.taskCapacityMin);
-  const movable = deferrable(tasks, today);
+  const movable = deferrable(tasks, today, targets.focusProjectId);
   const canDefer = targets.allowDeferLowPriority && plan.over && movable.length > 0;
 
   async function defer() {
-    const to = deferDate(today, eventDate);
+    setPending(true);
     try {
-      const moved = await deferTasks(
+      const { to, moved } = await deferLowPriority(
         movable.map((t) => t.id),
-        to,
+        today,
+        targets.activeEventId,
       );
       setStatus(`Перенесено: ${moved} ${tasksWord(moved)} на ${dueLabel(to, today).toLowerCase()}`);
       setError(undefined);
     } catch {
       setError('Не удалось перенести задачи — попробуйте ещё раз');
+    } finally {
+      setPending(false);
     }
   }
 
   return (
     <div className="mb-3 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium text-zinc-500">План на день</span>
+        <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400">План на день</span>
         <span
           className={`text-sm font-semibold ${plan.over ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-300'}`}
         >
@@ -50,12 +53,12 @@ export function PlanCard({ tasks, today, targets }: { tasks: Task[]; today: Date
       <Progress label="План на день" value={plan.plannedMin} max={plan.capacityMin} />
       {plan.over && <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">План больше ёмкости дня</p>}
       {plan.unestimated > 0 && (
-        <p className="mt-2 text-sm text-zinc-500">
+        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
           Без оценки: {plan.unestimated} {tasksWord(plan.unestimated)} — считаю по {DEFAULT_ESTIMATE_MIN} мин
         </p>
       )}
       {canDefer && (
-        <Button variant="secondary" className="mt-3 w-full" onClick={() => void defer()}>
+        <Button variant="secondary" className="mt-3 w-full" disabled={pending} onClick={() => void defer()}>
           Перенести P3–P4
         </Button>
       )}
@@ -65,7 +68,7 @@ export function PlanCard({ tasks, today, targets }: { tasks: Task[]; today: Date
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-2 text-sm text-rose-600">
+        <p role="alert" className="mt-2 text-sm text-rose-600 dark:text-rose-400">
           {error}
         </p>
       )}
