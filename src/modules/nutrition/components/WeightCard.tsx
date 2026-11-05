@@ -25,14 +25,20 @@ export function WeightCard({ today = todayKey() }: { today?: DateKey }) {
       return;
     }
     setError(undefined);
-    await logWeight(today, kg);
+    try {
+      await logWeight(today, kg);
+    } catch {
+      setError('Не удалось сохранить вес — попробуйте ещё раз');
+      return;
+    }
     setText('');
     setSaved(`Записано: ${formatKg(kg)} кг`);
   }
 
   const series = trendSeries(logs);
   const showTrend = series.length >= TREND_MIN_ENTRIES;
-  const change = showTrend ? weeklyChange(series) : undefined;
+  const raw = showTrend ? weeklyChange(series) : undefined;
+  const change = raw === undefined ? undefined : Math.round(raw * 10) / 10;
 
   return (
     <section aria-label="Вес">

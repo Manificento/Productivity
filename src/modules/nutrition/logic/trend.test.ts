@@ -61,6 +61,18 @@ describe('weekly change', () => {
     const series = trendSeries(entries(kgs)).map((p) => ({ ...p, trend: p.kg }));
     expect(weeklyChange(series)).toBeCloseTo(-0.7, 5);
   });
+  it('Given разрыв в записях When считаю неделю Then изменение пересчитано на 7 дней, а после долгого разрыва — undefined', () => {
+    const near = [
+      { date: day(1), kg: 80, trend: 80 },
+      { date: day(11), kg: 79, trend: 79 },
+    ];
+    expect(weeklyChange(near)).toBeCloseTo(-0.7, 5);
+    const far = [
+      { date: day(1), kg: 80, trend: 80 },
+      { date: '2026-12-01' as DateKey, kg: 70, trend: 70 },
+    ];
+    expect(weeklyChange(far)).toBeUndefined();
+  });
   it('Given записей меньше недели When считаю Then undefined', () => {
     expect(weeklyChange(trendSeries(entries([70, 70, 70])))).toBeUndefined();
   });

@@ -47,10 +47,19 @@ export function trendSeries(entries: WeightPoint[]): TrendPoint[] {
   });
 }
 
-/** Trend now minus trend a week ago (the last entry at least 7 days old); undefined without such an entry. */
+/** Oldest allowed distance to the reference entry; with a longer gap the «week» would describe something else. */
+const MAX_GAP_DAYS = 14;
+
+/**
+ * Trend change per 7 days: from the last entry at least 7 days older than the newest one,
+ * scaled to a week when that entry is older. Undefined without such an entry or after a gap over 14 days.
+ */
 export function weeklyChange(series: TrendPoint[]): number | undefined {
   const last = series.at(-1);
   if (!last) return undefined;
   const past = series.findLast((p) => daysBetween(p.date, last.date) >= 7);
-  return past ? last.trend - past.trend : undefined;
+  if (!past) return undefined;
+  const days = daysBetween(past.date, last.date);
+  if (days > MAX_GAP_DAYS) return undefined;
+  return ((last.trend - past.trend) / days) * 7;
 }

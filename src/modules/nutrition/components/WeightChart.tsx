@@ -1,4 +1,4 @@
-import type { TrendPoint } from '../logic/trend';
+import { formatKg, type TrendPoint } from '../logic/trend';
 
 const W = 320;
 const H = 140;
@@ -29,7 +29,7 @@ export function WeightChart({ series, showTrend }: { series: TrendPoint[]; showT
           r={3}
           className="fill-zinc-400 dark:fill-zinc-500"
         >
-          <title>{`${p.date}: ${p.kg} кг`}</title>
+          <title>{`${p.date}: ${formatKg(p.kg)} кг`}</title>
         </circle>
       ))}
       {showTrend && (
