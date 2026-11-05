@@ -14,6 +14,7 @@ export function SessionRunner({ program, session }: { program: Program; session:
   const [saving, setSaving] = useState(false);
   const [replacing, setReplacing] = useState<number>();
   const [newName, setNewName] = useState('');
+  const [replaceError, setReplaceError] = useState<string>();
 
   // The plan itself (names) lives in the session record; the checked sets are local until «Завершить».
   const shown = draft.map((d, i) => ({ ...d, exercise: session.exercises[i] ?? d.exercise }));
@@ -45,7 +46,7 @@ export function SessionRunner({ program, session }: { program: Program; session:
       await replaceExercise(session.id, replacing, name);
       setReplacing(undefined);
     } catch {
-      setError('Не удалось заменить упражнение — попробуйте ещё раз');
+      setReplaceError('Не удалось заменить упражнение — попробуйте ещё раз');
     }
   }
 
@@ -62,6 +63,7 @@ export function SessionRunner({ program, session }: { program: Program; session:
                 aria-label={`Заменить упражнение: ${d.exercise.name}`}
                 onClick={() => {
                   setReplacing(i);
+                  setReplaceError(undefined);
                   setNewName(d.exercise.name);
                 }}
               >
@@ -110,11 +112,18 @@ export function SessionRunner({ program, session }: { program: Program; session:
         <Field label="Новое упражнение">
           {(id) => <Input id={id} value={newName} onChange={(e) => setNewName(e.target.value)} />}
         </Field>
+        {replaceError && (
+          <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
+            {replaceError}
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Button variant="secondary" onClick={() => setReplacing(undefined)}>
             Отмена
           </Button>
-          <Button onClick={() => void confirmReplace()}>Заменить</Button>
+          <Button disabled={newName.trim() === ''} onClick={() => void confirmReplace()}>
+            Заменить
+          </Button>
         </div>
       </Sheet>
     </>

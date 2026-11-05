@@ -18,7 +18,7 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
   const programs = useActivePrograms();
   // A session of an earlier day that was not done becomes «пропущена»; the plan is not shifted.
   useEffect(() => {
-    void skipMissedSessions(today).catch(() => undefined);
+    skipMissedSessions(today).catch((e: unknown) => console.error('skipMissedSessions failed', e));
   }, [today]);
   const todaySession = useTodaySession(today);
   const [draft, setDraft] = useState<ProgramDraft>();

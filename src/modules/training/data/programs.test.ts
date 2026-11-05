@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
+import { deleteWorkout } from './workouts';
 import { saveWorkout } from '../../../core/logging/workout';
 import {
   archiveProgram,
@@ -97,8 +98,9 @@ describe('session execution', () => {
   it('a failed update rolls the workout back', async () => {
     const p = await createProgram(input, TODAY, 1);
     const session = (await db.plannedSessions.toArray()).find((s) => s.programId === p.id && s.date === TODAY)!;
-    vi.spyOn(db.plannedSessions, 'update').mockRejectedValueOnce(new Error('boom'));
+    const spy = vi.spyOn(db.plannedSessions, 'update').mockRejectedValueOnce(new Error('boom'));
     await expect(completeSession(session.id, workout, 5)).rejects.toThrow();
+    spy.mockRestore();
     expect(await db.workoutLogs.count()).toBe(0);
   });
 
@@ -110,6 +112,28 @@ describe('session execution', () => {
     expect(after.map((s) => s.date).sort()).toEqual(before);
     expect(after.find((s) => s.programId === p.id && s.date === TODAY)?.status).toBe('skipped');
     expect(after.filter((s) => s.status === 'skipped')).toHaveLength(1);
+  });
+
+  it('a skipped session cannot be completed', async () => {
+    const p = await createProgram(input, TODAY, 1);
+    const session = (await db.plannedSessions.toArray()).find((s) => s.programId === p.id && s.date === TODAY)!;
+    await skipMissedSessions('2026-11-05', 2);
+    await expect(completeSession(session.id, workout, 3)).rejects.toThrow();
+  });
+
+  it('deleting the journal entry reopens its session (planned today, skipped for a past day)', async () => {
+    const p = await createProgram(input, TODAY, 1);
+    const session = (await db.plannedSessions.toArray()).find((s) => s.programId === p.id && s.date === TODAY)!;
+    const log = await completeSession(session.id, workout, 5);
+    await deleteWorkout(log.id, TODAY);
+    expect(await db.workoutLogs.count()).toBe(0);
+    const reopened = await db.plannedSessions.get(session.id);
+    expect(reopened?.status).toBe('planned');
+    expect(reopened?.workoutLogId).toBeUndefined();
+
+    const log2 = await completeSession(session.id, workout, 6);
+    await deleteWorkout(log2.id, '2026-11-05');
+    expect((await db.plannedSessions.get(session.id))?.status).toBe('skipped');
   });
 
   it('done sessions are not marked skipped', async () => {

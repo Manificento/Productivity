@@ -40,7 +40,7 @@ export async function completeSession(sessionId: string, workout: WorkoutInput, 
   return db.transaction('rw', db.workoutLogs, db.plannedSessions, async () => {
     const session = await db.plannedSessions.get(sessionId);
     if (!session) throw new Error('Сессия не найдена');
-    if (session.status === 'done') throw new Error('Сессия уже выполнена');
+    if (session.status !== 'planned') throw new Error('Сессия уже закрыта');
     const log = await saveWorkout(workout, now);
     await db.plannedSessions.update(sessionId, touch({ status: 'done' as const, workoutLogId: log.id }, now));
     return log;

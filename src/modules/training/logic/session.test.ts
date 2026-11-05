@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkout, draftFromExercises, toggleSet } from './session';
+import { buildWorkout, draftFromExercises, toggleSet, workoutTypeFor } from './session';
 
 const exercises = [
   { name: 'Присед', sets: 3, reps: 5, weightKg: 80 },
@@ -63,5 +63,13 @@ describe('buildWorkout', () => {
       error: 'Укажите длительность в минутах',
     });
     expect(buildWorkout(d, { ...base, rpe: '11' })).toEqual({ ok: false, error: 'RPE — от 1 до 10' });
+  });
+});
+
+describe('workoutTypeFor', () => {
+  it('maps a program name to a workout type', () => {
+    expect(workoutTypeFor('Бег')).toBe('Бег');
+    expect(workoutTypeFor('Сила 3 раза в неделю')).toBe('Силовая');
+    expect(workoutTypeFor('Растяжка')).toBe('Другое');
   });
 });

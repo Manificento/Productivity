@@ -176,7 +176,7 @@ describe('workouts tab', () => {
     del.mockRestore();
   });
 
-  it('Given записанная тренировка (из сессии программы) When я открываю её в истории Then видны подходы и RPE', async () => {
+  it('Given записанная тренировка When я открываю её в истории Then видны подходы и RPE', async () => {
     await saveWorkout({
       date: TODAY,
       type: 'Силовая',
@@ -196,5 +196,19 @@ describe('workouts tab', () => {
     const item = within(await history()).getByRole('listitem', { name: /Силовая, 4 ноября/ });
     expect(item).toHaveTextContent('45 мин · RPE 7');
     expect(item).toHaveTextContent('Румынская тяга: 8 × 60 кг, 8 × 60 кг');
+  });
+
+  it('sets without reps and weight read «N подх.», not «0 кг»', async () => {
+    await saveWorkout({
+      date: TODAY,
+      type: 'Силовая',
+      durationMin: 10,
+      rpe: 5,
+      exercises: [{ name: 'Планка', sets: [{}, {}, {}] }],
+    });
+    renderTab();
+    const item = within(await history()).getByRole('listitem', { name: /Силовая, 4 ноября/ });
+    expect(item).toHaveTextContent('Планка: 3 подх.');
+    expect(item).not.toHaveTextContent('0 кг');
   });
 });

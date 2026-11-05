@@ -16,9 +16,10 @@ export function toggleSet(draft: SessionExerciseDraft[], exIndex: number, setInd
   return draft.map((e, i) => (i === exIndex ? { ...e, done: e.done.map((d, j) => (j === setIndex ? !d : d)) } : e));
 }
 
-/** Workout type for a program: its own name when it is a known type («Бег»), otherwise «Силовая». */
+/** Workout type for a program: its own name when it is a known type («Бег»), «Силовая» for strength, else «Другое». */
 export function workoutTypeFor(programName: string): string {
-  return (WORKOUT_TYPES as readonly string[]).includes(programName) ? programName : 'Силовая';
+  if ((WORKOUT_TYPES as readonly string[]).includes(programName)) return programName;
+  return programName.startsWith('Сила') ? 'Силовая' : 'Другое';
 }
 
 export type BuildResult = { ok: true; value: WorkoutInput } | { ok: false; error: string };
