@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { z } from 'zod';
 import { shiftDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
-import type { DateKey } from '../../../core/types';
+import type { DateKey, MealLog } from '../../../core/types';
 import type { NutritionGoal } from '../../../core/adaptation/types';
 import {
   WINDOW_DAYS,
@@ -62,7 +62,8 @@ async function loadIntake(today: DateKey): Promise<Map<DateKey, number>> {
     db.foods.toArray(),
   ]);
   const byId = new Map(foods.map((f) => [f.id, f]));
-  const byDay = Map.groupBy(meals, (m) => m.date);
+  const byDay = new Map<DateKey, MealLog[]>();
+  for (const m of meals) byDay.set(m.date, [...(byDay.get(m.date) ?? []), m]);
   return new Map([...byDay].map(([date, list]) => [date, dayTotals(list, byId).day.kcal]));
 }
 
