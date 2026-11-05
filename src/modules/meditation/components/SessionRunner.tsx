@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../../ui';
+import { playSignal } from './signal';
 import { saveSession } from '../data/sessionStore';
 import { stepAt, type GuideSession } from '../logic/library';
 import { breathAt, patternById, type PatternId } from '../logic/patterns';
@@ -41,7 +42,7 @@ export function SessionRunner({
       const complete = remainingMs(startedAt.current, durationMin, t) === 0;
       const minutes = complete ? durationMin : interruptedMinutes(startedAt.current, t);
       if (report) setSaved(minutes === null ? 'none' : 'saving');
-      if (complete) beep();
+      if (complete) playSignal();
       if (minutes === null) return;
       try {
         await saveSession({
@@ -122,9 +123,4 @@ export function SessionRunner({
       <Button onClick={() => void finish(Date.now(), true)}>Завершить</Button>
     </div>
   );
-}
-
-/** Completion signal: vibration where supported (no audio without the owner's decision). */
-function beep() {
-  navigator.vibrate?.([200, 100, 200]);
 }
