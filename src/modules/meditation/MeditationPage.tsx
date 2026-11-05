@@ -1,29 +1,64 @@
 import { useState } from 'react';
+import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import { todayKey } from '../../core/dates';
 import { Button, Card, Page, Segmented } from '../../ui';
 import { History } from './components/History';
+import { Library } from './components/Library';
+import { PlanCard } from './components/PlanCard';
 import { SessionRunner } from './components/SessionRunner';
 import { useMeditationSessions } from './data/sessionStore';
+import { fitGuide, guideMinutes, sessionsOfKind, type GuideSession } from './logic/library';
 import { DURATIONS_MIN, PATTERNS, type PatternId } from './logic/patterns';
 
-/** `/meditation` — timer with a breathing circle, and a week of history with the streak. */
+interface Run {
+  durationMin: number;
+  pattern: PatternId;
+  guide?: GuideSession;
+}
+
+/** `/meditation` — today's plan, timer with a breathing circle, text guides and a week of history. */
 export function MeditationPage() {
   const sessions = useMeditationSessions();
+  const targets = useDailyTargets(todayKey());
   const [duration, setDuration] = useState<string>('5');
   const [pattern, setPattern] = useState<PatternId>('4-7-8');
-  const [running, setRunning] = useState(false);
+  const [run, setRun] = useState<Run | null>(null);
 
-  if (running) {
+  if (run) {
     return (
       <Page title="Медитация">
         <Card>
-          <SessionRunner durationMin={Number(duration)} patternId={pattern} onClose={() => setRunning(false)} />
+          <SessionRunner
+            durationMin={run.durationMin}
+            patternId={run.pattern}
+            guide={run.guide}
+            onClose={() => setRun(null)}
+          />
         </Card>
       </Page>
     );
   }
+  const startGuide = (g: GuideSession) => setRun({ durationMin: guideMinutes(g), pattern: 'none', guide: g });
+  const startPlan = () => {
+    if (!targets) return;
+    const first = sessionsOfKind(targets.meditationKind)[0];
+    // Breathing plans run the 4-7-8 timer; other kinds run the first guide stretched to the planned minutes.
+    if (targets.meditationKind === 'breathing' || !first) {
+      setRun({ durationMin: targets.meditationMin, pattern: '4-7-8' });
+    } else {
+      setRun({ durationMin: targets.meditationMin, pattern: 'none', guide: fitGuide(first, targets.meditationMin) });
+    }
+  };
   return (
     <Page title="Медитация">
+      {targets && (
+        <PlanCard
+          minutes={targets.meditationMin}
+          kind={targets.meditationKind}
+          reasons={targets.reasons}
+          onStart={startPlan}
+        />
+      )}
       <Card title="Новая сессия">
         <Segmented
           label="Длительность"
@@ -37,10 +72,11 @@ export function MeditationPage() {
           options={PATTERNS.map((p) => ({ value: p.id, label: p.id === 'box' ? 'Коробка 4-4-4-4' : p.title }))}
           onChange={setPattern}
         />
-        <Button className="w-full" onClick={() => setRunning(true)}>
+        <Button className="w-full" onClick={() => setRun({ durationMin: Number(duration), pattern })}>
           Начать
         </Button>
       </Card>
+      <Library onPick={startGuide} />
       <Card title="История">{sessions && <History sessions={sessions} today={todayKey()} />}</Card>
     </Page>
   );
