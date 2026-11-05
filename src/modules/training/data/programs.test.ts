@@ -8,6 +8,7 @@ import {
   createProgram,
   loadActivePrograms,
   loadTodaySession,
+  loadUpcomingSessions,
   replaceExercise,
   skipMissedSessions,
 } from './programs';
@@ -154,5 +155,18 @@ describe('session execution', () => {
     const sameWeekday = after.find((s) => s.id !== target.id && s.exercises[0].name === 'Жим');
     expect(sameWeekday).toBeDefined();
     expect((await db.programs.get(p.id))?.days[1].exercises[0].name).toBe('Жим');
+  });
+});
+
+describe('loadUpcomingSessions', () => {
+  it('returns planned sessions of active programs within the inclusive range', async () => {
+    const a = await createProgram(input, TODAY, 1);
+    const b = await createProgram({ ...input, name: 'Другая' }, TODAY, 2);
+    await archiveProgram(b.id, '2026-12-31', 3); // archived: its sessions are gone from the list
+    const first = (await db.plannedSessions.toArray()).find((s) => s.programId === a.id && s.date === TODAY)!;
+    await completeSession(first.id, { date: TODAY, type: 'Силовая', durationMin: 30, rpe: 5 }, 4);
+    const list = await loadUpcomingSessions(TODAY, '2026-11-09');
+    expect(list.map((s) => s.date)).toEqual(['2026-11-09']); // 11-04 is done; 11-09 is the inclusive edge
+    expect(list.every((s) => s.programId === a.id)).toBe(true);
   });
 });

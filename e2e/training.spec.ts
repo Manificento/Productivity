@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test.describe('training programs', () => {
   test('Given пустой блок When я выбираю шаблон «Сила 3 раза в неделю» Then вижу сессию на сегодня, а после архива — снова пустое состояние', async ({
@@ -38,6 +39,31 @@ test.describe('training programs', () => {
     const item = page.getByRole('list', { name: 'История тренировок' }).getByRole('listitem').first();
     await expect(item).toContainText('45 мин · RPE 7');
     await expect(item).toContainText('Румынская тяга');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test('Given событие через 10 дней When я смотрю план на 2 недели Then разгрузка и день отдыха отмечены заранее', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T10:00:00+05:00'));
+    await skipOnboarding(page);
+    await page.getByRole('link', { name: /События/ }).click();
+    await page.getByRole('button', { name: 'Добавить событие' }).click();
+    const form = page.getByRole('dialog', { name: 'Новое событие' });
+    await form.getByLabel('Название').fill('IELTS');
+    await form.getByLabel('Тип').selectOption('exam');
+    await form.getByLabel('Дата').fill('2026-11-14');
+    await form.getByRole('radio', { name: 'Критичное' }).click();
+    await form.getByRole('button', { name: 'Сохранить' }).click();
+    await expect(page.getByRole('region', { name: 'Предстоящие' }).getByRole('link', { name: /IELTS/ })).toBeVisible();
+
+    await page.goto('/#/training');
+    await page.getByRole('button', { name: 'Шаблон: Растяжка' }).click();
+    await page.getByRole('button', { name: 'Сохранить программу' }).click();
+    const plan = page.getByRole('list', { name: 'План на 2 недели' });
+    await expect(plan.getByRole('listitem', { name: /13 ноября/ })).toContainText('Разгрузка');
+    await expect(plan.getByRole('listitem', { name: /14 ноября/ })).toContainText('День отдыха');
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });

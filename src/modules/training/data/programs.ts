@@ -93,6 +93,22 @@ export async function loadTodaySession(today: DateKey): Promise<TodaySession | u
   return { rest: true, ended: upcoming === 0 };
 }
 
+/** Planned (not yet done) sessions of active programs from `from` to `to` inclusive, by date. */
+export async function loadUpcomingSessions(from: DateKey, to: DateKey): Promise<PlannedSession[]> {
+  const [sessions, programs] = await Promise.all([
+    db.plannedSessions.where('date').between(from, to, true, true).toArray(),
+    loadActivePrograms(),
+  ]);
+  const active = new Set(programs.map((p) => p.id));
+  return sessions
+    .filter((s) => s.status === 'planned' && active.has(s.programId))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function useUpcomingSessions(from: DateKey, to: DateKey): PlannedSession[] | undefined {
+  return useLiveQuery(() => loadUpcomingSessions(from, to), [from, to]);
+}
+
 export function useActivePrograms(): Program[] | undefined {
   return useLiveQuery(loadActivePrograms, []);
 }
