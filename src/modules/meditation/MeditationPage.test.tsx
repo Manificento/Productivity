@@ -211,4 +211,35 @@ describe('Медитация: план и библиотека', () => {
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('10:00');
     expect(screen.getByTestId('breath-circle')).toBeInTheDocument();
   });
+
+  it('Given сессия дошла до нуля When она завершается Then звучит тон Web Audio; без Web Audio ошибок нет и сессия записана', async () => {
+    const start = vi.fn();
+    const osc = { type: '', frequency: { value: 0 }, connect: vi.fn(), start, stop: vi.fn() };
+    const param = { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() };
+    class FakeAudio {
+      currentTime = 0;
+      destination = {};
+      resume = () => Promise.resolve();
+      createGain = () => ({ gain: param, connect: vi.fn() });
+      createOscillator = () => osc;
+    }
+    vi.stubGlobal('AudioContext', FakeAudio);
+    vi.resetModules();
+    const { MeditationPage: Fresh } = await import('./MeditationPage');
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(
+      <MemoryRouter>
+        <Fresh />
+      </MemoryRouter>,
+    );
+    await u.click(screen.getByRole('radio', { name: '3 мин' }));
+    await u.click(screen.getByRole('button', { name: 'Начать', exact: true }));
+    await act(async () => {
+      vi.setSystemTime(NOW + 180_000);
+      vi.advanceTimersByTime(250);
+    });
+    expect(await screen.findByText('Сессия завершена и записана.')).toBeInTheDocument();
+    expect(start).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 });
