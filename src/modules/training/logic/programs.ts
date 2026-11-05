@@ -174,3 +174,10 @@ export function parseProgramDraft(draft: ProgramDraft): ParseResult {
   days.sort(byWeekdayOrder);
   return { ok: true, value: { name, weeks: draft.weeks, days } };
 }
+
+export function exerciseLine(e: ProgramExercise): string {
+  const parts = [e.reps === undefined ? `${e.sets} подх.` : `${e.sets} × ${e.reps}`];
+  if (e.weightKg !== undefined) parts.push(`${e.weightKg} кг`);
+  if (e.rpeTarget !== undefined) parts.push(`RPE ${e.rpeTarget}`);
+  return `${e.name}: ${parts.join(', ')}`;
+}

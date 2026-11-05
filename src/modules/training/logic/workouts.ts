@@ -125,15 +125,19 @@ export function weekStats(workouts: WorkoutLog[], today: DateKey): WeekStats {
   };
 }
 
-/** '10 × 60 кг, 8 повт., 20 кг' */
+/** '10 × 60 кг, 8 повт., 20 кг'; sets without reps and weight: '3 подх.' (or 'подход' among others). */
 export function formatSets(sets: { reps?: number; weightKg?: number }[]): string {
+  const isEmpty = (s: { reps?: number; weightKg?: number }) => s.reps === undefined && s.weightKg === undefined;
+  if (sets.length > 0 && sets.every(isEmpty)) return `${sets.length} подх.`;
   return sets
     .map((s) =>
-      s.reps !== undefined && s.weightKg !== undefined
-        ? `${s.reps} × ${formatNumber(s.weightKg)} кг`
-        : s.reps !== undefined
-          ? `${s.reps} повт.`
-          : `${formatNumber(s.weightKg ?? 0)} кг`,
+      isEmpty(s)
+        ? 'подход'
+        : s.reps !== undefined && s.weightKg !== undefined
+          ? `${s.reps} × ${formatNumber(s.weightKg)} кг`
+          : s.reps !== undefined
+            ? `${s.reps} повт.`
+            : `${formatNumber(s.weightKg ?? 0)} кг`,
     )
     .join(', ');
 }

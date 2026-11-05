@@ -1,7 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
-import type { DateKey, PlannedSession, Program } from '../../../core/types';
+import { saveWorkout, type WorkoutInput } from '../../../core/logging/workout';
+import type { DateKey, PlannedSession, Program, WorkoutLog } from '../../../core/types';
 import { planSessions, sessionOn, type ProgramInput } from '../logic/programs';
 
 /** Writes `programs` and `plannedSessions` (owner: training). The workout log goes only through saveWorkout(). */
@@ -28,6 +29,43 @@ export async function archiveProgram(id: string, today: DateKey, now = Date.now(
       .equals(id)
       .filter((s) => s.date > today && s.status === 'planned')
       .delete();
+  });
+}
+
+/**
+ * Finishes a session: the workout goes to the journal ONLY through `saveWorkout()`, and the session becomes
+ * `done` with `workoutLogId` — in one transaction, so a failure leaves neither half.
+ */
+export async function completeSession(sessionId: string, workout: WorkoutInput, now = Date.now()): Promise<WorkoutLog> {
+  return db.transaction('rw', db.workoutLogs, db.plannedSessions, async () => {
+    const session = await db.plannedSessions.get(sessionId);
+    if (!session) throw new Error('Сессия не найдена');
+    if (session.status !== 'planned') throw new Error('Сессия уже закрыта');
+    const log = await saveWorkout(workout, now);
+    await db.plannedSessions.update(sessionId, touch({ status: 'done' as const, workoutLogId: log.id }, now));
+    return log;
+  });
+}
+
+/** Sessions of earlier days that were never done become `skipped`; the plan is not shifted. */
+export async function skipMissedSessions(today: DateKey, now = Date.now()): Promise<void> {
+  await db.plannedSessions
+    .where('date')
+    .below(today)
+    .filter((s) => s.status === 'planned')
+    .modify((s) => {
+      s.status = 'skipped';
+      s.updatedAt = now;
+    });
+}
+
+/** Replaces one exercise by name in THIS session only (the session holds its own copy; the program is untouched). */
+export async function replaceExercise(sessionId: string, index: number, name: string, now = Date.now()): Promise<void> {
+  await db.transaction('rw', db.plannedSessions, async () => {
+    const session = await db.plannedSessions.get(sessionId);
+    if (!session?.exercises[index]) throw new Error('Упражнение не найдено');
+    const exercises = session.exercises.map((e, i) => (i === index ? { ...e, name } : e));
+    await db.plannedSessions.update(sessionId, touch({ exercises }, now));
   });
 }
 

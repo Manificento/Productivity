@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { todayKey } from '../../../core/dates';
-import type { DateKey, Program, ProgramExercise } from '../../../core/types';
+import type { DateKey, Program } from '../../../core/types';
 import { Button, Card, Empty, Sheet } from '../../../ui';
-import { archiveProgram, useActivePrograms, useTodaySession } from '../data/programs';
+import { archiveProgram, skipMissedSessions, useActivePrograms, useTodaySession } from '../data/programs';
 import {
   PROGRAM_TEMPLATES,
   WEEKDAY_SHORT,
@@ -11,17 +11,15 @@ import {
   type ProgramDraft,
 } from '../logic/programs';
 import { ProgramForm } from './ProgramForm';
-
-export function exerciseLine(e: ProgramExercise): string {
-  const parts = [e.reps === undefined ? `${e.sets} подх.` : `${e.sets} × ${e.reps}`];
-  if (e.weightKg !== undefined) parts.push(`${e.weightKg} кг`);
-  if (e.rpeTarget !== undefined) parts.push(`RPE ${e.rpeTarget}`);
-  return `${e.name}: ${parts.join(', ')}`;
-}
+import { SessionRunner } from './SessionRunner';
 
 /** «Программы»: today's session, active programs, templates and the create form. */
 export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
   const programs = useActivePrograms();
+  // A session of an earlier day that was not done becomes «пропущена»; the plan is not shifted.
+  useEffect(() => {
+    skipMissedSessions(today).catch((e: unknown) => console.error('skipMissedSessions failed', e));
+  }, [today]);
   const todaySession = useTodaySession(today);
   const [draft, setDraft] = useState<ProgramDraft>();
   const [version, setVersion] = useState(0);
@@ -60,17 +58,19 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
             <p className="py-4 text-center text-base font-medium">
               {todaySession.ended ? 'План закончился — создайте новую программу' : 'День отдыха'}
             </p>
-          ) : (
+          ) : todaySession.session.status === 'done' ? (
             <>
               <p className="mb-2 text-sm text-zinc-500">{todaySession.program.name}</p>
-              <ul aria-label="Сессия на сегодня">
-                {todaySession.session.exercises.map((e, i) => (
-                  <li key={i} className="py-1 text-sm">
-                    {exerciseLine(e)}
-                  </li>
-                ))}
-              </ul>
+              <p className="py-2 text-base font-medium text-emerald-700 dark:text-emerald-400">
+                Тренировка выполнена ✓
+              </p>
             </>
+          ) : (
+            <SessionRunner
+              key={todaySession.session.id}
+              program={todaySession.program}
+              session={todaySession.session}
+            />
           )}
         </Card>
       )}

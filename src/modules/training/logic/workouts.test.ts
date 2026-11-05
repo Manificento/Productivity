@@ -135,3 +135,10 @@ describe('formatting', () => {
     expect(formatSets([{ reps: 10, weightKg: 60 }, { reps: 8 }, { weightKg: 20 }])).toBe('10 × 60 кг, 8 повт., 20 кг');
   });
 });
+
+describe('formatSets without reps and weight', () => {
+  it('shows the number of sets, or «подход» among filled sets', () => {
+    expect(formatSets([{}, {}, {}])).toBe('3 подх.');
+    expect(formatSets([{ reps: 5 }, {}])).toBe('5 повт., подход');
+  });
+});
