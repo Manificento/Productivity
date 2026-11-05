@@ -3,6 +3,7 @@ import type { DateKey, Food } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
 import { addMealItem, useHasLoggedFood } from '../data/food';
 import { addOffFoodToMeal } from '../data/openFoodFacts';
+import { hasCaffeine } from '../logic/diary';
 import type { OffFood } from '../logic/openFoodFacts';
 import { formatGrams, macrosFor, MEAL_KINDS, searchFoods, type MealKind } from '../logic/nutrition';
 import { CustomFoodForm } from './CustomFoodForm';
@@ -32,6 +33,7 @@ function GramsForm({
   date,
   kind,
   noNewFoods,
+  caffeineLate,
   onDone,
   onBack,
 }: {
@@ -39,6 +41,7 @@ function GramsForm({
   date: DateKey;
   kind: MealKind;
   noNewFoods: boolean;
+  caffeineLate: boolean;
   onDone: () => void;
   onBack: () => void;
 }) {
@@ -91,6 +94,14 @@ function GramsForm({
           Перед событием лучше без новых продуктов. Этого продукта ещё не было в дневнике.
         </p>
       )}
+      {caffeineLate && hasCaffeine(food.name) && (
+        <p
+          role="note"
+          className="mb-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+        >
+          Отсечка кофеина на сегодня уже прошла — он может помешать сну. Добавить можно.
+        </p>
+      )}
       {error && (
         <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
           {error}
@@ -115,6 +126,7 @@ export function AddFoodSheet({
   foods,
   recent,
   noNewFoods,
+  caffeineLate,
   onClose,
 }: {
   kind: MealKind | undefined;
@@ -122,6 +134,7 @@ export function AddFoodSheet({
   foods: Food[];
   recent: Food[];
   noNewFoods: boolean;
+  caffeineLate: boolean;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
@@ -146,6 +159,7 @@ export function AddFoodSheet({
           date={date}
           kind={kind}
           noNewFoods={noNewFoods}
+          caffeineLate={caffeineLate}
           onDone={close}
           onBack={() => setPicked(undefined)}
         />

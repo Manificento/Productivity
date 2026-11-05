@@ -38,4 +38,27 @@ test.describe('nutrition weight', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+
+  test('Given цель и расход When я добавляю еду Then шкала «Калории» показывает съедено и остаток; без цели — «Задать цель»', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T10:00:00'));
+    await page.goto('/#/nutrition');
+    await expect(page.getByRole('button', { name: 'Задать цель' })).toBeVisible();
+    await expect(page.getByRole('progressbar', { name: 'Калории' })).toHaveCount(0);
+
+    await page.getByLabel('Вес, кг').fill('80');
+    await page.getByRole('button', { name: 'Записать' }).click();
+    await page.getByLabel('Рост, см').fill('180');
+    await page.getByLabel('Год рождения').fill('1996');
+    await page.getByRole('button', { name: 'Сохранить данные' }).click();
+    await page.getByRole('radio', { name: 'Удержать' }).click();
+    await page.getByRole('button', { name: 'Сохранить цель' }).click();
+
+    const day = page.getByRole('region', { name: 'Цель на день' });
+    await expect(day).toContainText('0 / 2490 ккал');
+    await expect(day).toContainText('Осталось 2490 ккал');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
 });
