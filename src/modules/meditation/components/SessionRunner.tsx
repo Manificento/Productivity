@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../../ui';
 import { saveSession } from '../data/sessionStore';
+import { stepAt, type GuideSession } from '../logic/library';
 import { breathAt, patternById, type PatternId } from '../logic/patterns';
 import { formatClock, interruptedMinutes, remainingMs } from '../logic/timer';
 
@@ -17,10 +18,13 @@ const MESSAGES: Record<SaveState, string> = {
 export function SessionRunner({
   durationMin,
   patternId,
+  guide,
   onClose,
 }: {
   durationMin: number;
   patternId: PatternId;
+  /** A text guide replaces the breathing circle with the current step. */
+  guide?: GuideSession;
   onClose: () => void;
 }) {
   const startedAt = useRef(Date.now());
@@ -51,7 +55,7 @@ export function SessionRunner({
         if (report) setSaved('error');
       }
     },
-    [durationMin, patternId],
+    [durationMin, patternId, guide],
   );
 
   useEffect(() => {
@@ -92,15 +96,24 @@ export function SessionRunner({
   const breath = breathAt(pattern, now - startedAt.current);
   return (
     <div className="flex flex-col items-center gap-4 py-4">
-      <div className="flex h-56 w-56 items-center justify-center">
-        <div
-          data-testid="breath-circle"
-          className="flex h-56 w-56 items-center justify-center rounded-full bg-indigo-500/30 text-lg font-medium motion-reduce:transition-none"
-          style={{ transform: `scale(${breath?.scale ?? 0.7})`, transition: 'transform 250ms linear' }}
-        >
-          {breath?.label ?? ''}
+      {guide ? (
+        <div className="flex min-h-40 flex-col items-center justify-center gap-2 text-center">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            {guide.title} · шаг {stepAt(guide, now - startedAt.current).index + 1} из {guide.steps.length}
+          </p>
+          <p className="text-lg font-medium">{stepAt(guide, now - startedAt.current).step.text}</p>
         </div>
-      </div>
+      ) : (
+        <div className="flex h-56 w-56 items-center justify-center">
+          <div
+            data-testid="breath-circle"
+            className="flex h-56 w-56 items-center justify-center rounded-full bg-indigo-500/30 text-lg font-medium motion-reduce:transition-none"
+            style={{ transform: `scale(${breath?.scale ?? 0.7})`, transition: 'transform 250ms linear' }}
+          >
+            {breath?.label ?? ''}
+          </div>
+        </div>
+      )}
       <p className="text-4xl font-semibold tabular-nums" aria-label="Осталось времени">
         {formatClock(left)}
       </p>

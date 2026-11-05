@@ -23,7 +23,7 @@ function setup() {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   vi.setSystemTime(NOW);
-  await db.meditationSessions.clear();
+  await Promise.all([db.meditationSessions.clear(), db.settings.clear(), db.lifeEvents.clear()]);
 });
 afterEach(() => vi.useRealTimers());
 
@@ -145,5 +145,42 @@ describe('Медитация', () => {
     await user.click(screen.getByRole('button', { name: 'Завершить' }));
     expect(await screen.findByText('Не удалось сохранить сессию.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Закрыть' })).toBeInTheDocument();
+  });
+});
+
+describe('Медитация: план и библиотека', () => {
+  it('Given цели дня When я открываю блок Then карточка «Сегодня: 10 мин, дыхание» с причинами', async () => {
+    await db.lifeEvents.add(
+      newRecord({ title: 'Экзамен', type: 'exam', date: '2026-11-03', importance: 2, prepDays: 7 }, NOW) as never,
+    );
+    setup();
+    expect(await screen.findByText(/^Сегодня: \d+ мин, дыхание$/)).toBeInTheDocument();
+    expect(screen.getByText(/Сегодня «Экзамен»/)).toBeInTheDocument();
+  });
+
+  it('Given библиотека When я выбираю сессию вида focus Then текст-гид по шагам с таймингом', async () => {
+    const { user } = setup();
+    await user.click(screen.getByRole('radio', { name: 'фокус' }));
+    await user.click(screen.getByRole('button', { name: /Одна точка/ }));
+    expect(screen.getAllByText(/\(\d+ с\)/).length).toBeGreaterThanOrEqual(3);
+    await user.click(screen.getByRole('button', { name: /Начать «Одна точка»/ }));
+    expect(screen.getByText(/шаг 1 из 3/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('03:00');
+  });
+
+  it('Given план выполнен When день закончился Then meditationMinYesterday доступен движку на следующий день', async () => {
+    const { saveSession } = await import('./data/sessionStore');
+    const { loadAdaptationContext } = await import('../../core/adaptation/useDailyTargets');
+    await saveSession({ startedAt: NOW, durationMin: 12, pattern: 'none', completed: true });
+    const ctx = await loadAdaptationContext('2026-11-04');
+    expect(ctx.meditationMinYesterday).toBe(12);
+  });
+
+  it('Given meditationMin = 0 When я открываю блок Then план скрыт, библиотека доступна', async () => {
+    await db.settings.put({ key: 'adaptation.baseline', value: { meditationMin: 0 } } as never);
+    setup();
+    expect(await screen.findByText('Библиотека сессий')).toBeInTheDocument();
+    await screen.findByText(/Пока нет сессий/);
+    expect(screen.queryByText(/Сегодня:/)).not.toBeInTheDocument();
   });
 });
