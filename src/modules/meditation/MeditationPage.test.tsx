@@ -27,7 +27,10 @@ beforeEach(async () => {
   vi.setSystemTime(NOW);
   await Promise.all([db.meditationSessions.clear(), db.settings.clear(), db.lifeEvents.clear()]);
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('Медитация', () => {
   it('Given пустой блок When я открываю «Медитация» Then выбор длительности 3 / 5 / 10 / 20 мин и паттерна; кнопка «Начать» ≥ 44 px', async () => {
@@ -212,34 +215,59 @@ describe('Медитация: план и библиотека', () => {
     expect(screen.getByTestId('breath-circle')).toBeInTheDocument();
   });
 
-  it('Given сессия дошла до нуля When она завершается Then звучит тон Web Audio; без Web Audio ошибок нет и сессия записана', async () => {
-    const start = vi.fn();
-    const osc = { type: '', frequency: { value: 0 }, connect: vi.fn(), start, stop: vi.fn() };
+  async function finishThreeMinutes() {
+    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(
+      <MemoryRouter>
+        <MeditationPage />
+      </MemoryRouter>,
+    );
+    await u.click(screen.getByRole('radio', { name: '3 мин' }));
+    await u.click(screen.getByRole('button', { name: /^Начать$/ }));
+    await act(async () => {
+      vi.setSystemTime(NOW + 180_000);
+      vi.advanceTimersByTime(250);
+    });
+    expect(await screen.findByText('Сессия завершена и записана.')).toBeInTheDocument();
+    expect(await db.meditationSessions.toArray()).toMatchObject([{ completed: true, durationMin: 3 }]);
+  }
+
+  it('Given сессия дошла до нуля When она завершается Then звучит короткий тон Web Audio, кроме вибрации', async () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
+    const osc = { type: '', frequency: { value: 0 }, connect: vi.fn(), start: vi.fn(), stop: vi.fn() };
     const param = { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() };
     class FakeAudio {
       currentTime = 0;
+      state = 'running';
       destination = {};
       resume = () => Promise.resolve();
       createGain = () => ({ gain: param, connect: vi.fn() });
       createOscillator = () => osc;
     }
     vi.stubGlobal('AudioContext', FakeAudio);
-    vi.resetModules();
-    const { MeditationPage: Fresh } = await import('./MeditationPage');
-    const u = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(
-      <MemoryRouter>
-        <Fresh />
-      </MemoryRouter>,
-    );
-    await u.click(screen.getByRole('radio', { name: '3 мин' }));
-    await u.click(screen.getByRole('button', { name: 'Начать', exact: true }));
-    await act(async () => {
-      vi.setSystemTime(NOW + 180_000);
-      vi.advanceTimersByTime(250);
-    });
-    expect(await screen.findByText('Сессия завершена и записана.')).toBeInTheDocument();
-    expect(start).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
+    await finishThreeMinutes();
+    expect(osc.start).toHaveBeenCalledTimes(1);
+    expect(osc.stop.mock.calls[0]![0]).toBeLessThanOrEqual(1.5);
+    expect(vibrate).toHaveBeenCalledWith([200, 100, 200]);
+  });
+
+  it('Given браузер без Web Audio When сессия завершается Then ошибок нет, сессия записывается как обычно', async () => {
+    vi.stubGlobal('AudioContext', undefined);
+    await finishThreeMinutes();
+  });
+
+  it('Given звук заблокирован When сессия завершается Then ошибок нет, сессия записывается как обычно', async () => {
+    class BlockedAudio {
+      currentTime = 0;
+      state = 'suspended';
+      destination = {};
+      resume = () => Promise.reject(new Error('blocked'));
+      createGain = () => {
+        throw new Error('blocked');
+      };
+    }
+    vi.stubGlobal('AudioContext', BlockedAudio);
+    await finishThreeMinutes();
   });
 });

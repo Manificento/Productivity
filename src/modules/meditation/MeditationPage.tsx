@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import { todayKey } from '../../core/dates';
 import { Button, Card, Page, Segmented } from '../../ui';
+import { primeSignal } from './components/signal';
 import { History } from './components/History';
 import { Library } from './components/Library';
 import { PlanCard } from './components/PlanCard';
@@ -23,6 +24,11 @@ export function MeditationPage() {
   const [duration, setDuration] = useState<string>('5');
   const [pattern, setPattern] = useState<PatternId>('4-7-8');
   const [run, setRun] = useState<Run | null>(null);
+  /** Starts a session from a tap — the moment the browser allows audio to be unlocked. */
+  const begin = (r: Run) => {
+    primeSignal();
+    setRun(r);
+  };
 
   if (run) {
     return (
@@ -38,15 +44,15 @@ export function MeditationPage() {
       </Page>
     );
   }
-  const startGuide = (g: GuideSession) => setRun({ durationMin: guideMinutes(g), pattern: 'none', guide: g });
+  const startGuide = (g: GuideSession) => begin({ durationMin: guideMinutes(g), pattern: 'none', guide: g });
   const startPlan = () => {
     if (!targets) return;
     const first = sessionsOfKind(targets.meditationKind)[0];
     // Breathing plans run the 4-7-8 timer; other kinds run the first guide stretched to the planned minutes.
     if (targets.meditationKind === 'breathing' || !first) {
-      setRun({ durationMin: targets.meditationMin, pattern: '4-7-8' });
+      begin({ durationMin: targets.meditationMin, pattern: '4-7-8' });
     } else {
-      setRun({ durationMin: targets.meditationMin, pattern: 'none', guide: fitGuide(first, targets.meditationMin) });
+      begin({ durationMin: targets.meditationMin, pattern: 'none', guide: fitGuide(first, targets.meditationMin) });
     }
   };
   return (
@@ -72,7 +78,7 @@ export function MeditationPage() {
           options={PATTERNS.map((p) => ({ value: p.id, label: p.id === 'box' ? 'Коробка 4-4-4-4' : p.title }))}
           onChange={setPattern}
         />
-        <Button className="w-full" onClick={() => setRun({ durationMin: Number(duration), pattern })}>
+        <Button className="w-full" onClick={() => begin({ durationMin: Number(duration), pattern })}>
           Начать
         </Button>
       </Card>

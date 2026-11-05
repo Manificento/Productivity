@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../../../ui';
-import { playSignal, primeSignal } from './signal';
+import { playSignal } from './signal';
 import { saveSession } from '../data/sessionStore';
 import { stepAt, type GuideSession } from '../logic/library';
 import { breathAt, patternById, type PatternId } from '../logic/patterns';
@@ -33,8 +33,6 @@ export function SessionRunner({
   const [saved, setSaved] = useState<SaveState | null>(null);
   const finished = useRef(false);
   const pattern = patternById(patternId);
-
-  useEffect(() => primeSignal(), []);
 
   /** Ends the session once: completed when the time is up, otherwise interrupted (kept from 1 min). */
   const finish = useCallback(

@@ -1,10 +1,15 @@
+// Browser side effect (not pure), so it lives in components/ rather than logic/.
 let ctx: AudioContext | null = null;
+let ctxCtor: typeof AudioContext | undefined;
 
 function audio(): AudioContext | null {
   try {
     const Ctor = globalThis.AudioContext;
     if (!Ctor) return null;
-    ctx ??= new Ctor();
+    if (!ctx || ctxCtor !== Ctor) {
+      ctx = new Ctor();
+      ctxCtor = Ctor;
+    }
     return ctx;
   } catch {
     return null;
@@ -28,6 +33,8 @@ export function playSignal(): void {
   try {
     const c = audio();
     if (!c) return;
+    // After a long session the screen may have locked and suspended the context.
+    if (c.state !== 'running') void c.resume?.()?.catch(() => undefined);
     const t = c.currentTime;
     const gain = c.createGain();
     gain.gain.setValueAtTime(0.0001, t);
