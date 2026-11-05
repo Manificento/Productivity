@@ -70,7 +70,7 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
             </>
           ) : (
             <SessionRunner
-              key={`${todaySession.session.id}:${targets.deload}:${targets.maxWorkoutIntensity}`}
+              key={todaySession.session.id}
               program={todaySession.program}
               session={todaySession.session}
               targets={targets}

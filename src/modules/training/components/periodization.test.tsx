@@ -70,6 +70,27 @@ describe('session periodization', () => {
   });
 });
 
+describe('event day', () => {
+  it('after «Всё равно выполнить» the session is still a deload', async () => {
+    await addEvent(TODAY);
+    render(<ProgramsSection today={TODAY} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Всё равно выполнить' }));
+    const list = await screen.findByRole('list', { name: 'Сессия на сегодня' });
+    expect(within(list).getByText(/Присед: 3 × 5, 60 кг/)).toBeInTheDocument();
+    expect(screen.getByRole('note', { name: 'Разгрузка' })).toBeInTheDocument();
+  });
+
+  it("checked sets survive a change of the day's targets", async () => {
+    render(<ProgramsSection today={TODAY} />);
+    const set = await screen.findByRole('button', { name: 'Подход 1: Присед' });
+    fireEvent.click(set);
+    await db.settings.put({ key: BASELINE_SETTING_KEY, value: { maxWorkoutIntensity: 'light' } });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Подход 1: Присед' })).toHaveAttribute('aria-pressed', 'true'),
+    );
+  });
+});
+
 describe('plan outlook', () => {
   it('Given событие через 10 дней When я смотрю план на 2 недели Then разгрузочный день и день отдыха отмечены заранее', async () => {
     await addEvent('2026-11-14'); // today + 10

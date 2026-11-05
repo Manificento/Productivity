@@ -40,7 +40,7 @@ export function PlanOutlook({ today }: { today: DateKey }) {
   const dates = Array.from({ length: OUTLOOK_DAYS }, (_, i) => shiftDateKey(from, i));
   return (
     <Card title="План на 2 недели">
-      {sessions.length === 0 && <Empty>Занятий в ближайшие две недели нет</Empty>}
+      {sessions.length === 0 && <Empty>Тренировок не запланировано</Empty>}
       <ul aria-label="План на 2 недели">
         {dates.map((d) => (
           <PlanDay key={d} date={d} session={sessions.find((s) => s.date === d)} />

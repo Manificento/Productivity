@@ -1,7 +1,10 @@
 import type { DailyTargets } from '../../../core/adaptation/types';
 import type { ProgramExercise } from '../../../core/types';
 
-/** A deload day keeps 60 % of the planned volume and weight (−40 %). */
+/**
+ * A deload day keeps 60 % of the planned volume and weight (−40 %, as in the engine's reason text, `core/adaptation/rules.ts`).
+ * TODO(core): export the factor and the light-day RPE limit from the core to avoid drift.
+ */
 export const DELOAD_FACTOR = 0.6;
 
 /** RPE target from which an exercise is «сегодня легче» on a light day. */
@@ -37,8 +40,9 @@ export function adjustForTargets(
   targets: Targets & Pick<DailyTargets, 'reasons'>,
 ): AdjustedSession {
   const rest = targets.maxWorkoutIntensity === 'rest';
-  const deload = targets.deload && !rest;
-  const light = targets.maxWorkoutIntensity === 'light';
+  // `rest` only gates the «suggest moving» step: if the user performs the session anyway, deload still applies.
+  const deload = targets.deload;
+  const light = targets.maxWorkoutIntensity === 'light' || rest;
   return {
     exercises: deload ? deloadExercises(exercises) : exercises,
     deload,

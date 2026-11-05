@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { DailyTargets } from '../../../core/adaptation/types';
 import type { PlannedSession, Program } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
@@ -18,7 +18,8 @@ export function SessionRunner({
   /** Today's targets (from `useDailyTargets`): deload, rest and light days adjust the session. */
   targets: DailyTargets;
 }) {
-  const adjusted = useMemo(() => adjustForTargets(session.exercises, targets), [session.exercises, targets]);
+  // Frozen at the first render: a later change of the day's targets must not wipe the checked sets.
+  const [adjusted] = useState(() => adjustForTargets(session.exercises, targets));
   const [forced, setForced] = useState(false);
   const [draft, setDraft] = useState(() => draftFromExercises(adjusted.exercises));
   const [duration, setDuration] = useState('');
@@ -30,7 +31,11 @@ export function SessionRunner({
   const [replaceError, setReplaceError] = useState<string>();
 
   // The plan itself (names) lives in the session record; the checked sets are local until «Завершить».
-  const shown = draft.map((d, i) => ({ ...d, exercise: adjusted.exercises[i] ?? d.exercise }));
+  // Sets and weights come from the frozen adjustment, names from the live session (a replacement shows at once).
+  const shown = draft.map((d, i) => ({
+    ...d,
+    exercise: { ...(adjusted.exercises[i] ?? d.exercise), name: session.exercises[i]?.name ?? d.exercise.name },
+  }));
 
   async function finish() {
     const built = buildWorkout(shown, {
@@ -72,7 +77,7 @@ export function SessionRunner({
           aria-label="Совет: день отдыха"
           className="mb-3 rounded-xl bg-amber-50 p-3 text-sm dark:bg-amber-950"
         >
-          <p className="font-medium">Сегодня лучше отдохнуть — перенесите тренировку на другой день.</p>
+          <p className="font-medium">Сегодня лучше отдохнуть — перенесите тренировку или выполните её облегчённо.</p>
           <ul className="mt-1 list-disc pl-5 text-zinc-700 dark:text-zinc-300">
             {adjusted.reasons.map((r) => (
               <li key={r}>{r}</li>

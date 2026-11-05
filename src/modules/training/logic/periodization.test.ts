@@ -49,6 +49,16 @@ describe('adjustForTargets', () => {
   });
 });
 
+describe('adjustForTargets on the event day (deload + rest)', () => {
+  it('still deloads and flags hard exercises when performed anyway', () => {
+    const r = adjustForTargets(ex, { deload: true, maxWorkoutIntensity: 'rest', reasons: [] });
+    expect(r.rest).toBe(true);
+    expect(r.deload).toBe(true);
+    expect(r.exercises[0].sets).toBe(3);
+    expect(r.easier).toEqual([true, false, false]);
+  });
+});
+
 describe('dayMark', () => {
   it('rest wins over deload; otherwise deload; otherwise nothing', () => {
     expect(dayMark({ deload: true, maxWorkoutIntensity: 'rest' })).toBe('rest');
