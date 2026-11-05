@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
 import { newRecord } from '../../core/ids';
 import { atLocalTime } from '../../core/logging/sleepTime';
+import { loadAdaptationContext } from '../../core/adaptation/useDailyTargets';
+import { saveSession } from './data/sessionStore';
 import { MeditationPage } from './MeditationPage';
 
 const NOW = atLocalTime('2026-11-03', '08:00');
@@ -149,16 +151,16 @@ describe('Медитация', () => {
 });
 
 describe('Медитация: план и библиотека', () => {
-  it('Given цели дня When я открываю блок Then карточка «Сегодня: 10 мин, дыхание» с причинами', async () => {
+  it('Given цели дня When я открываю блок Then карточка «Сегодня: 10 мин, дыхание — …» из meditationMin, meditationKind и reasons', async () => {
     await db.lifeEvents.add(
       newRecord({ title: 'Экзамен', type: 'exam', date: '2026-11-03', importance: 2, prepDays: 7 }, NOW) as never,
     );
     setup();
-    expect(await screen.findByText(/^Сегодня: \d+ мин, дыхание$/)).toBeInTheDocument();
+    expect(await screen.findByText('Сегодня: 10 мин, дыхание')).toBeInTheDocument();
     expect(screen.getByText(/Сегодня «Экзамен»/)).toBeInTheDocument();
   });
 
-  it('Given библиотека When я выбираю сессию вида focus Then текст-гид по шагам с таймингом', async () => {
+  it('Given библиотека When я выбираю сессию вида focus Then текст-гид по шагам с таймингом; не меньше 3 сессий на каждый вид', async () => {
     const { user } = setup();
     await user.click(screen.getByRole('radio', { name: 'фокус' }));
     await user.click(screen.getByRole('button', { name: /Одна точка/ }));
@@ -169,8 +171,6 @@ describe('Медитация: план и библиотека', () => {
   });
 
   it('Given план выполнен When день закончился Then meditationMinYesterday доступен движку на следующий день', async () => {
-    const { saveSession } = await import('./data/sessionStore');
-    const { loadAdaptationContext } = await import('../../core/adaptation/useDailyTargets');
     await saveSession({ startedAt: NOW, durationMin: 12, pattern: 'none', completed: true });
     const ctx = await loadAdaptationContext('2026-11-04');
     expect(ctx.meditationMinYesterday).toBe(12);
@@ -182,5 +182,33 @@ describe('Медитация: план и библиотека', () => {
     expect(await screen.findByText('Библиотека сессий')).toBeInTheDocument();
     await screen.findByText(/Пока нет сессий/);
     expect(screen.queryByText(/Сегодня:/)).not.toBeInTheDocument();
+  });
+
+  it('Given план 10 мин, фокус When «Начать по плану» и сессия завершена Then таймер на 10 мин, запись kind = focus, meditationMinYesterday = 10', async () => {
+    const { user } = setup();
+    await user.click(await screen.findByRole('button', { name: 'Начать по плану' }));
+    expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('10:00');
+    expect(screen.getByText(/шаг 1 из 3/)).toBeInTheDocument();
+    await act(async () => {
+      vi.setSystemTime(NOW + 600_000);
+      vi.advanceTimersByTime(250);
+    });
+    expect(await screen.findByText('Сессия завершена и записана.')).toBeInTheDocument();
+    expect((await db.meditationSessions.toArray())[0]).toMatchObject({
+      kind: 'focus',
+      durationMin: 10,
+      completed: true,
+    });
+    expect((await loadAdaptationContext('2026-11-04')).meditationMinYesterday).toBe(10);
+  });
+
+  it('Given событие сегодня When «Начать по плану» Then дыхательный таймер на 10 мин с кругом', async () => {
+    await db.lifeEvents.add(
+      newRecord({ title: 'Экзамен', type: 'exam', date: '2026-11-03', importance: 2, prepDays: 7 }, NOW) as never,
+    );
+    const { user } = setup();
+    await user.click(await screen.findByRole('button', { name: 'Начать по плану' }));
+    expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('10:00');
+    expect(screen.getByTestId('breath-circle')).toBeInTheDocument();
   });
 });

@@ -47,8 +47,9 @@ export function SessionRunner({
         await saveSession({
           startedAt: startedAt.current,
           durationMin: minutes,
-          pattern: patternId,
+          pattern: guide ? 'none' : patternId,
           completed: complete,
+          kind: guide?.kind,
         });
         if (report) setSaved(complete ? 'full' : 'partial');
       } catch {
@@ -93,15 +94,16 @@ export function SessionRunner({
   }
 
   const left = remainingMs(startedAt.current, durationMin, now);
+  const step = guide && stepAt(guide, now - startedAt.current);
   const breath = breathAt(pattern, now - startedAt.current);
   return (
     <div className="flex flex-col items-center gap-4 py-4">
       {guide ? (
         <div className="flex min-h-40 flex-col items-center justify-center gap-2 text-center">
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {guide.title} · шаг {stepAt(guide, now - startedAt.current).index + 1} из {guide.steps.length}
+            {guide.title} · шаг {step!.index + 1} из {guide.steps.length}
           </p>
-          <p className="text-lg font-medium">{stepAt(guide, now - startedAt.current).step.text}</p>
+          <p className="text-lg font-medium">{step!.step.text}</p>
         </div>
       ) : (
         <div className="flex h-56 w-56 items-center justify-center">

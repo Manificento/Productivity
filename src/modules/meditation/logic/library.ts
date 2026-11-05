@@ -103,3 +103,12 @@ export function stepAt(g: GuideSession, elapsedMs: number): { index: number; ste
 }
 
 export const sessionsOfKind = (kind: MeditationKind): GuideSession[] => LIBRARY.filter((g) => g.kind === kind);
+
+/** The guide stretched (or squeezed) to `minutes`: the main middle step takes the difference. */
+export function fitGuide(g: GuideSession, minutes: number): GuideSession {
+  const total = g.steps.reduce((s, x) => s + x.seconds, 0);
+  const mid = Math.floor(g.steps.length / 2);
+  const seconds = g.steps[mid]!.seconds + minutes * 60 - total;
+  if (seconds <= 0) return g;
+  return { ...g, steps: g.steps.map((s, i) => (i === mid ? { ...s, seconds } : s)) };
+}

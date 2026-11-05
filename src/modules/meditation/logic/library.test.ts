@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { guideMinutes, KINDS, LIBRARY, sessionsOfKind, stepAt } from './library';
+import { fitGuide, guideMinutes, KINDS, LIBRARY, sessionsOfKind, stepAt } from './library';
 
 describe('library', () => {
   it('не меньше 3 сессий на каждый вид, у каждой шаги с таймингом в целых минутах', () => {
@@ -14,5 +14,11 @@ describe('library', () => {
     expect(stepAt(g, 0).index).toBe(0);
     expect(stepAt(g, 31_000).index).toBe(1);
     expect(stepAt(g, 999_999).index).toBe(2);
+  });
+  it('fitGuide растягивает основной шаг до нужных минут', () => {
+    const g = sessionsOfKind('focus')[0]!;
+    expect(guideMinutes(fitGuide(g, 15))).toBe(15);
+    expect(fitGuide(g, 15).steps).toHaveLength(3);
+    expect(guideMinutes(fitGuide(g, 1))).toBe(3); // короче основного шага не сжимаем
   });
 });

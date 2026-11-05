@@ -7,7 +7,7 @@ import { Library } from './components/Library';
 import { PlanCard } from './components/PlanCard';
 import { SessionRunner } from './components/SessionRunner';
 import { useMeditationSessions } from './data/sessionStore';
-import { guideMinutes, sessionsOfKind, type GuideSession } from './logic/library';
+import { fitGuide, guideMinutes, sessionsOfKind, type GuideSession } from './logic/library';
 import { DURATIONS_MIN, PATTERNS, type PatternId } from './logic/patterns';
 
 interface Run {
@@ -41,9 +41,13 @@ export function MeditationPage() {
   const startGuide = (g: GuideSession) => setRun({ durationMin: guideMinutes(g), pattern: 'none', guide: g });
   const startPlan = () => {
     if (!targets) return;
-    const guide = targets.meditationKind === 'breathing' ? undefined : sessionsOfKind(targets.meditationKind)[0];
-    if (guide) startGuide(guide);
-    else setRun({ durationMin: targets.meditationMin, pattern: '4-7-8' });
+    const first = sessionsOfKind(targets.meditationKind)[0];
+    // Breathing plans run the 4-7-8 timer; other kinds run the first guide stretched to the planned minutes.
+    if (targets.meditationKind === 'breathing' || !first) {
+      setRun({ durationMin: targets.meditationMin, pattern: '4-7-8' });
+    } else {
+      setRun({ durationMin: targets.meditationMin, pattern: 'none', guide: fitGuide(first, targets.meditationMin) });
+    }
   };
   return (
     <Page title="Медитация">
