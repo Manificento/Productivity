@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import { useState } from 'react';
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import { todayKey } from '../../../core/dates';
@@ -13,7 +14,9 @@ import {
   type Macros,
   type MealKind,
 } from '../logic/nutrition';
+import { cutoffPassed } from '../logic/diary';
 import { AddFoodSheet } from './AddFoodSheet';
+import { DayTargets } from './DayTargets';
 import { MealItemSheet, type MealItemRef } from './MealItemSheet';
 
 function MacrosLine({ m }: { m: Macros }) {
@@ -25,7 +28,14 @@ function MacrosLine({ m }: { m: Macros }) {
 }
 
 /** «Еда»: today's meals with totals, quick add from recent foods, custom foods. */
-export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
+export function FoodTab({
+  today = todayKey(),
+  nowTime = format(new Date(), 'HH:mm'),
+}: {
+  today?: DateKey;
+  /** 'HH:mm' now; injectable for tests. */
+  nowTime?: string;
+}) {
   const foods = useFoods();
   const meals = useDayMeals(today);
   const recentMeals = useRecentMeals(today);
@@ -51,6 +61,8 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
           )}
         </Card>
       )}
+
+      <DayTargets targets={targets} eaten={totals.day} />
 
       <section aria-label="Итого за день">
         <Card title="Итого за день">
@@ -119,6 +131,7 @@ export function FoodTab({ today = todayKey() }: { today?: DateKey }) {
         foods={foods}
         recent={recent}
         noNewFoods={targets?.noNewFoods ?? false}
+        caffeineLate={targets ? cutoffPassed(nowTime, targets.caffeineCutoff) : false}
         onClose={() => setAdding(undefined)}
       />
       <MealItemSheet item={editing} onClose={() => setEditing(undefined)} />

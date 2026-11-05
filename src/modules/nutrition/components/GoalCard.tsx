@@ -116,7 +116,7 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
   const starter = estimate?.kind === 'starter' && settings.expenditure?.source === 'starter' ? estimate : undefined;
 
   return (
-    <section aria-label="Цель">
+    <section id="nutrition-goal" aria-label="Цель">
       <Card title="Цель">
         <form onSubmit={onSubmit} noValidate>
           <Segmented
