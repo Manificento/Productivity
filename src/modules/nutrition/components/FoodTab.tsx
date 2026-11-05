@@ -131,7 +131,7 @@ export function FoodTab({
         foods={foods}
         recent={recent}
         noNewFoods={targets?.noNewFoods ?? false}
-        caffeineLate={targets ? cutoffPassed(nowTime, targets.caffeineCutoff) : false}
+        caffeineLate={targets ? cutoffPassed(nowTime, targets.caffeineCutoff, targets.wakeTime) : false}
         onClose={() => setAdding(undefined)}
       />
       <MealItemSheet item={editing} onClose={() => setEditing(undefined)} />

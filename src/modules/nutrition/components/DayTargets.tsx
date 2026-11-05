@@ -26,13 +26,15 @@ function Gauge({ label, eaten, target, unit }: { label: string; eaten: number; t
 export function DayTargets({ targets, eaten }: { targets: DailyTargets | undefined; eaten: Macros }) {
   if (!targets) return null;
   const { kcal, proteinG, fatG, carbsG } = targets;
-  const noDeficit = targets.phase === 'taper' || targets.phase === 'event';
-  const why = targets.reasons.filter((r) => r.includes('«') || r.includes('без дефицита'));
+  // The engine decides: it adds this reason only when a deficit was actually dropped (goal «снизить»).
+  const noDeficitReason = targets.reasons.find((r) => r.includes('без дефицита'));
+  // Why: the phase reason about the event («Завтра «…»…» / «Сегодня «…»…»).
+  const why = targets.reasons.filter((r) => r.startsWith('Завтра «') || r.startsWith('Сегодня «'));
 
   if (kcal === undefined || proteinG === undefined || fatG === undefined || carbsG === undefined) {
     return (
       <Card title="Цель на день">
-        <p className="mb-2 text-sm text-zinc-500">Цели по калориям и БЖУ появятся, когда задана цель.</p>
+        <p className="mb-2 text-sm text-zinc-500">Цели по калориям и БЖУ появятся, когда будут вес, рост и цель.</p>
         <button
           type="button"
           onClick={() => document.getElementById('nutrition-goal')?.scrollIntoView?.({ block: 'start' })}
@@ -45,14 +47,15 @@ export function DayTargets({ targets, eaten }: { targets: DailyTargets | undefin
   }
   return (
     <section aria-label="Цель на день">
-      {noDeficit && (
+      {noDeficitReason && (
         <div
           role="status"
           className="mb-3 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200"
         >
           <p className="font-medium">Сегодня без дефицита</p>
-          {why.map((r) => (
-            <p key={r}>{r}</p>
+          <p>{noDeficitReason}</p>
+          {why.map((r, i) => (
+            <p key={`${i}-${r}`}>{r}</p>
           ))}
         </div>
       )}

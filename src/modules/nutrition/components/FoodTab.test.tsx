@@ -183,23 +183,40 @@ describe('food tab', () => {
       expect(within(section).getByRole('progressbar', { name: 'Углеводы' })).toBeInTheDocument();
     });
 
-    it('Given фаза taper When я открываю дневник Then плашка «Сегодня без дефицита» с причиной из reasons', async () => {
-      await setUpTargets();
-      await db.settings.put({ key: 'nutrition.goal', value: { kind: 'lose', ratePct: 0.5 } });
-      await db.lifeEvents.put({
+    const exam = (date: string) =>
+      db.lifeEvents.put({
         id: 'exam',
         createdAt: 0,
         updatedAt: 0,
         title: 'Экзамен',
         type: 'exam',
-        date: '2026-11-05',
+        date,
         importance: 3,
         prepDays: 7,
       });
+
+    it.each([
+      ['taper', '2026-11-05', 'Завтра «Экзамен»'],
+      ['event', TODAY, 'Сегодня «Экзамен»'],
+    ])(
+      'Given фаза taper или event (%s) When я открываю дневник Then плашка «Сегодня без дефицита» с причиной из reasons',
+      async (_phase, date, reason) => {
+        await setUpTargets();
+        await db.settings.put({ key: 'nutrition.goal', value: { kind: 'lose', ratePct: 0.5 } });
+        await exam(date);
+        renderTab();
+        const banner = await screen.findByRole('status');
+        expect(banner).toHaveTextContent('Сегодня без дефицита');
+        expect(banner).toHaveTextContent(reason);
+      },
+    );
+
+    it('Given цель «удержать» и фаза taper When я открываю дневник Then плашки нет: дефицита не было', async () => {
+      await setUpTargets();
+      await exam('2026-11-05');
       renderTab();
-      const banner = await screen.findByRole('status');
-      expect(banner).toHaveTextContent('Сегодня без дефицита');
-      expect(banner).toHaveTextContent('Завтра «Экзамен»');
+      await screen.findByRole('region', { name: 'Цель на день' });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
 
     it('Given нет цели When я открываю дневник Then шкалы скрыты, ссылка «Задать цель»', async () => {
@@ -216,8 +233,15 @@ describe('food tab', () => {
       type('Поиск продукта', 'кофе');
       fireEvent.click(within(dialog).getByRole('button', { name: /Кофе/ }));
       expect(await within(dialog).findByRole('note')).toHaveTextContent('Отсечка кофеина');
-      expect(within(dialog).getByRole('button', { name: 'Добавить' })).toBeEnabled();
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Назад' }));
+      // Soft: adding still works.
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Добавить' }));
+      expect(await screen.findByRole('button', { name: /Изменить: Кофе американо/ })).toBeInTheDocument();
+    });
+
+    it('Given отсечка кофеина прошла When я добавляю продукт без кофеина Then предупреждения нет', async () => {
+      await createFood({ ...bread, name: 'Овсянка' });
+      renderTab('16:00');
+      const dialog = await openAdd('Перекус');
       type('Поиск продукта', 'овся');
       fireEvent.click(within(dialog).getByRole('button', { name: /Овсянка/ }));
       await within(dialog).findByLabelText('Вес, г');
