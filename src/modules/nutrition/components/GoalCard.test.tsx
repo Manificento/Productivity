@@ -43,7 +43,7 @@ describe('goal card', () => {
     await logWeight(TODAY, 80);
     render(<GoalCard today={TODAY} />);
     expect(await screen.findByText(/уточним через 13 дней/)).toBeInTheDocument();
-    expect(screen.getByText('2 490 ккал'.replace(' ', ''))).toBeInTheDocument();
+    expect(screen.getByText('2490 ккал')).toBeInTheDocument();
   });
 
   it('Given профиль не задан When ввожу рост и год Then сохраняется в settings nutrition.profile и появляется оценка', async () => {
@@ -55,6 +55,39 @@ describe('goal card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить данные' }));
     expect(await screen.findByText(/уточним через/)).toBeInTheDocument();
     expect((await db.settings.get('nutrition.profile'))?.value).toEqual(profile);
+  });
+
+  it('Given цель «удержать» When выбираю «Снизить» и сохраняю Then ratePct = показанному темпу, а не 0', async () => {
+    await saveGoal({ kind: 'maintain', ratePct: 0 });
+    render(<GoalCard today={TODAY} />);
+    fireEvent.click(await screen.findByRole('radio', { name: 'Снизить' }));
+    const shown = Number((screen.getByLabelText('Темп') as HTMLSelectElement).value);
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить цель' }));
+    await screen.findByText('Цель сохранена');
+    expect((await db.settings.get('nutrition.goal'))?.value).toEqual({ kind: 'lose', ratePct: shown });
+    expect(shown).toBeGreaterThan(0);
+  });
+
+  it('Given сначала профиль, потом вес When логирую вес Then цели появляются без перезахода', async () => {
+    await saveGoal({ kind: 'maintain', ratePct: 0 });
+    await saveProfile(profile);
+    render(<GoalCard today={TODAY} />);
+    await screen.findByText(/Цели по калориям появятся/);
+    await logWeight(TODAY, 80);
+    const targets = await screen.findByRole('group', { name: 'Цели дня по питанию' });
+    expect(targets).toHaveTextContent('2490 ккал');
+  });
+
+  it('Given стартовая оценка When меняю рост Then цели и nutrition.expenditure обновляются сразу', async () => {
+    await saveGoal({ kind: 'maintain', ratePct: 0 });
+    await saveProfile(profile);
+    await logWeight(TODAY, 80);
+    render(<GoalCard today={TODAY} />);
+    const targets = await screen.findByRole('group', { name: 'Цели дня по питанию' });
+    await waitFor(() => expect(targets).toHaveTextContent('2490 ккал'));
+    fireEvent.change(screen.getByLabelText('Рост, см'), { target: { value: '170' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить данные' }));
+    await waitFor(() => expect(targets).toHaveTextContent('2400 ккал'));
   });
 
   it('Given рост 20 When сохраняю данные Then ошибка валидации', async () => {

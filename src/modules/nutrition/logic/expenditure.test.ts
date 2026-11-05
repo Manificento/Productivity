@@ -62,7 +62,7 @@ describe('measured expenditure', () => {
 describe('starter estimate', () => {
   const profile = { heightCm: 180, birthYear: 1996, sex: 'male' as const };
 
-  it('Given 80 кг, 180 см, 30 лет, мужчина When считаю старт Then Mifflin–St Jeor × 1,4 ≈ 2670', () => {
+  it('Given 80 кг, 180 см, 30 лет, мужчина When считаю старт Then Mifflin–St Jeor × 1,4 = 2490', () => {
     // BMR = 10·80 + 6,25·180 − 5·30 + 5 = 1780; × 1,4 = 2492 → 2490
     expect(starterExpenditure(profile, 80, 2026)).toBe(2490);
   });
@@ -85,10 +85,19 @@ describe('starter estimate', () => {
     expect(estimateExpenditure(series({ weight: () => 80, kcal: 2500, days: 5 }))).toBeUndefined();
   });
 
-  it('Given 14 дней веса, но 9 дней дневника When считаю Then ещё не измеренный расход', () => {
+  it('Given 28 дней веса, но 9 дней дневника When считаю Then ещё не измеренный расход', () => {
     const input = series({ weight: () => 80, kcal: 2500, skipFood: (i) => i >= 9 });
     const r = estimateExpenditure(input, { profile, weightKg: 80, year: 2026 });
     expect(r).toMatchObject({ kind: 'starter', daysLeft: 1 });
+  });
+});
+
+describe('thresholds', () => {
+  it('Given ровно 14 дней веса и ровно 10 дней дневника в окне 28 дней When считаю Then уже измеренный расход', () => {
+    const r = estimateExpenditure(
+      series({ weight: () => 80, kcal: 2500, skipWeight: (i) => i % 2 === 1, skipFood: (i) => i % 2 === 1 || i > 18 }),
+    );
+    expect(r).toMatchObject({ kind: 'measured', kcal: 2500 });
   });
 });
 

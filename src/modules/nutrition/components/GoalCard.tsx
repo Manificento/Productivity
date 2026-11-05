@@ -3,7 +3,7 @@ import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import { todayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty, Field, Input, Segmented, Select } from '../../../ui';
-import { refreshExpenditure, saveGoal, saveProfile, useGoal } from '../data/goal';
+import { refreshExpenditure, saveGoal, saveProfile, useEstimateInputs, useGoal } from '../data/goal';
 import { RATE_OPTIONS, parseProfile, type Estimate, type Profile } from '../logic/expenditure';
 import { formatGrams } from '../logic/nutrition';
 
@@ -78,15 +78,26 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
   const [saved, setSaved] = useState(false);
   const [profileRev, setProfileRev] = useState(0);
 
-  // Weekly recompute: runs when the screen opens and after the profile changes.
+  const inputs = useEstimateInputs(today);
+
+  // Recompute when the screen opens and whenever the profile, weights or diary change (stored at most weekly once measured).
   useEffect(() => {
-    refreshExpenditure(today).then(setEstimate, () => setEstimate(undefined));
-  }, [today, profileRev]);
+    let alive = true;
+    refreshExpenditure(today).then(
+      (e) => alive && setEstimate(e),
+      () => alive && setEstimate(undefined),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [today, profileRev, inputs]);
 
   if (!settings) return <Empty>Загрузка…</Empty>;
 
   const currentKind = kind ?? settings.goal?.kind ?? 'lose';
-  const currentRate = rate ?? settings.goal?.ratePct ?? 0.5;
+  const savedRate = settings.goal?.ratePct;
+  // A saved rate outside the options (0 for «удержать», or from an imported backup) would not match what the select shows.
+  const currentRate = rate ?? (RATE_OPTIONS.some((r) => r === savedRate) ? (savedRate as number) : 0.5);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -101,7 +112,8 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
   }
 
   const hasTargets = targets?.kcal !== undefined;
-  const starter = estimate?.kind === 'starter' ? estimate : undefined;
+  // The label follows what the engine uses (the stored value), the countdown follows the fresh estimate.
+  const starter = estimate?.kind === 'starter' && settings.expenditure?.source === 'starter' ? estimate : undefined;
 
   return (
     <section aria-label="Цель">

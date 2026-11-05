@@ -88,10 +88,25 @@ export async function refreshExpenditure(today: DateKey, now: number = Date.now(
   const estimate = estimateExpenditure(input, fallback);
   if (!estimate) return undefined;
   const canMeasure = estimate.kind === 'measured';
-  if (stored && !needsRefresh(stored, now, canMeasure)) return estimate;
+  // A starter estimate is cheap and deterministic: rewrite it whenever the profile or weight changed it.
+  const starterChanged = estimate.kind === 'starter' && (stored?.source !== 'starter' || stored.kcal !== estimate.kcal);
+  if (stored && !starterChanged && !needsRefresh(stored, now, canMeasure)) return estimate;
   await db.settings.put({
     key: EXPENDITURE_KEY,
     value: { kcal: estimate.kcal, updatedAt: now, source: estimate.kind },
   });
   return estimate;
+}
+
+/** Changes whenever the inputs of the estimate change (latest weight, weigh-in and diary counts in the window). */
+export function useEstimateInputs(today: DateKey): string | undefined {
+  return useLiveQuery(async () => {
+    const from = shiftDateKey(today, -(WINDOW_DAYS - 1));
+    const [latest, weightDays, mealCount] = await Promise.all([
+      db.weightLogs.where('date').belowOrEqual(today).last(),
+      db.weightLogs.where('date').between(from, today, true, true).count(),
+      db.mealLogs.where('date').between(from, today, true, true).count(),
+    ]);
+    return `${latest?.date}:${latest?.kg}:${weightDays}:${mealCount}`;
+  }, [today]);
 }
