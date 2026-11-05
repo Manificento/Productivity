@@ -38,9 +38,8 @@ describe('App shell', () => {
     expect(screen.queryByText(/Цели дня/)).not.toBeInTheDocument();
   });
 
-  it('Given модули meditation, progress, notes When я открываю их маршруты Then пустое состояние с названием блока и «скоро»; в навигации они пока скрыты', async () => {
+  it('Given модули progress, notes When я открываю их маршруты Then пустое состояние с названием блока и «скоро»; в навигации они пока скрыты', async () => {
     const skeletons: [string, string][] = [
-      ['meditation', 'Медитация'],
       ['progress', 'Прогресс'],
       ['notes', 'Заметки'],
     ];

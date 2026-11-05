@@ -1,18 +1,47 @@
-import { Card, Empty, Page } from '../../ui';
+import { useState } from 'react';
+import { todayKey } from '../../core/dates';
+import { Button, Card, Page, Segmented } from '../../ui';
+import { History } from './components/History';
+import { SessionRunner } from './components/SessionRunner';
+import { useMeditationSessions } from './data/sessionStore';
+import { DURATIONS_MIN, PATTERNS, type PatternId } from './logic/patterns';
 
-/** `/meditation` — the block is not built yet: name, one line of what it will do, and «скоро». */
+/** `/meditation` — timer with a breathing circle, and a week of history with the streak. */
 export function MeditationPage() {
+  const sessions = useMeditationSessions();
+  const [duration, setDuration] = useState<string>('5');
+  const [pattern, setPattern] = useState<PatternId>('4-7-8');
+  const [running, setRunning] = useState(false);
+
+  if (running) {
+    return (
+      <Page title="Медитация">
+        <Card>
+          <SessionRunner durationMin={Number(duration)} patternId={pattern} onClose={() => setRunning(false)} />
+        </Card>
+      </Page>
+    );
+  }
   return (
     <Page title="Медитация">
-      <Card>
-        <Empty>
-          Блок «Медитация» — скоро.
-          <br />
-          <span className="text-zinc-500 dark:text-zinc-400">
-            Таймер, дыхательные паттерны, библиотека текстовых сессий и план по фазам события.
-          </span>
-        </Empty>
+      <Card title="Новая сессия">
+        <Segmented
+          label="Длительность"
+          value={duration}
+          options={DURATIONS_MIN.map((m) => ({ value: String(m), label: `${m} мин` }))}
+          onChange={setDuration}
+        />
+        <Segmented
+          label="Паттерн дыхания"
+          value={pattern}
+          options={PATTERNS.map((p) => ({ value: p.id, label: p.id === 'box' ? 'Коробка 4-4-4-4' : p.title }))}
+          onChange={setPattern}
+        />
+        <Button className="w-full" onClick={() => setRunning(true)}>
+          Начать
+        </Button>
       </Card>
+      <Card title="История">{sessions && <History sessions={sessions} today={todayKey()} />}</Card>
     </Page>
   );
 }
