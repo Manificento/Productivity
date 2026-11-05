@@ -19,7 +19,10 @@ describe('program templates', () => {
 
   it('a template becomes a valid draft', () => {
     for (const t of PROGRAM_TEMPLATES) {
-      expect(parseProgramDraft(draftFromTemplate(t)).ok).toBe(true);
+      expect(parseProgramDraft(draftFromTemplate(t))).toEqual({
+        ok: true,
+        value: { name: t.name, weeks: 4, days: t.days },
+      });
     }
   });
 });
@@ -56,7 +59,7 @@ describe('parseProgramDraft', () => {
   const ok = () => ({
     ...emptyProgramDraft(),
     name: ' Моя ',
-    days: [{ weekday: 1, exercises: [{ name: ' Присед ', sets: '3', reps: '5', weightKg: '80,5' }] }],
+    days: [{ weekday: 1, exercises: [{ name: ' Присед ', sets: '3', reps: '5', weightKg: '80,5', rpeTarget: '' }] }],
   });
 
   it('trims, converts numbers and accepts a decimal comma', () => {
@@ -80,6 +83,12 @@ describe('parseProgramDraft', () => {
     const bad = ok();
     bad.days[0].exercises[0].sets = '0';
     expect(parseProgramDraft(bad)).toEqual({ ok: false, error: 'Подходы — целое число от 1' });
+  });
+
+  it('rejects an RPE target outside 1–10', () => {
+    const bad = ok();
+    bad.days[0].exercises[0].rpeTarget = '11';
+    expect(parseProgramDraft(bad)).toEqual({ ok: false, error: 'RPE — целое число от 1 до 10' });
   });
 
   it('weekdays are listed Monday first', () => {

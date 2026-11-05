@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { ProgramsSection } from './ProgramsSection';
 
@@ -76,5 +76,25 @@ describe('programs section', () => {
     const left = await db.plannedSessions.toArray();
     expect(left.every((s) => s.date <= TODAY)).toBe(true);
     expect((await db.programs.toArray())[0].archived).toBe(true);
+  });
+
+  it('a failed save shows an error and keeps the form open', async () => {
+    vi.spyOn(db.programs, 'add').mockRejectedValueOnce(new Error('boom'));
+    renderIt();
+    fireEvent.click(await screen.findByRole('button', { name: 'Шаблон: Бег' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить программу' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось сохранить программу');
+    expect(screen.getByRole('button', { name: 'Сохранить программу' })).toBeEnabled();
+  });
+
+  it('a failed archive shows an error and keeps the sheet open', async () => {
+    renderIt();
+    fireEvent.click(await screen.findByRole('button', { name: 'Шаблон: Бег' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить программу' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Архивировать Бег' }));
+    vi.spyOn(db.programs, 'update').mockRejectedValueOnce(new Error('boom'));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Архивировать' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось архивировать');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

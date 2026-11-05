@@ -36,7 +36,7 @@ export async function loadActivePrograms(): Promise<Program[]> {
   return all.filter((p) => !p.archived).sort((a, b) => a.createdAt - b.createdAt);
 }
 
-export type TodaySession = { rest: true } | { rest: false; program: Program; session: PlannedSession };
+export type TodaySession = { rest: true; ended?: boolean } | { rest: false; program: Program; session: PlannedSession };
 
 /** Today's session of the first active program that has one; `{ rest: true }` if programs exist but none today. */
 export async function loadTodaySession(today: DateKey): Promise<TodaySession | undefined> {
@@ -50,7 +50,9 @@ export async function loadTodaySession(today: DateKey): Promise<TodaySession | u
     );
     if (session) return { rest: false, program, session };
   }
-  return { rest: true };
+  // Nothing today: a day off, or the plan is over (no session after today either).
+  const upcoming = await db.plannedSessions.where('date').above(today).count();
+  return { rest: true, ended: upcoming === 0 };
 }
 
 export function useActivePrograms(): Program[] | undefined {
@@ -59,5 +61,5 @@ export function useActivePrograms(): Program[] | undefined {
 
 export function useTodaySession(today: DateKey): TodaySession | undefined | null {
   // `null` while loading, `undefined` when there is no active program.
-  return useLiveQuery(async () => (await loadTodaySession(today)) ?? undefined, [today], null);
+  return useLiveQuery(async () => await loadTodaySession(today), [today], null);
 }

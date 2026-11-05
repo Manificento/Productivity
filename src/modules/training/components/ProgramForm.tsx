@@ -4,6 +4,7 @@ import { Button, Card, Field, IconButton, Input } from '../../../ui';
 import { createProgram } from '../data/programs';
 import {
   WEEKDAY_ORDER,
+  byWeekdayOrder,
   WEEKDAY_SHORT,
   emptyExercise,
   parseProgramDraft,
@@ -59,9 +60,7 @@ export function ProgramForm({
     }
   }
 
-  const days = [...draft.days].sort(
-    (a, b) => WEEKDAY_ORDER.indexOf(a.weekday as 1) - WEEKDAY_ORDER.indexOf(b.weekday as 1),
-  );
+  const days = [...draft.days].sort(byWeekdayOrder);
 
   return (
     <Card title="Новая программа">
@@ -95,8 +94,8 @@ export function ProgramForm({
             <fieldset key={day.weekday} className="mb-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
               <legend className="px-1 text-sm font-medium">{wd}</legend>
               {day.exercises.map((ex, i) => (
-                <div key={i} className="mb-3 grid grid-cols-3 gap-2">
-                  <div className="col-span-3 flex items-end gap-2">
+                <div key={i} className="mb-3 grid grid-cols-2 gap-2">
+                  <div className="col-span-2 flex items-end gap-2">
                     <div className="min-w-0 flex-1">
                       <label className="mb-1 block text-sm text-zinc-600 dark:text-zinc-400">
                         Упражнение
@@ -121,6 +120,7 @@ export function ProgramForm({
                       ['sets', 'Подходы'],
                       ['reps', 'Повторы'],
                       ['weightKg', 'Вес, кг'],
+                      ['rpeTarget', 'RPE'],
                     ] as const
                   ).map(([key, label]) => (
                     <label key={key} className="block text-sm text-zinc-600 dark:text-zinc-400">

@@ -13,7 +13,7 @@ import {
 import { ProgramForm } from './ProgramForm';
 
 export function exerciseLine(e: ProgramExercise): string {
-  const parts = [`${e.sets} × ${e.reps ?? '—'}`];
+  const parts = [e.reps === undefined ? `${e.sets} подх.` : `${e.sets} × ${e.reps}`];
   if (e.weightKg !== undefined) parts.push(`${e.weightKg} кг`);
   if (e.rpeTarget !== undefined) parts.push(`RPE ${e.rpeTarget}`);
   return `${e.name}: ${parts.join(', ')}`;
@@ -57,7 +57,9 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
           {todaySession === null || todaySession === undefined ? (
             <Empty>Загрузка…</Empty>
           ) : todaySession.rest ? (
-            <p className="py-4 text-center text-base font-medium">День отдыха</p>
+            <p className="py-4 text-center text-base font-medium">
+              {todaySession.ended ? 'План закончился — создайте новую программу' : 'День отдыха'}
+            </p>
           ) : (
             <>
               <p className="mb-2 text-sm text-zinc-500">{todaySession.program.name}</p>

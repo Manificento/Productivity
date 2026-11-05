@@ -5,6 +5,10 @@ import type { DateKey, ProgramDay, ProgramExercise } from '../../../core/types';
 export const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 export const WEEKDAY_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
 
+/** Comparator: Monday first, Sunday last. */
+export const byWeekdayOrder = (a: { weekday: number }, b: { weekday: number }): number =>
+  (WEEKDAY_ORDER as readonly number[]).indexOf(a.weekday) - (WEEKDAY_ORDER as readonly number[]).indexOf(b.weekday);
+
 export const DEFAULT_WEEKS = 4;
 
 export interface ProgramTemplate {
@@ -46,7 +50,7 @@ export const PROGRAM_TEMPLATES: ProgramTemplate[] = [
     name: 'Бег',
     days: [
       { weekday: 2, exercises: [{ name: 'Лёгкий бег 30 минут', sets: 1, rpeTarget: 5 }] },
-      { weekday: 4, exercises: [{ name: 'Интервалы 6 × 2 минуты', sets: 6, rpeTarget: 8 }] },
+      { weekday: 4, exercises: [{ name: 'Интервалы по 2 минуты', sets: 6, rpeTarget: 8 }] },
       { weekday: 6, exercises: [{ name: 'Длинный бег 45 минут', sets: 1, rpeTarget: 6 }] },
     ],
   },
@@ -91,6 +95,7 @@ export interface ExerciseDraft {
   sets: string;
   reps: string;
   weightKg: string;
+  rpeTarget: string;
 }
 export interface DayDraft {
   weekday: number;
@@ -102,7 +107,7 @@ export interface ProgramDraft {
   days: DayDraft[];
 }
 
-export const emptyExercise = (): ExerciseDraft => ({ name: '', sets: '3', reps: '', weightKg: '' });
+export const emptyExercise = (): ExerciseDraft => ({ name: '', sets: '3', reps: '', weightKg: '', rpeTarget: '' });
 export const emptyProgramDraft = (): ProgramDraft => ({ name: '', weeks: DEFAULT_WEEKS, days: [] });
 
 export function draftFromTemplate(t: ProgramTemplate): ProgramDraft {
@@ -116,6 +121,7 @@ export function draftFromTemplate(t: ProgramTemplate): ProgramDraft {
         sets: String(e.sets),
         reps: e.reps === undefined ? '' : String(e.reps),
         weightKg: e.weightKg === undefined ? '' : String(e.weightKg),
+        rpeTarget: e.rpeTarget === undefined ? '' : String(e.rpeTarget),
       })),
     })),
   };
@@ -156,10 +162,15 @@ export function parseProgramDraft(draft: ProgramDraft): ParseResult {
         if (!Number.isFinite(w) || w < 0) return { ok: false, error: 'Вес — число не меньше 0' };
         ex.weightKg = w;
       }
+      if (e.rpeTarget.trim() !== '') {
+        const rpe = num(e.rpeTarget);
+        if (!Number.isInteger(rpe) || rpe < 1 || rpe > 10) return { ok: false, error: 'RPE — целое число от 1 до 10' };
+        ex.rpeTarget = rpe;
+      }
       exercises.push(ex);
     }
     days.push({ weekday: d.weekday, exercises });
   }
-  days.sort((a, b) => WEEKDAY_ORDER.indexOf(a.weekday as 1) - WEEKDAY_ORDER.indexOf(b.weekday as 1));
+  days.sort(byWeekdayOrder);
   return { ok: true, value: { name, weeks: draft.weeks, days } };
 }

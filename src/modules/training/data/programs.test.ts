@@ -34,7 +34,8 @@ describe('programs data', () => {
     const today = await loadTodaySession(TODAY);
     expect(today).toMatchObject({ rest: false, program: { name: 'Сила' } });
     expect(today && !today.rest && today.session.exercises[0].name).toBe('Жим');
-    expect(await loadTodaySession('2026-11-05')).toEqual({ rest: true });
+    expect(await loadTodaySession('2026-11-05')).toEqual({ rest: true, ended: false });
+    expect(await loadTodaySession('2026-12-02')).toEqual({ rest: true, ended: true }); // plan was 4 weeks
   });
 
   it('Given программа When я архивирую её Then будущие plannedSessions удалены, журнал не тронут', async () => {
