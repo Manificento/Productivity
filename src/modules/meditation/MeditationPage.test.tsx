@@ -32,7 +32,7 @@ describe('Медитация', () => {
     setup();
     for (const m of ['3 мин', '5 мин', '10 мин', '20 мин'])
       expect(screen.getByRole('radio', { name: m })).toBeInTheDocument();
-    for (const p of ['4-7-8', 'Коробочное 4-4-4-4', 'Без паттерна'])
+    for (const p of ['4-7-8', 'Коробка 4-4-4-4', 'Без паттерна'])
       expect(screen.getByRole('radio', { name: p })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toHaveClass('min-h-11');
   });
@@ -41,7 +41,15 @@ describe('Медитация', () => {
     const { user } = setup();
     await user.click(screen.getByRole('button', { name: 'Начать' }));
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('05:00');
-    expect(screen.getByTestId('breath-circle')).toHaveTextContent('Вдох');
+    const circle = screen.getByTestId('breath-circle');
+    expect(circle).toHaveTextContent('Вдох');
+    const before = circle.style.transform;
+    await act(async () => {
+      vi.setSystemTime(NOW + 5000);
+      vi.advanceTimersByTime(250);
+    });
+    expect(circle).toHaveTextContent('Задержка');
+    expect(circle.style.transform).not.toBe(before);
     // вкладка «заснула» на 2 минуты: один тик — и остаток верный
     await act(async () => {
       vi.setSystemTime(NOW + 120_000);
@@ -50,16 +58,19 @@ describe('Медитация', () => {
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('03:00');
   });
 
-  it('Given таймер дошёл до нуля When сессия завершается Then запись в meditationSessions с длительностью и видом', async () => {
+  it('Given таймер дошёл до нуля When сессия завершается Then сигнал и запись в meditationSessions с длительностью и видом', async () => {
+    const vibrate = vi.fn();
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true });
     const { user } = setup();
     await user.click(screen.getByRole('radio', { name: '3 мин' }));
-    await user.click(screen.getByRole('radio', { name: 'Коробочное 4-4-4-4' }));
+    await user.click(screen.getByRole('radio', { name: 'Коробка 4-4-4-4' }));
     await user.click(screen.getByRole('button', { name: 'Начать' }));
     await act(async () => {
       vi.setSystemTime(NOW + 180_000);
       vi.advanceTimersByTime(250);
     });
     expect(await screen.findByText('Сессия завершена и записана.')).toBeInTheDocument();
+    expect(vibrate).toHaveBeenCalledTimes(1);
     const rows = await db.meditationSessions.toArray();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -111,5 +122,28 @@ describe('Медитация', () => {
   it('Given нет сессий Then пустое состояние истории', async () => {
     setup();
     expect(await screen.findByText(/Пока нет сессий/)).toBeInTheDocument();
+  });
+
+  it('Given я ушёл со страницы через 2 минуты When компонент размонтирован Then прерванная сессия сохранена', async () => {
+    const { user, unmount } = setup();
+    await user.click(screen.getByRole('button', { name: 'Начать' }));
+    await act(async () => {
+      vi.setSystemTime(NOW + 120_000);
+    });
+    unmount();
+    await vi.waitFor(async () => expect(await db.meditationSessions.count()).toBe(1));
+    expect((await db.meditationSessions.toArray())[0]).toMatchObject({ durationMin: 2, completed: false });
+  });
+
+  it('Given запись не удалась When я завершаю сессию Then понятная ошибка и кнопка «Закрыть»', async () => {
+    vi.spyOn(db.meditationSessions, 'add').mockRejectedValueOnce(new Error('boom'));
+    const { user } = setup();
+    await user.click(screen.getByRole('button', { name: 'Начать' }));
+    await act(async () => {
+      vi.setSystemTime(NOW + 120_000);
+    });
+    await user.click(screen.getByRole('button', { name: 'Завершить' }));
+    expect(await screen.findByText('Не удалось сохранить сессию.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Закрыть' })).toBeInTheDocument();
   });
 });

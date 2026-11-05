@@ -34,7 +34,7 @@ export function MeditationPage() {
         <Segmented
           label="Паттерн дыхания"
           value={pattern}
-          options={PATTERNS.map((p) => ({ value: p.id, label: p.title }))}
+          options={PATTERNS.map((p) => ({ value: p.id, label: p.id === 'box' ? 'Коробка 4-4-4-4' : p.title }))}
           onChange={setPattern}
         />
         <Button className="w-full" onClick={() => setRunning(true)}>

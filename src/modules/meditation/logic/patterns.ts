@@ -39,7 +39,7 @@ export const PATTERNS: BreathPattern[] = [
 export const DURATIONS_MIN = [3, 5, 10, 20] as const;
 
 export function patternById(id: PatternId): BreathPattern {
-  return PATTERNS.find((p) => p.id === id) ?? PATTERNS[2]!;
+  return PATTERNS.find((p) => p.id === id) ?? PATTERNS.find((p) => p.id === 'none')!;
 }
 
 export interface BreathState {
