@@ -1,13 +1,26 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import type { DailyTargets } from '../../../core/adaptation/types';
 import type { PlannedSession, Program } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
 import { completeSession, replaceExercise } from '../data/programs';
+import { adjustForTargets } from '../logic/periodization';
 import { exerciseLine } from '../logic/programs';
 import { buildWorkout, draftFromExercises, toggleSet, workoutTypeFor } from '../logic/session';
 
 /** Today's session: check off sets, swap an exercise for this day only, finish → journal entry. */
-export function SessionRunner({ program, session }: { program: Program; session: PlannedSession }) {
-  const [draft, setDraft] = useState(() => draftFromExercises(session.exercises));
+export function SessionRunner({
+  program,
+  session,
+  targets,
+}: {
+  program: Program;
+  session: PlannedSession;
+  /** Today's targets (from `useDailyTargets`): deload, rest and light days adjust the session. */
+  targets: DailyTargets;
+}) {
+  const adjusted = useMemo(() => adjustForTargets(session.exercises, targets), [session.exercises, targets]);
+  const [forced, setForced] = useState(false);
+  const [draft, setDraft] = useState(() => draftFromExercises(adjusted.exercises));
   const [duration, setDuration] = useState('');
   const [rpe, setRpe] = useState('');
   const [error, setError] = useState<string>();
@@ -17,7 +30,7 @@ export function SessionRunner({ program, session }: { program: Program; session:
   const [replaceError, setReplaceError] = useState<string>();
 
   // The plan itself (names) lives in the session record; the checked sets are local until «Завершить».
-  const shown = draft.map((d, i) => ({ ...d, exercise: session.exercises[i] ?? d.exercise }));
+  const shown = draft.map((d, i) => ({ ...d, exercise: adjusted.exercises[i] ?? d.exercise }));
 
   async function finish() {
     const built = buildWorkout(shown, {
@@ -50,14 +63,54 @@ export function SessionRunner({ program, session }: { program: Program; session:
     }
   }
 
+  if (adjusted.rest && !forced) {
+    return (
+      <>
+        <p className="mb-2 text-sm text-zinc-500">{program.name}</p>
+        <div
+          role="note"
+          aria-label="Совет: день отдыха"
+          className="mb-3 rounded-xl bg-amber-50 p-3 text-sm dark:bg-amber-950"
+        >
+          <p className="font-medium">Сегодня лучше отдохнуть — перенесите тренировку на другой день.</p>
+          <ul className="mt-1 list-disc pl-5 text-zinc-700 dark:text-zinc-300">
+            {adjusted.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </div>
+        <Button variant="secondary" className="w-full" onClick={() => setForced(true)}>
+          Всё равно выполнить
+        </Button>
+      </>
+    );
+  }
+
   return (
     <>
       <p className="mb-2 text-sm text-zinc-500">{program.name}</p>
+      {adjusted.deload && (
+        <div role="note" aria-label="Разгрузка" className="mb-3 rounded-xl bg-sky-50 p-3 text-sm dark:bg-sky-950">
+          <p className="font-medium">Разгрузка: вес и объём −40%</p>
+          <ul className="mt-1 list-disc pl-5 text-zinc-700 dark:text-zinc-300">
+            {adjusted.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <ul aria-label="Сессия на сегодня">
         {shown.map((d, i) => (
           <li key={i} className="border-b border-zinc-200 py-2 last:border-0 dark:border-zinc-800">
             <div className="flex items-center justify-between gap-2">
-              <p className="min-w-0 text-sm">{exerciseLine(d.exercise)}</p>
+              <p className="min-w-0 text-sm">
+                {exerciseLine(d.exercise)}
+                {adjusted.easier[i] && (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                    сегодня легче
+                  </span>
+                )}
+              </p>
               <Button
                 variant="secondary"
                 aria-label={`Заменить упражнение: ${d.exercise.name}`}

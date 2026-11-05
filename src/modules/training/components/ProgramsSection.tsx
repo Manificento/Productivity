@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import { todayKey } from '../../../core/dates';
 import type { DateKey, Program } from '../../../core/types';
 import { Button, Card, Empty, Sheet } from '../../../ui';
@@ -11,6 +12,7 @@ import {
   type ProgramDraft,
 } from '../logic/programs';
 import { ProgramForm } from './ProgramForm';
+import { PlanOutlook } from './PlanOutlook';
 import { SessionRunner } from './SessionRunner';
 
 /** «Программы»: today's session, active programs, templates and the create form. */
@@ -21,6 +23,7 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
     skipMissedSessions(today).catch((e: unknown) => console.error('skipMissedSessions failed', e));
   }, [today]);
   const todaySession = useTodaySession(today);
+  const targets = useDailyTargets(today);
   const [draft, setDraft] = useState<ProgramDraft>();
   const [version, setVersion] = useState(0);
   const [archiving, setArchiving] = useState<Program>();
@@ -52,7 +55,7 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
     <>
       {programs.length > 0 && (
         <Card title="Сегодня">
-          {todaySession === null || todaySession === undefined ? (
+          {todaySession === null || todaySession === undefined || targets === undefined ? (
             <Empty>Загрузка…</Empty>
           ) : todaySession.rest ? (
             <p className="py-4 text-center text-base font-medium">
@@ -67,13 +70,16 @@ export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
             </>
           ) : (
             <SessionRunner
-              key={todaySession.session.id}
+              key={`${todaySession.session.id}:${targets.deload}:${targets.maxWorkoutIntensity}`}
               program={todaySession.program}
               session={todaySession.session}
+              targets={targets}
             />
           )}
         </Card>
       )}
+
+      {programs.length > 0 && <PlanOutlook today={today} />}
 
       {draft && (
         <ProgramForm
