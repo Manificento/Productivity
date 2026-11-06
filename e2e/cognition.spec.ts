@@ -77,3 +77,32 @@ test.describe('cognition: PVT', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe('cognition: n-back', () => {
+  test('a short session from the module screen: instruction at n = 2, play, result saved, history chart', async ({
+    page,
+  }) => {
+    await page.clock.install({ time: START });
+    await skipOnboarding(page);
+    await page.goto('/#/cognition');
+    await page.getByRole('link', { name: 'n-back' }).click();
+    await expect(page.getByText('Как проходить')).toBeVisible();
+    await expect(page.getByText(/Ваш уровень: n =/)).toContainText('n = 2');
+
+    await page.goto('/#/cognition/nback?duration=10');
+    const now = await page.evaluate(() => Date.now());
+    await page.clock.pauseAt(now + 1_000);
+    await page.getByRole('button', { name: 'Начать' }).click();
+    await expect(page.getByTestId('nback-cell').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Совпало' }).click();
+    await page.clock.runFor(10_500);
+    await page.clock.resume();
+    await expect(page.getByText('Результат сохранён.')).toBeVisible();
+    await expect(page.getByText('Точность').locator('xpath=following-sibling::dd[1]')).toHaveText(/^\d+%$/);
+
+    await page.getByRole('link', { name: 'Готово' }).click();
+    await expect(page.getByRole('img', { name: /Уровень и точность n-back по дням/ })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});

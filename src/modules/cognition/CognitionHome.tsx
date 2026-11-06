@@ -2,9 +2,12 @@ import { Link } from 'react-router-dom';
 import { todayKey } from '../../core/dates';
 import type { DateKey } from '../../core/types';
 import { Card, Empty, Page } from '../../ui';
+import { NbackChart } from './components/NbackChart';
 import { MedianChart } from './components/MedianChart';
 import { useRecentPvt } from './data/cognitiveTests';
-import { compareWithAverage, dailyMedians } from './logic/history';
+import { useNbackSessions } from './data/mindSessions';
+import { compareWithAverage, dailyMedians, HISTORY_DAYS } from './logic/history';
+import { dailyProgress } from './logic/nback';
 
 function ComparisonText({ latestMs, averageMs, diffMs }: { latestMs: number; averageMs: number; diffMs: number }) {
   const verdict =
@@ -23,6 +26,8 @@ function ComparisonText({ latestMs, averageMs, diffMs }: { latestMs: number; ave
 export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
   const tests = useRecentPvt(today);
   const comparison = tests && compareWithAverage(tests);
+  const nback = useNbackSessions();
+  const nbackDays = dailyProgress(nback ?? [], today, HISTORY_DAYS);
 
   return (
     <Page title="Тест внимания">
@@ -51,6 +56,26 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
               ? 'Пока нет результатов. Пройдите тест — история появится после двух попыток.'
               : 'Есть один результат. Пройдите тест ещё раз, чтобы увидеть историю.'}
           </Empty>
+        )}
+      </Card>
+      <Card title="Тренажёр: n-back">
+        <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
+          Тренировка рабочей памяти: 3 минуты, запоминайте позиции квадратов в сетке 3×3.
+        </p>
+        <Link
+          to="/cognition/nback"
+          className="flex min-h-11 items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-500"
+        >
+          n-back
+        </Link>
+      </Card>
+      <Card title="История n-back">
+        {nback === undefined ? (
+          <Empty>Загружаю…</Empty>
+        ) : !nbackDays.some((d) => d.level !== undefined) ? (
+          <Empty>Пока нет сессий. Пройдите n-back — график уровня и точности появится здесь.</Empty>
+        ) : (
+          <NbackChart days={nbackDays} />
         )}
       </Card>
     </Page>
