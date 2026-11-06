@@ -216,6 +216,10 @@ export interface WorkoutLog extends BaseRecord {
   rpe: number;
   exercises?: { name: string; sets: { reps?: number; weightKg?: number }[] }[];
   note?: string;
+  /** App that recorded an imported workout (`ImportedWorkout.sourceId`); absent for workouts entered in the app. */
+  sourceId?: string;
+  /** Id in the health store; with `sourceId` it keys the update on re-import (`[sourceId+externalId]`). */
+  externalId?: string;
 }
 
 // ---------- cognition ----------

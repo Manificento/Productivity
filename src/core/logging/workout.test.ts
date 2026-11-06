@@ -85,4 +85,59 @@ describe('saveWorkout — the one write path for workoutLogs (ADR-0007)', () => 
   it('WorkoutInput is exported so modules validate forms with the same schema', () => {
     expect(WorkoutInput.safeParse({ date: TODAY, type: 'Йога', durationMin: 20, rpe: 3 }).success).toBe(true);
   });
+
+  describe('imported workouts (#215)', () => {
+    const imported = {
+      date: TODAY,
+      type: 'Бег',
+      durationMin: 31,
+      rpe: 5,
+      sourceId: 'com.strava',
+      externalId: 'hk-run-1',
+    };
+
+    it('Given WorkoutInput / WorkoutLog в ядре When модуль передаёт externalId и sourceId из readWorkouts() Then они сохраняются в записи', async () => {
+      const saved = await saveWorkout(imported, 1_000);
+      expect(await db.workoutLogs.get(saved.id)).toMatchObject({ sourceId: 'com.strava', externalId: 'hk-run-1' });
+    });
+
+    it('Given тренировка с тем же externalId уже записана When вызывается saveWorkout() Then запись обновляется, а не добавляется вторая', async () => {
+      const first = await saveWorkout(imported, 1_000);
+      // The user rated the workout in the app; the store later reports a corrected duration.
+      await db.workoutLogs.update(first.id, { rpe: 8, note: 'Тяжело' });
+      const again = await saveWorkout({ ...imported, durationMin: 33, rpe: 5 }, 2_000);
+      expect(again.id).toBe(first.id);
+      expect(await db.workoutLogs.count()).toBe(1);
+      // Store-owned fields follow the store; what the user entered in the app stays.
+      expect(await db.workoutLogs.get(first.id)).toMatchObject({
+        durationMin: 33,
+        rpe: 8,
+        note: 'Тяжело',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      });
+    });
+
+    it('the same id from another app is another workout', async () => {
+      await saveWorkout(imported);
+      await saveWorkout({ ...imported, sourceId: 'com.garmin' });
+      expect(await db.workoutLogs.count()).toBe(2);
+    });
+
+    it('Given тренировка введена вручную (без externalId) When вызывается saveWorkout() Then поведение как сейчас — новая запись', async () => {
+      const manual = { date: TODAY, type: 'Бег', durationMin: 30, rpe: 6 };
+      await saveWorkout(manual);
+      await saveWorkout(manual);
+      expect(await db.workoutLogs.count()).toBe(2);
+      expect(
+        (await db.workoutLogs.toArray()).every((w) => w.externalId === undefined && w.sourceId === undefined),
+      ).toBe(true);
+    });
+
+    it('externalId and sourceId come together and are not empty', async () => {
+      await expect(saveWorkout({ ...imported, sourceId: undefined })).rejects.toThrow(/источник/i);
+      await expect(saveWorkout({ ...imported, externalId: '  ' })).rejects.toThrow();
+      expect(await db.workoutLogs.count()).toBe(0);
+    });
+  });
 });
