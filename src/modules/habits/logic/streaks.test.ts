@@ -192,3 +192,40 @@ describe('completionRate', () => {
     );
   });
 });
+
+describe('режим «только ключевые»', () => {
+  it('Given habitsMode = essential When считаются серии Then пропуск не-ключевой привычки в такой день не рвёт серию', () => {
+    // done 10/30–11/01, skipped 11/02 (relaxed), done 11/03–11/04
+    const done = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-03', '2026-11-04'];
+    const base = { schedule: daily, logs: logs(done), since: '2026-10-01' };
+    expect(streak(base, TODAY).current).toBe(2);
+    const relaxed = streak({ ...base, relaxed: new Set(['2026-11-02']) }, TODAY);
+    expect(relaxed.current).toBe(5);
+    expect(relaxed.best).toBe(5);
+  });
+
+  it('отмеченный в облегчённый день день всё равно засчитывается', () => {
+    const h = {
+      schedule: daily,
+      logs: logs(['2026-11-03', '2026-11-04']),
+      since: '2026-10-01',
+      relaxed: new Set(['2026-11-03']),
+    };
+    expect(streak(h, TODAY).current).toBe(2);
+  });
+
+  it('пропуск вне облегчённого дня по-прежнему рвёт серию', () => {
+    const h = {
+      schedule: daily,
+      logs: logs(['2026-11-01', '2026-11-04']),
+      since: '2026-10-01',
+      relaxed: new Set(['2026-11-03']),
+    };
+    expect(streak(h, TODAY).current).toBe(1);
+  });
+
+  it('облегчённый день не снижает процент выполнения', () => {
+    const h = { schedule: daily, logs: logs(['2026-11-04']), since: '2026-11-03', relaxed: new Set(['2026-11-03']) };
+    expect(completionRate(h, TODAY, 7)).toBe(100);
+  });
+});

@@ -74,3 +74,31 @@ describe('streakLabel', () => {
     expect(streakLabel({ current: 2, best: 3, unit: 'weeks' })).toBe('🔥2 нед.');
   });
 });
+
+describe('todayHabits: режим «только ключевые»', () => {
+  const habits = [
+    habit('study', { essential: true }),
+    habit('walk'),
+    habit('gym', { schedule: { kind: 'weekdays', weekdays: [3] } }),
+  ];
+
+  it('Given habitsMode = essential When я открываю список Then активны только ключевые; остальные запланированные на сегодня — в paused', () => {
+    const r = todayHabits(habits, [], TODAY, 'essential');
+    expect(r.items.map((i) => i.habit.id)).toEqual(['study']);
+    expect(r.paused.map((h) => h.id)).toEqual(['walk']);
+    expect(r.other.map((h) => h.id)).toEqual(['gym']);
+  });
+
+  it('Given habitsMode = all When я открываю список Then всё как раньше', () => {
+    const r = todayHabits(habits, [], TODAY, 'all');
+    expect(r.items.map((i) => i.habit.id)).toEqual(['study', 'walk']);
+    expect(r.paused).toEqual([]);
+    expect(todayHabits(habits, [], TODAY).items).toHaveLength(2);
+  });
+
+  it('серия не-ключевой привычки не рвётся из-за облегчённого вчерашнего дня', () => {
+    const marks = [log('walk', '2026-11-01'), log('walk', '2026-10-31')];
+    const r = todayHabits([habit('walk')], marks, TODAY, 'all', new Set(['2026-11-02']));
+    expect(r.items[0]?.streak.current).toBe(2);
+  });
+});

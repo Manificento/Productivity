@@ -38,7 +38,7 @@ describe('habitStore', () => {
 
   it('создание, изменение расписания целиком и архив', async () => {
     const id = await createHabit({ name: 'Йога', schedule: { kind: 'weekdays', weekdays: [1, 3] }, color: '#000' }, 10);
-    await updateHabit(id, { name: 'Йога утром', schedule: { kind: 'daily' }, color: '#fff' }, 20);
+    await updateHabit(id, { name: 'Йога утром', schedule: { kind: 'daily' }, color: '#fff', essential: true }, 20);
     expect(await db.habits.get(id)).toMatchObject({
       name: 'Йога утром',
       schedule: { kind: 'daily' },

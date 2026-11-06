@@ -17,6 +17,11 @@ export interface HabitHistory {
    * A back-filled log before it moves the start back automatically.
    */
   since: DateKey;
+  /**
+   * Days when this habit does not count (режим «только ключевые», habit is not essential):
+   * a missed scheduled day in the set neither breaks the streak nor lowers the rate.
+   */
+  relaxed?: ReadonlySet<DateKey>;
 }
 
 /**
@@ -36,6 +41,11 @@ export function doneInWeek(done: Set<DateKey>, monday: DateKey): number {
   return count;
 }
 
+function weekHasRelaxed(h: HabitHistory, monday: DateKey): boolean {
+  for (let i = 0; i < 7; i++) if (h.relaxed?.has(shiftDateKey(monday, i))) return true;
+  return false;
+}
+
 type Outcome = 'done' | 'missed' | 'pending' | 'skip';
 
 /**
@@ -49,13 +59,16 @@ function outcomes(h: HabitHistory, today: DateKey): Outcome[] {
     const quota = weeklyQuota(h.schedule);
     const currentWeek = weekStart(today);
     for (let w = weekStart(since); w <= currentWeek; w = shiftDateKey(w, 7)) {
-      result.push(doneInWeek(done, w) >= quota ? 'done' : w === currentWeek ? 'pending' : 'missed');
+      if (doneInWeek(done, w) >= quota) result.push('done');
+      else if (w === currentWeek) result.push('pending');
+      else result.push(weekHasRelaxed(h, w) ? 'skip' : 'missed');
     }
     return result;
   }
   for (let d = since; d <= today; d = shiftDateKey(d, 1)) {
     if (!isScheduled(h.schedule, d)) result.push('skip');
     else if (done.has(d)) result.push('done');
+    else if (h.relaxed?.has(d)) result.push('skip');
     else result.push(d === today ? 'pending' : 'missed');
   }
   return result;
@@ -110,6 +123,7 @@ export function completionRate(h: HabitHistory, today: DateKey, days = 30): numb
   let hit = 0;
   for (let d = start; d <= end; d = shiftDateKey(d, 1)) {
     if (!isScheduled(h.schedule, d)) continue;
+    if (!done.has(d) && h.relaxed?.has(d)) continue;
     scheduled++;
     if (done.has(d)) hit++;
   }

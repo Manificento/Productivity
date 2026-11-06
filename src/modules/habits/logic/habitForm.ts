@@ -9,9 +9,11 @@ export interface HabitFormInput {
   weekdays: number[];
   timesPerWeek: string;
   color: string;
+  /** «Ключевая»: остаётся активной в дни режима «только ключевые». */
+  essential: boolean;
 }
 
-export type HabitFields = Pick<Habit, 'name' | 'schedule' | 'color'>;
+export type HabitFields = Pick<Habit, 'name' | 'schedule' | 'color' | 'essential'>;
 
 export type HabitFormResult =
   { ok: true; value: HabitFields } | { ok: false; field: 'name' | 'weekdays' | 'timesPerWeek'; error: string };
@@ -52,17 +54,18 @@ export function parseHabitForm(input: HabitFormInput): HabitFormResult {
   } else {
     schedule = { kind: 'daily' };
   }
-  return { ok: true, value: { name, schedule, color: input.color } };
+  return { ok: true, value: { name, schedule, color: input.color, essential: input.essential } };
 }
 
 /** Form values for an existing habit (or defaults for a new one). */
-export function habitFormValues(habit?: Pick<Habit, 'name' | 'schedule' | 'color'>): HabitFormInput {
+export function habitFormValues(habit?: Pick<Habit, 'name' | 'schedule' | 'color' | 'essential'>): HabitFormInput {
   return {
     name: habit?.name ?? '',
     kind: habit?.schedule.kind ?? 'daily',
     weekdays: habit?.schedule.weekdays ?? [1, 2, 3, 4, 5],
     timesPerWeek: String(habit?.schedule.timesPerWeek ?? 3),
     color: habit?.color ?? HABIT_COLORS[0],
+    essential: habit?.essential ?? false,
   };
 }
 

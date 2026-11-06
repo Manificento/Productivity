@@ -47,8 +47,13 @@ export interface HabitStats {
   rate30: number;
 }
 
-export function habitHistory(habit: Habit, logs: readonly HabitLog[]): HabitHistory {
+export function habitHistory(
+  habit: Habit,
+  logs: readonly HabitLog[],
+  relaxedDays: ReadonlySet<DateKey> = new Set(),
+): HabitHistory {
   return {
+    relaxed: habit.essential ? new Set() : relaxedDays,
     schedule: habit.schedule,
     logs: logs.filter((l) => l.habitId === habit.id),
     since: toDateKey(habit.createdAt),

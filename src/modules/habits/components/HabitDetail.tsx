@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { fromDateKey, todayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty, Page, Sheet } from '../../../ui';
+import { useRelaxedDays } from '../data/relaxedDays';
 import { archiveHabit, toggleHabit, updateHabit, useHabitLogs, useHabits } from '../data/habitStore';
 import { calendarGrid, cellStatusLabel, habitHistory, habitStats, textOn, type CellStatus } from '../logic/calendar';
 import { describeSchedule, WEEKDAYS } from '../logic/habitForm';
@@ -53,8 +54,9 @@ export function HabitDetail() {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string>();
   const today = todayKey();
+  const relaxed = useRelaxedDays(today);
 
-  if (habits === undefined || logs === undefined) {
+  if (habits === undefined || logs === undefined || relaxed === undefined) {
     return (
       <Page title="Привычка">
         <Empty>Загрузка…</Empty>
@@ -72,7 +74,7 @@ export function HabitDetail() {
     );
   }
 
-  const history = habitHistory(habit, logs);
+  const history = habitHistory(habit, logs, relaxed);
   const stats = habitStats(history, today);
   const grid = calendarGrid(history, today);
   const color = habit.color ?? '#6366f1';

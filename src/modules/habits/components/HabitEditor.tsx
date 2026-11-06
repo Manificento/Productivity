@@ -123,6 +123,21 @@ export function HabitEditor({
         </Field>
       )}
 
+      <label className="mb-3 flex min-h-11 items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          className="size-5"
+          checked={values.essential}
+          onChange={(e) => set({ essential: e.target.checked })}
+        />
+        <span>
+          Ключевая
+          <span className="block text-xs text-zinc-500">
+            Остаётся в дни режима «только ключевые» (например, экзамен)
+          </span>
+        </span>
+      </label>
+
       <div role="radiogroup" aria-label="Цвет" className="mb-4 flex gap-2">
         {HABIT_COLORS.map((c, i) => (
           <button

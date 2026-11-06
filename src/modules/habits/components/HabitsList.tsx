@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { todayKey } from '../../../core/dates';
 import { Button, Card, Empty, Page, Sheet } from '../../../ui';
+import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
+import { useRelaxedDays } from '../data/relaxedDays';
 import { HabitEditor } from './HabitEditor';
 import { HabitRow } from './HabitRow';
 import { StarterHabits } from './StarterHabits';
@@ -16,8 +18,10 @@ export function HabitsList() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string>();
   const today = todayKey();
+  const targets = useDailyTargets(today);
+  const relaxed = useRelaxedDays(today);
 
-  if (habits === undefined || logs === undefined) {
+  if (habits === undefined || logs === undefined || targets === undefined || relaxed === undefined) {
     return (
       <Page title="Привычки">
         <Empty>Загрузка…</Empty>
@@ -25,8 +29,8 @@ export function HabitsList() {
     );
   }
 
-  const { items, other, goalMet } = todayHabits(habits, logs, today);
-  const hasActive = items.length + other.length > 0;
+  const { items, other, goalMet, paused } = todayHabits(habits, logs, today, targets.habitsMode, relaxed);
+  const hasActive = items.length + paused.length + other.length > 0;
   const close = () => setCreating(false);
 
   // The day on screen, not the clock at tap time: a page left open past midnight marks what it shows.
@@ -63,6 +67,31 @@ export function HabitsList() {
             </ul>
           ) : (
             <Empty>На сегодня привычек нет.</Empty>
+          )}
+          {paused.length > 0 && (
+            <Card title="Сегодня не считаются">
+              {targets.reasons.length > 0 && (
+                <ul className="mb-2 list-disc pl-5 text-xs text-zinc-500">
+                  {targets.reasons.map((r) => (
+                    <li key={r}>{r}</li>
+                  ))}
+                </ul>
+              )}
+              <ul className="flex flex-col">
+                {paused.map((h) => (
+                  <li key={h.id}>
+                    <Link
+                      to={`/habits/${h.id}`}
+                      aria-label={`Открыть «${h.name}»`}
+                      className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-sm text-zinc-500"
+                    >
+                      <span className="truncate">{h.name}</span>
+                      <span className="shrink-0">серия сохранена</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
           )}
           {other.length > 0 && (
             <Card title="Не сегодня">
