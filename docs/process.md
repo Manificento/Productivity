@@ -55,6 +55,10 @@ flowchart LR
 - Ветка: `feat/<номер issue>`. Один PR — одна issue.
 - Коммиты: [Conventional Commits](https://www.conventionalcommits.org/ru/) на английском —
   `feat(tasks): parse Russian relative dates`, `fix(core): …`, `test(health): …`.
+- Заголовок PR (и squash-коммита в `main`, с суффиксом `(#PR)`) `agent.sh pr` берёт из **первого** коммита ветки:
+  он описывает задачу, а последние обычно — правки по ревью. Если первый коммит не в формате `type(scope): …`,
+  заголовок — `feat(<area>): <заголовок issue>`. У существующего PR заголовок не меняется. Тесты скрипта —
+  `npm run test:scripts`.
 - Слияние: только squash, только с зелёным CI.
 
 ## Команды агента (`scripts/agent.sh`)
