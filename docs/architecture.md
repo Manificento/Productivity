@@ -48,13 +48,14 @@ flowchart TB
 
 Правила, которые проверяет CI (`npm run deps`, файл `.dependency-cruiser.cjs`):
 
-| Правило                   | Смысл                                                         |
-| ------------------------- | ------------------------------------------------------------- |
-| `no-cross-module-imports` | модуль не импортирует другой модуль; обмен данными — через БД |
-| `core-is-independent`     | ядро не знает о модулях, оболочке и UI                        |
-| `ui-is-independent`       | UI-кит не знает о модулях и БД                                |
-| `logic-is-pure`           | `modules/*/logic/` и движок адаптации — без React и без БД    |
-| `no-circular`             | нет циклических зависимостей                                  |
+| Правило                        | Смысл                                                         |
+| ------------------------------ | ------------------------------------------------------------- |
+| `no-cross-module-imports`      | модуль не импортирует другой модуль; обмен данными — через БД |
+| `core-is-independent`          | ядро не знает о модулях, оболочке и UI                        |
+| `ui-is-independent`            | UI-кит не знает о модулях и БД                                |
+| `logic-is-pure`                | `modules/*/logic/` и движок адаптации — без React и без БД    |
+| `native-only-through-platform` | `@capacitor/*` импортирует только `src/core/platform.ts`      |
+| `no-circular`                  | нет циклических зависимостей                                  |
 
 ## Внутреннее устройство модуля
 
@@ -143,6 +144,11 @@ flowchart LR
 Платформа: нативные возможности (будильник, датчики, уведомления, Health) доступны модулям только через
 `src/core/platform.ts` ([ADR-0008](adr/0008-web-and-native-one-codebase.md)); флаги возможностей говорят,
 что доступно на текущей платформе, модуль показывает объяснение вместо недоступной функции.
+`getCapabilities()` возвращает `alarms`, `backgroundSensors`, `healthImport`, `notifications`: на вебе все `false`,
+на нативе — установлен ли плагин из `CAPABILITY_PLUGINS`; `getPlatform()` — `web`, `android` или `ios`.
+В тестах натив мокается `mockNativePlatform('android', ['notifications'])` из `src/test/platform.ts`; после
+каждого теста снова веб. Импорт `@capacitor/*` где-либо, кроме `platform.ts`, ломает `npm run deps`
+(правило `native-only-through-platform`). Нативная оболочка — `android/` и `capacitor.config.ts`, сборка — README.
 
 Навигация (#106): нижняя панель — «Сегодня», до трёх закреплённых вкладок (`navOrder`; сейчас задачи, привычки,
 время) и «Блоки» → экран «Все блоки» с модулями по группам (`group`: план, тело, ум, знания, система) и строкой
