@@ -106,3 +106,31 @@ test.describe('cognition: n-back', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe('cognition: Stroop and Schulte', () => {
+  test('both trainers run, show a summary and appear in the exercise list with the last result', async ({ page }) => {
+    await page.goto('/');
+    await skipOnboarding(page);
+
+    await page.goto('/#/cognition/stroop?duration=3');
+    await page.getByRole('button', { name: 'Начать' }).click();
+    await page.getByRole('button', { name: 'Красный' }).click();
+    await expect(page.getByText('Результат сохранён.')).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText('Эффект интерференции', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Готово' }).click();
+
+    await page.goto('/#/cognition/schulte');
+    await page.getByRole('button', { name: 'Начать' }).click();
+    for (let n = 1; n <= 25; n++) await page.getByRole('button', { name: String(n), exact: true }).click();
+    await expect(page.getByText('Результат сохранён.')).toBeVisible();
+    await expect(page.getByText('Время', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Готово' }).click();
+
+    const list = page.getByText('Упражнения').locator('xpath=ancestor::div[1]');
+    await expect(list.getByRole('link', { name: 'Струп' })).toBeVisible();
+    await expect(list.getByText(/^точность \d+%/)).toBeVisible();
+    await expect(list.getByText(/ошибок 0/)).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});

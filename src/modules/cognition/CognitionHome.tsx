@@ -5,9 +5,10 @@ import { Card, Empty, Page } from '../../ui';
 import { NbackChart } from './components/NbackChart';
 import { MedianChart } from './components/MedianChart';
 import { useRecentPvt } from './data/cognitiveTests';
-import { useNbackSessions } from './data/mindSessions';
+import { useMindSessions, useNbackSessions } from './data/mindSessions';
 import { compareWithAverage, dailyMedians, HISTORY_DAYS } from './logic/history';
 import { dailyProgress } from './logic/nback';
+import { lastResultText, latestOf } from './logic/summary';
 
 function ComparisonText({ latestMs, averageMs, diffMs }: { latestMs: number; averageMs: number; diffMs: number }) {
   const verdict =
@@ -27,6 +28,18 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
   const tests = useRecentPvt(today);
   const comparison = tests && compareWithAverage(tests);
   const nback = useNbackSessions();
+  const stroop = useMindSessions('stroop');
+  const schulte = useMindSessions('schulte');
+  const lastPvt = tests && latestOf(tests);
+  const lastNback = nback && latestOf(nback);
+  const lastStroop = stroop && latestOf(stroop);
+  const lastSchulte = schulte && latestOf(schulte);
+  const exercises = [
+    { to: '/cognition/pvt', title: 'PVT', last: lastPvt && `медиана ${lastPvt.medianRtMs} мс` },
+    { to: '/cognition/nback', title: 'n-back', last: lastNback && lastResultText('nback', lastNback) },
+    { to: '/cognition/stroop', title: 'Струп', last: lastStroop && lastResultText('stroop', lastStroop) },
+    { to: '/cognition/schulte', title: 'Шульте', last: lastSchulte && lastResultText('schulte', lastSchulte) },
+  ];
   const nbackDays = dailyProgress(nback ?? [], today, HISTORY_DAYS);
 
   return (
@@ -58,16 +71,21 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
           </Empty>
         )}
       </Card>
-      <Card title="Тренажёр: n-back">
-        <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
-          Тренировка рабочей памяти: 3 минуты, запоминайте позиции квадратов в сетке 3×3.
-        </p>
-        <Link
-          to="/cognition/nback"
-          className="flex min-h-11 items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-500"
-        >
-          n-back
-        </Link>
+      <Card title="Упражнения">
+        <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          {exercises.map((x) => (
+            <li key={x.to} className="flex min-h-11 items-center justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <Link to={x.to} className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                  {x.title}
+                </Link>
+                <p className="truncate text-xs text-zinc-500" data-testid="last-result">
+                  {x.last ?? 'Ещё нет результатов'}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
       </Card>
       <Card title="История n-back">
         {nback === undefined ? (
