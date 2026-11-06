@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { toDateKey } from '../../../core/dates';
 import { db } from '../../../core/db';
 import { newRecord } from '../../../core/ids';
-import type { MindSession, MindSessionKind } from '../../../core/types';
+import type { DateKey, MindSession, MindSessionKind } from '../../../core/types';
 
 export interface NbackRun {
   /** Epoch ms of «Начать». */
@@ -98,4 +98,9 @@ export function loadMindSessions(kind: MindSessionKind): Promise<MindSession[]> 
 
 export function useMindSessions(kind: MindSessionKind): MindSession[] | undefined {
   return useLiveQuery(() => loadMindSessions(kind), [kind]);
+}
+
+/** Trainer sessions of one day (the day's plan progress and history). */
+export function useMindSessionsOn(date: DateKey): MindSession[] | undefined {
+  return useLiveQuery(() => db.mindSessions.where('date').equals(date).toArray(), [date]);
 }
