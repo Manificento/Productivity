@@ -85,7 +85,7 @@ test.describe('cognition: n-back', () => {
     await page.clock.install({ time: START });
     await skipOnboarding(page);
     await page.goto('/#/cognition');
-    await page.getByRole('link', { name: 'n-back' }).click();
+    await page.getByRole('link', { name: 'n-back', exact: true }).click();
     await expect(page.getByText('Как проходить')).toBeVisible();
     await expect(page.getByText(/Ваш уровень: n =/)).toContainText('n = 2');
 
