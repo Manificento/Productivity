@@ -156,6 +156,12 @@ flowchart LR
 В тестах натив мокается `mockNativePlatform('android', ['notifications'])` из `src/test/platform.ts`; после
 каждого теста снова веб. Импорт `@capacitor/*` где-либо, кроме `platform.ts`, ломает `npm run deps`
 (правило `native-only-through-platform`). Нативная оболочка — `android/` и `capacitor.config.ts`, сборка — README.
+Напоминания (задача, привычка, отбой) — `scheduleReminder({ id, title, body?, at })` и `cancelReminder(id)` из
+`platform.ts` (#128); `id` — id записи модуля, повтор с тем же `id` заменяет напоминание, удаление записи — отмена.
+На нативе — локальное уведомление через ОС (`@capacitor/local-notifications`, приходит и при закрытом приложении,
+неточное: может опоздать на минуты, зато без экрана «Будильники и напоминания»); на вебе — Notification API, пока
+открыта вкладка (`limitation`). Без разрешения — `{ status: 'denied', hint }`, без поддержки — `unsupported`:
+модуль показывает `hint`. В тестах — `mockLocalNotifications()` из `src/test/platform.ts`.
 В `AndroidManifest.xml` намеренно выключены Auto Backup и перенос на новое устройство (`allowBackup="false"`,
 `data_extraction_rules.xml`): IndexedDB с данными о здоровье не покидает телефон до облака (ADR-0009) и согласия.
 
