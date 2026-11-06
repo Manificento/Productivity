@@ -1,3 +1,4 @@
+import { KCAL_PER_KG } from '../../../core/adaptation/rules';
 import { daysBetween, shiftDateKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import type { WeightPoint } from './trend';
@@ -6,8 +7,6 @@ import type { WeightPoint } from './trend';
 export const WINDOW_DAYS = 28;
 export const MIN_WEIGHT_DAYS = 14;
 export const MIN_FOOD_DAYS = 10;
-/** Energy equivalent of 1 kg of body mass. Keep in sync with `KCAL_PER_KG` in `src/core/adaptation/rules.ts` (private there). */
-export const KCAL_PER_KG = 7700;
 /** Light everyday activity multiplier for the starter estimate. */
 const ACTIVITY_FACTOR = 1.4;
 const REFRESH_MS = 7 * 24 * 3600 * 1000;

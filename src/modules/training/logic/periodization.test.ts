@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DELOAD_FACTOR, adjustForTargets, dayMark, deloadExercises } from './periodization';
+import { DELOAD_FACTOR } from '../../../core/adaptation/rules';
+import { adjustForTargets, dayMark, deloadExercises } from './periodization';
 
 const ex = [
   { name: 'Присед', sets: 5, reps: 5, weightKg: 100, rpeTarget: 8 },
