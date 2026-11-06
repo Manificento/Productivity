@@ -10,15 +10,18 @@ final class NightBuffer {
 
     /** Two nights of minutes. When JS has not cleared the buffer, the oldest lines go first. */
     static final int MAX_LINES = 2 * 24 * 60;
+    /** Lines dropped at once when full, so the file is rewritten once an hour, not every minute. */
+    static final int TRIM_LINES = 60;
 
     private NightBuffer() {}
 
-    /** `lines` plus `line`, without the oldest lines beyond `max`. */
-    static List<String> append(List<String> lines, String line, int max) {
+    /** `lines` plus `line`; past `max` the oldest lines go, `trim` at once (the newest always stay). */
+    static List<String> append(List<String> lines, String line, int max, int trim) {
         List<String> result = new ArrayList<>(lines);
         result.add(line);
-        int extra = result.size() - max;
-        return extra > 0 ? new ArrayList<>(result.subList(extra, result.size())) : result;
+        if (result.size() <= max) return result;
+        int keep = Math.max(1, max - trim);
+        return new ArrayList<>(result.subList(result.size() - keep, result.size()));
     }
 
     /** Lines whose `minuteStart` is after `upTo` (and lines that cannot be read are dropped too). */

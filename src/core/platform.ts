@@ -302,6 +302,7 @@ const sensorsAvailable = () => isNativePlatform() && getCapabilities().backgroun
  * (microphone, levels only) and writes one `NightSample` per minute, also while the app is closed.
  * Call it from a user action while the app is open: Android 14+ starts a microphone service only then.
  * Asks for the microphone once, if it was not decided. Never rejects: the result says what happened.
+ * `started` means the service was asked to start; confirm with `isNightSensingActive()` a moment later.
  */
 export async function startNightSensing(): Promise<NightSensingResult> {
   if (!isNativePlatform()) return { status: 'unsupported', hint: NIGHT_SENSING_TEXTS.web };

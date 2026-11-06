@@ -54,12 +54,12 @@ public class SleepSensorsPlugin extends Plugin {
     /** Removes the minutes with `minuteStart <= upTo`, so a minute written after the morning read is kept. */
     @PluginMethod
     public void clearSamples(PluginCall call) {
-        Long upTo = call.getLong("upTo");
-        if (upTo == null) {
+        // Any JSON number (a small value arrives as an Integer, which getLong() would not accept).
+        if (!call.getData().has("upTo")) {
             call.reject("upTo is required");
             return;
         }
-        NightSampleStore.clearUpTo(getContext(), upTo);
+        NightSampleStore.clearUpTo(getContext(), call.getData().optLong("upTo"));
         call.resolve();
     }
 

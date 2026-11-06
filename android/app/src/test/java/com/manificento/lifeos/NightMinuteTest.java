@@ -1,6 +1,7 @@
 package com.manificento.lifeos;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -60,6 +61,13 @@ public class NightMinuteTest {
         assertEquals(1.0, NightMinute.power(full, 2), 1e-9);
         assertEquals(0, NightMinute.power(new short[4], 4), 0);
         assertEquals(0, NightMinute.power(full, 0), 0);
+    }
+
+    @Test
+    public void aMinuteIsOverOnlyAtItsEndByTheWallClock() {
+        NightMinute m = new NightMinute(T);
+        assertFalse(m.isOver(T + 59_900)); // the handler fired a moment early: the service waits
+        assertTrue(m.isOver(T + 60_000));
     }
 
     @Test

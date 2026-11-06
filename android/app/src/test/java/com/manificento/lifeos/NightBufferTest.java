@@ -16,8 +16,15 @@ public class NightBufferTest {
     @Test
     public void whenFullTheOldestLinesGoAndTheNewestStay() {
         List<String> lines = Arrays.asList(line(1), line(2), line(3));
-        assertEquals(Arrays.asList(line(2), line(3), line(4)), NightBuffer.append(lines, line(4), 3));
-        assertEquals(Arrays.asList(line(1), line(2), line(3), line(4)), NightBuffer.append(lines, line(4), 5));
+        assertEquals(Arrays.asList(line(2), line(3), line(4)), NightBuffer.append(lines, line(4), 3, 0));
+        assertEquals(Arrays.asList(line(1), line(2), line(3), line(4)), NightBuffer.append(lines, line(4), 5, 2));
+    }
+
+    @Test
+    public void whenFullSeveralOldestLinesGoAtOnceSoTheFileIsNotRewrittenEveryMinute() {
+        List<String> lines = Arrays.asList(line(1), line(2), line(3), line(4));
+        assertEquals(Arrays.asList(line(4), line(5)), NightBuffer.append(lines, line(5), 4, 2));
+        assertEquals(Arrays.asList(line(5)), NightBuffer.append(lines, line(5), 4, 10));
     }
 
     @Test

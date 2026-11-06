@@ -43,6 +43,11 @@ final class NightMinute {
         return start;
     }
 
+    /** Whether the minute is over by the wall clock (a handler timer may fire a moment early). */
+    boolean isOver(long nowMs) {
+        return nowMs >= start + MINUTE_MS;
+    }
+
     /** One accelerometer reading, m/s². The first reading of the night only sets the reference. */
     void addAcceleration(float x, float y, float z) {
         if (last != null) {

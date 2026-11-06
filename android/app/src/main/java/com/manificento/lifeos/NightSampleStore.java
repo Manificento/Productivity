@@ -6,10 +6,13 @@ import com.getcapacitor.JSArray;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import androidx.core.util.AtomicFile;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -44,7 +47,7 @@ final class NightSampleStore {
             return;
         }
         // Full: drop the oldest minutes, keep the newest night.
-        writeLines(f, NightBuffer.append(readLines(f), line, NightBuffer.MAX_LINES));
+        writeLines(f, NightBuffer.append(readLines(f), line, NightBuffer.MAX_LINES, NightBuffer.TRIM_LINES));
     }
 
     static synchronized JSArray read(Context context) {
@@ -79,12 +82,20 @@ final class NightSampleStore {
         return lines;
     }
 
+    /** Atomic rewrite (temp file + rename): a kill in the middle never loses the whole buffer. */
     private static void writeLines(File f, List<String> lines) {
-        try (FileWriter writer = new FileWriter(f, false)) {
-            for (String line : lines) writer.write(line + "\n");
+        AtomicFile atomic = new AtomicFile(f);
+        FileOutputStream out = null;
+        try {
+            out = atomic.startWrite();
+            StringBuilder text = new StringBuilder();
+            for (String line : lines) text.append(line).append('\n');
+            out.write(text.toString().getBytes(StandardCharsets.UTF_8));
+            atomic.finishWrite(out);
             lineCount = lines.size();
         } catch (IOException e) {
             Log.e(TAG, "write failed", e);
+            if (out != null) atomic.failWrite(out);
             lineCount = -1;
         }
     }

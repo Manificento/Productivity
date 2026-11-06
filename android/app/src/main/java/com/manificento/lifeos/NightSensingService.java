@@ -176,7 +176,13 @@ public class NightSensingService extends Service implements SensorEventListener 
     }
 
     private void flushAndReschedule() {
-        flush();
+        long now = System.currentTimeMillis();
+        boolean over;
+        synchronized (this) {
+            over = minute == null || minute.isOver(now);
+        }
+        // Fired early by the wall clock: wait for the real boundary instead of shifting every later label.
+        if (over) flush();
         if (running) scheduleFlush();
     }
 
