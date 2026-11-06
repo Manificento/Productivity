@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react';
-import type { Baseline } from '../../../core/adaptation/types';
 import type { DateKey, LifeEvent, LifeEventType, Project } from '../../../core/types';
 import { Button, Field, Input, Segmented, Select } from '../../../ui';
 import {
@@ -24,8 +23,11 @@ export function EventForm({
   initial: EventFormValues;
   projects: Project[];
   onSubmit: (fields: EventFields) => Promise<void>;
-  /** When given, a live 10-day plan is shown under the fields and follows every change. */
-  preview?: { baseline: Baseline; today: DateKey; others: LifeEvent[] };
+  /**
+   * When given, a live 10-day plan is shown under the fields and follows every change. `eventId` is the stored
+   * event being edited: the form's values replace it in the plan.
+   */
+  preview?: { today: DateKey; eventId?: string };
 }) {
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState<EventFormErrors>({});
@@ -41,7 +43,7 @@ export function EventForm({
   // The preview does not need a title; everything else must be valid.
   const previewFields = parseEventForm({ ...values, title: values.title.trim() || 'Событие' });
   const previewEvent: LifeEvent | undefined = previewFields.ok
-    ? { ...previewFields.data, id: 'preview', createdAt: 0, updatedAt: 0 }
+    ? { ...previewFields.data, id: preview?.eventId ?? 'preview', createdAt: 0, updatedAt: 0 }
     : undefined;
 
   async function submit(e: FormEvent) {
@@ -132,12 +134,7 @@ export function EventForm({
         <section aria-label="Как изменятся следующие 10 дней" className="mb-3">
           <h3 className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Как изменятся следующие 10 дней</h3>
           {previewEvent ? (
-            <PlanPreview
-              event={previewEvent}
-              others={preview.others}
-              baseline={preview.baseline}
-              today={preview.today}
-            />
+            <PlanPreview event={previewEvent} today={preview.today} />
           ) : (
             <p className="text-sm text-zinc-500">Укажите дату и дни подготовки, чтобы увидеть план.</p>
           )}

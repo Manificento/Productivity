@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { daysBetween, todayKey } from '../../../core/dates';
 import type { LifeEvent, Project } from '../../../core/types';
 import { Button, Card, Chip, Empty, Page, Sheet } from '../../../ui';
-import { useBaseline } from '../data/baseline';
 import { createEvent, useEvents, useProjects } from '../data/events';
 import { daysLabel, emptyEventForm, EVENT_TYPE_LABEL, formatDay, IMPORTANCE_LABEL, splitEvents } from '../logic/events';
 import { EventForm } from './EventForm';
@@ -46,7 +45,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export function EventsList() {
   const events = useEvents();
   const projects = useProjects() ?? [];
-  const baseline = useBaseline();
   const [adding, setAdding] = useState(false);
   const today = todayKey();
 
@@ -94,7 +92,7 @@ export function EventsList() {
         <EventForm
           initial={emptyEventForm(today)}
           projects={projects}
-          preview={baseline && { baseline, today, others: events ?? [] }}
+          preview={{ today }}
           onSubmit={async (fields) => {
             await createEvent(fields);
             setAdding(false);

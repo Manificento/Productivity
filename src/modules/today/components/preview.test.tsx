@@ -82,7 +82,8 @@ describe('Предпросмотр 10 дней', () => {
     renderAt('/today/events/e1');
     await user.click(await screen.findByRole('button', { name: 'Изменить' }));
     const dialog = screen.getByRole('dialog', { name: 'Изменить событие' });
-    const table = within(dialog).getByRole('table', { name: 'План на 10 дней' });
+    // The plan loads the day data once; after that every change is recomputed at once.
+    const table = await within(dialog).findByRole('table', { name: 'План на 10 дней' });
     expect(focusColumn(table).slice(0, 4)).toEqual(['7', '7', '7', '7']);
 
     await user.click(within(dialog).getByRole('radio', { name: 'Обычное' }));
@@ -91,8 +92,8 @@ describe('Предпросмотр 10 дней', () => {
     const prep = within(dialog).getByLabelText('Дней подготовки');
     await user.clear(prep);
     await user.type(prep, '2');
-    // Clearing the field hides the plan for a moment, so look the table up again.
-    const updated = within(dialog).getByRole('table', { name: 'План на 10 дней' });
+    // Clearing the field hides the plan for a moment, so look the table up again (it loads anew).
+    const updated = await within(dialog).findByRole('table', { name: 'План на 10 дней' });
     expect(focusColumn(updated).slice(0, 4)).toEqual(['4', '4', '4', '5']);
 
     // Nothing is saved until «Сохранить».
@@ -113,11 +114,35 @@ describe('Предпросмотр 10 дней', () => {
     await user.clear(within(dialog).getByLabelText('Дата'));
     await user.type(within(dialog).getByLabelText('Дата'), '2026-11-06');
     // The new critical event is nearer, so it drives today: 4 + 3 sessions, and its taper day shows 2.
-    expect(focusColumn(within(dialog).getByRole('table', { name: 'План на 10 дней' })).slice(0, 2)).toEqual(['7', '2']);
+    expect(focusColumn(await within(dialog).findByRole('table', { name: 'План на 10 дней' })).slice(0, 2)).toEqual([
+      '7',
+      '2',
+    ]);
 
     await user.clear(within(dialog).getByLabelText('Дней подготовки'));
     expect(within(dialog).queryByRole('table')).not.toBeInTheDocument();
     expect(within(dialog).getByText('Укажите дату и дни подготовки, чтобы увидеть план.')).toBeInTheDocument();
+  });
+
+  it('uses the day targets of the user: their baseline and the other stored events', async () => {
+    await db.settings.put({ key: 'adaptation.baseline', value: { taskCapacityMin: 300 } });
+    await db.lifeEvents.add({
+      id: 'e2',
+      title: 'Дедлайн',
+      type: 'deadline',
+      date: '2026-11-07',
+      importance: 1,
+      prepDays: 2,
+      createdAt: 0,
+      updatedAt: 0,
+    });
+    renderAt('/today/events/e2');
+    const table = await screen.findByRole('table', { name: 'План на 10 дней' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    // On the deadline day IELTS preparation still drives the day; the last day is a normal 5-hour day.
+    expect(rows[3]).toHaveTextContent('7 нояб.подгот.');
+    expect(focusColumn(table)[3]).toBe('7');
+    expect(rows[9]).toHaveTextContent('13 нояб.обычный5 ч');
   });
 
   it('says so in one line when the event does not change the next 10 days', async () => {
