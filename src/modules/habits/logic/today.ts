@@ -1,6 +1,7 @@
 import { toDateKey } from '../../../core/dates';
 import type { DateKey, Habit, HabitLog } from '../../../core/types';
 import { doneDays, isDue, isWeekly } from '../../../core/habitSchedule';
+import type { HabitsMode } from '../../../core/adaptation/types';
 import { streak, type Streak } from './streaks';
 
 export interface TodayHabit {
@@ -18,7 +19,9 @@ export function todayHabits(
   habits: readonly Habit[],
   logs: readonly HabitLog[],
   today: DateKey,
-): { items: TodayHabit[]; other: Habit[]; goalMet: Set<string> } {
+  mode: HabitsMode = 'all',
+  relaxed: ReadonlySet<DateKey> = new Set(),
+): { items: TodayHabit[]; other: Habit[]; goalMet: Set<string>; paused: Habit[] } {
   const byHabit = new Map<string, HabitLog[]>();
   for (const log of logs) {
     const list = byHabit.get(log.habitId);
@@ -27,18 +30,31 @@ export function todayHabits(
   }
   const active = habits.filter((h) => !h.archived).sort((a, b) => a.createdAt - b.createdAt);
   const due = (h: Habit) => isDue(h.schedule, byHabit.get(h.id) ?? [], today);
-  const items = active.filter(due).map((habit) => {
-    const own = byHabit.get(habit.id) ?? [];
-    return {
-      habit,
-      done: doneDays(own).has(today),
-      streak: streak({ schedule: habit.schedule, logs: own, since: toDateKey(habit.createdAt) }, today),
-    };
-  });
+  // «Только ключевые»: not essential habits due today are set aside, they do not count today.
+  const counts = (h: Habit) => mode === 'all' || h.essential === true;
+  const paused = active.filter((h) => due(h) && !counts(h));
+  const items = active
+    .filter((h) => due(h) && counts(h))
+    .map((habit) => {
+      const own = byHabit.get(habit.id) ?? [];
+      return {
+        habit,
+        done: doneDays(own).has(today),
+        streak: streak(
+          {
+            schedule: habit.schedule,
+            logs: own,
+            since: toDateKey(habit.createdAt),
+            relaxed: habit.essential ? new Set() : relaxed,
+          },
+          today,
+        ),
+      };
+    });
   const other = active.filter((h) => !due(h));
   // A weekly habit is never «not scheduled», so being out of today's list means its weekly goal is met.
   const goalMet = new Set(other.filter((h) => isWeekly(h.schedule)).map((h) => h.id));
-  return { items, other, goalMet };
+  return { items, other, goalMet, paused };
 }
 
 /** «🔥5» for days, «🔥2 нед.» for weekly habits. */

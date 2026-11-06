@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { describeSchedule, habitFormValues, parseHabitForm, type HabitFormInput } from './habitForm';
 
-const base: HabitFormInput = { name: 'Зарядка', kind: 'daily', weekdays: [], timesPerWeek: '3', color: '#6366f1' };
+const base: HabitFormInput = {
+  name: 'Зарядка',
+  kind: 'daily',
+  weekdays: [],
+  timesPerWeek: '3',
+  color: '#6366f1',
+  essential: false,
+};
 
 describe('parseHabitForm', () => {
   it('каждый день: название, расписание и цвет сохраняются', () => {
     expect(parseHabitForm({ ...base, name: '  Зарядка  ' })).toEqual({
       ok: true,
-      value: { name: 'Зарядка', schedule: { kind: 'daily' }, color: '#6366f1' },
+      value: { name: 'Зарядка', schedule: { kind: 'daily' }, color: '#6366f1', essential: false },
     });
   });
 
@@ -60,5 +67,14 @@ describe('describeSchedule', () => {
     [{ kind: 'timesPerWeek' as const, timesPerWeek: 1 }, '1 раз в неделю'],
   ])('%o → %s', (schedule, text) => {
     expect(describeSchedule(schedule)).toBe(text);
+  });
+});
+
+describe('флаг «ключевая»', () => {
+  it('Given привычка When я редактирую её Then флаг «ключевая», по умолчанию выключен', () => {
+    expect(habitFormValues().essential).toBe(false);
+    expect(habitFormValues({ name: 'a', schedule: { kind: 'daily' } }).essential).toBe(false);
+    expect(habitFormValues({ name: 'a', schedule: { kind: 'daily' }, essential: true }).essential).toBe(true);
+    expect(parseHabitForm({ ...base, essential: true })).toMatchObject({ ok: true, value: { essential: true } });
   });
 });

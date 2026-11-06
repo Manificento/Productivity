@@ -192,3 +192,69 @@ describe('completionRate', () => {
     );
   });
 });
+
+describe('режим «только ключевые»', () => {
+  it('Given habitsMode = essential When считаются серии Then пропуск не-ключевой привычки в такой день не рвёт серию', () => {
+    // done 10/30–11/01, skipped 11/02 (relaxed), done 11/03–11/04
+    const done = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-03', '2026-11-04'];
+    const base = { schedule: daily, logs: logs(done), since: '2026-10-01' };
+    expect(streak(base, TODAY).current).toBe(2);
+    const relaxed = streak({ ...base, relaxed: new Set(['2026-11-02']) }, TODAY);
+    expect(relaxed.current).toBe(5);
+    expect(relaxed.best).toBe(5);
+  });
+
+  it('отмеченный в облегчённый день день всё равно засчитывается', () => {
+    const h = {
+      schedule: daily,
+      logs: logs(['2026-11-03', '2026-11-04']),
+      since: '2026-10-01',
+      relaxed: new Set(['2026-11-03']),
+    };
+    expect(streak(h, TODAY).current).toBe(2);
+  });
+
+  it('пропуск вне облегчённого дня по-прежнему рвёт серию', () => {
+    const h = {
+      schedule: daily,
+      logs: logs(['2026-11-01', '2026-11-04']),
+      since: '2026-10-01',
+      relaxed: new Set(['2026-11-03']),
+    };
+    expect(streak(h, TODAY).current).toBe(1);
+  });
+
+  it('облегчённый день не снижает процент выполнения', () => {
+    const h = { schedule: daily, logs: logs(['2026-11-04']), since: '2026-11-03', relaxed: new Set(['2026-11-03']) };
+    expect(completionRate(h, TODAY, 7)).toBe(100);
+  });
+});
+
+describe('режим «только ключевые»: недельные привычки', () => {
+  const weekly = (dates: string[], relaxed: string[]) => ({
+    schedule: threePerWeek,
+    logs: logs(dates),
+    since: '2026-10-05',
+    relaxed: new Set(relaxed),
+  });
+  // weeks: 10/26–11/01 (previous), current 11/02–11/08
+  const prevWeekFull = ['2026-10-26', '2026-10-28', '2026-10-30'];
+
+  it('облегчённый день снимает одну отметку с нормы недели', () => {
+    // previous week: 2 of 3 marks + 1 relaxed day → quota met
+    const h = weekly(['2026-10-26', '2026-10-28', ...[]], ['2026-10-30']);
+    expect(streak(h, TODAY).current).toBe(1);
+    expect(streak({ ...h, relaxed: new Set() }, TODAY).current).toBe(0);
+  });
+
+  it('неделя без отметок с облегчённым днём всё равно считается пропущенной', () => {
+    const h = weekly([...prevWeekFull.map((d) => shiftDateKey(d, -7))], ['2026-10-30']);
+    expect(streak(h, TODAY).current).toBe(0);
+  });
+
+  it('облегчённый день не снижает процент недельной привычки', () => {
+    const h = { ...weekly(['2026-10-26', '2026-10-28'], ['2026-10-30']), since: '2026-10-26' };
+    expect(completionRate(h, TODAY, 14)).toBe(100);
+    expect(completionRate({ ...h, relaxed: new Set() }, TODAY, 14)).toBeLessThan(100);
+  });
+});

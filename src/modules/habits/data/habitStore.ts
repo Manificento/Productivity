@@ -21,7 +21,10 @@ export async function createHabit(fields: HabitFields, now: Millis = Date.now())
 
 export async function updateHabit(id: Id, fields: HabitFields, now: Millis = Date.now()): Promise<void> {
   // `schedule` is replaced whole, so fields of the previous kind (e.g. weekdays) do not linger.
-  await db.habits.update(id, touch({ name: fields.name, schedule: fields.schedule, color: fields.color }, now));
+  await db.habits.update(
+    id,
+    touch({ name: fields.name, schedule: fields.schedule, color: fields.color, essential: fields.essential }, now),
+  );
 }
 
 export async function archiveHabit(id: Id, now: Millis = Date.now()): Promise<void> {

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { skipOnboarding } from './helpers.ts';
 
 test.describe('habits', () => {
   test('starter set: tick three, add, exactly three habits appear', async ({ page }) => {
@@ -90,5 +91,42 @@ test.describe('habits', () => {
     await row.click();
     await page.getByRole('button', { name: /^5 ноября:/ }).click();
     await expect(page.getByRole('button', { name: '5 ноября: выполнено' })).toBeVisible();
+  });
+
+  test('Given день экзамена When открываю привычки Then активна только ключевая, остальная — в «Сегодня не считаются»', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T10:00:00+05:00'));
+    await skipOnboarding(page);
+    await page.goto('/#/habits');
+    for (const [name, essential] of [
+      ['Учёба', true],
+      ['Прогулка', false],
+    ] as const) {
+      await page.getByRole('button', { name: '+ Привычка' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Новая привычка' });
+      await dialog.getByLabel('Название').fill(name);
+      if (essential) await dialog.getByRole('checkbox', { name: /Ключевая/ }).check();
+      await dialog.getByRole('button', { name: 'Сохранить' }).click();
+    }
+    const list = page.getByRole('list', { name: 'Привычки на сегодня' });
+    await expect(list.getByRole('listitem')).toHaveCount(2);
+
+    await page.goto('/#/');
+    await page.getByRole('link', { name: /События/ }).click();
+    await page.getByRole('button', { name: 'Добавить событие' }).click();
+    const form = page.getByRole('dialog', { name: 'Новое событие' });
+    await form.getByLabel('Название').fill('Экзамен');
+    await form.getByLabel('Тип').selectOption('exam');
+    await form.getByLabel('Дата').fill('2026-11-04');
+    await form.getByRole('button', { name: 'Сохранить' }).click();
+
+    await page.goto('/#/habits');
+    await expect(list.getByRole('listitem')).toHaveCount(1);
+    await expect(list).toContainText('Учёба');
+    const paused = page.getByText('Сегодня не считаются').locator('..');
+    await expect(paused).toContainText('Прогулка');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

@@ -37,7 +37,7 @@ async function mark(habitId: string, date: string, done = true) {
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  await Promise.all([db.habits.clear(), db.habitLogs.clear()]);
+  await Promise.all([db.habits.clear(), db.habitLogs.clear(), db.lifeEvents.clear()]);
 });
 
 afterEach(() => {
@@ -137,7 +137,7 @@ describe('HabitsPage', () => {
     expect(await screen.findByText('пн, ср')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: '← Все привычки' }));
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Привычки на сегодня' })).not.toBeInTheDocument());
-    expect(screen.getByRole('link', { name: 'Открыть «Бег»' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Открыть «Бег»' })).toBeInTheDocument();
     expect((await db.habits.get(saved!.id))?.schedule).toEqual({ kind: 'weekdays', weekdays: [1, 3] });
   });
 
@@ -192,5 +192,61 @@ describe('HabitsPage', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Не удалось сохранить. Попробуйте ещё раз');
     expect(screen.getByRole('dialog', { name: 'Новая привычка' })).toBeInTheDocument();
     spy.mockRestore();
+  });
+
+  describe('режим «только ключевые»', () => {
+    const examDay = () =>
+      db.lifeEvents.add(
+        newRecord({ title: 'Экзамен', type: 'exam', date: TODAY, importance: 3, prepDays: 3 }, NOW - 1000),
+      );
+
+    it('Given habitsMode = essential When я открываю список Then активны только ключевые; остальные свёрнуты в «сегодня не считаются» с причиной из reasons', async () => {
+      await addHabit('Учёба', { kind: 'daily' }, { essential: true });
+      await addHabit('Прогулка');
+      await examDay();
+      renderPage();
+
+      const list = await screen.findByRole('list', { name: 'Привычки на сегодня' });
+      expect(within(list).getByText('Учёба')).toBeInTheDocument();
+      expect(within(list).queryByText('Прогулка')).not.toBeInTheDocument();
+      const card = screen.getByText('Сегодня не считаются').closest('section,div') as HTMLElement;
+      expect(within(card).getByText('Прогулка')).toBeInTheDocument();
+      expect(within(card).getByText(/Только ключевые привычки/)).toBeInTheDocument();
+    });
+
+    it('Given habitsMode = essential When считаются серии Then пропуск не-ключевой привычки в такой день не рвёт серию', async () => {
+      const walk = await addHabit('Прогулка');
+      await mark(walk, '2026-11-01');
+      await db.lifeEvents.add(
+        newRecord({ title: 'Зачёт', type: 'exam', date: '2026-11-02', importance: 3, prepDays: 1 }, NOW - 1000),
+      );
+      renderPage(`/habits/${walk}`);
+
+      expect(await screen.findByText('🔥1')).toBeInTheDocument();
+    });
+
+    it('Given привычка When я редактирую её Then флаг «ключевая» сохраняется, по умолчанию выключен', async () => {
+      const walk = await addHabit('Прогулка');
+      const user = userEvent.setup();
+      renderPage(`/habits/${walk}`);
+
+      await user.click(await screen.findByRole('button', { name: /Изменить|Редактировать/ }));
+      const box = await screen.findByRole('checkbox', { name: /Ключевая/ });
+      expect(box).not.toBeChecked();
+      await user.click(box);
+      await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+
+      await waitFor(async () => expect((await db.habits.get(walk))?.essential).toBe(true));
+    });
+
+    it('Given habitsMode = all When я открываю список Then всё как раньше', async () => {
+      await addHabit('Учёба', { kind: 'daily' }, { essential: true });
+      await addHabit('Прогулка');
+      renderPage();
+
+      const list = await screen.findByRole('list', { name: 'Привычки на сегодня' });
+      expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+      expect(screen.queryByText('Сегодня не считаются')).not.toBeInTheDocument();
+    });
   });
 });

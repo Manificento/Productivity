@@ -9,9 +9,10 @@ import { completionRate, doneInWeek, prepare, streak, type HabitHistory, type St
  *   finished week that missed its quota (the week the streak counts as missed)
  * - open: can still be done (today; unmarked days of the current week or of a week whose quota is met)
  * - off: not scheduled (weekday habits), or before the habit existed
+ * - relaxed: a scheduled day that does not count (режим «только ключевые») and was not marked
  * - future: after today — cannot be marked
  */
-export type CellStatus = 'done' | 'missed' | 'open' | 'off' | 'future';
+export type CellStatus = 'done' | 'missed' | 'open' | 'off' | 'relaxed' | 'future';
 
 export interface CalendarCell {
   date: DateKey;
@@ -34,6 +35,7 @@ export function calendarGrid(h: HabitHistory, today: DateKey, weeks = 5): Calend
       if (date > today) status = 'future';
       else if (done.has(date)) status = 'done';
       else if (date < since || !isScheduled(h.schedule, date)) status = 'off';
+      else if (h.relaxed?.has(date)) status = 'relaxed';
       else if (date === today || weekOpen) status = 'open';
       else status = 'missed';
       return { date, status };
@@ -47,8 +49,13 @@ export interface HabitStats {
   rate30: number;
 }
 
-export function habitHistory(habit: Habit, logs: readonly HabitLog[]): HabitHistory {
+export function habitHistory(
+  habit: Habit,
+  logs: readonly HabitLog[],
+  relaxedDays: ReadonlySet<DateKey> = new Set(),
+): HabitHistory {
   return {
+    relaxed: habit.essential ? new Set() : relaxedDays,
     schedule: habit.schedule,
     logs: logs.filter((l) => l.habitId === habit.id),
     since: toDateKey(habit.createdAt),
@@ -64,6 +71,7 @@ const STATUS_LABEL: Record<CellStatus, string> = {
   missed: 'пропущено',
   open: 'не отмечено',
   off: 'не запланировано',
+  relaxed: 'не считается',
   future: 'впереди',
 };
 

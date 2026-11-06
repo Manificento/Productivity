@@ -17,6 +17,11 @@ export interface HabitHistory {
    * A back-filled log before it moves the start back automatically.
    */
   since: DateKey;
+  /**
+   * Days when this habit does not count (режим «только ключевые», habit is not essential):
+   * a missed scheduled day in the set neither breaks the streak nor lowers the rate.
+   */
+  relaxed?: ReadonlySet<DateKey>;
 }
 
 /**
@@ -36,6 +41,13 @@ export function doneInWeek(done: Set<DateKey>, monday: DateKey): number {
   return count;
 }
 
+/** «N раз в неделю»: each relaxed day of the week takes one mark off the quota (never below 0). */
+function weekQuota(h: HabitHistory, monday: DateKey, quota: number): number {
+  let relaxed = 0;
+  for (let i = 0; i < 7; i++) if (h.relaxed?.has(shiftDateKey(monday, i))) relaxed++;
+  return Math.max(0, quota - relaxed);
+}
+
 type Outcome = 'done' | 'missed' | 'pending' | 'skip';
 
 /**
@@ -49,13 +61,17 @@ function outcomes(h: HabitHistory, today: DateKey): Outcome[] {
     const quota = weeklyQuota(h.schedule);
     const currentWeek = weekStart(today);
     for (let w = weekStart(since); w <= currentWeek; w = shiftDateKey(w, 7)) {
-      result.push(doneInWeek(done, w) >= quota ? 'done' : w === currentWeek ? 'pending' : 'missed');
+      const need = weekQuota(h, w, quota);
+      if (need === 0 && quota > 0 && doneInWeek(done, w) === 0 && w !== currentWeek) result.push('skip');
+      else if (doneInWeek(done, w) >= need) result.push('done');
+      else result.push(w === currentWeek ? 'pending' : 'missed');
     }
     return result;
   }
   for (let d = since; d <= today; d = shiftDateKey(d, 1)) {
     if (!isScheduled(h.schedule, d)) result.push('skip');
     else if (done.has(d)) result.push('done');
+    else if (h.relaxed?.has(d)) result.push('skip');
     else result.push(d === today ? 'pending' : 'missed');
   }
   return result;
@@ -95,12 +111,14 @@ export function completionRate(h: HabitHistory, today: DateKey, days = 30): numb
     let got = 0;
     let weeks = 0;
     for (; first <= currentWeek; first = shiftDateKey(first, 7)) {
-      const count = Math.min(doneInWeek(done, first), quota);
-      if (first === currentWeek && count < quota) continue;
-      got += count;
+      const need = weekQuota(h, first, quota);
+      if (need === 0) continue;
+      const count = Math.min(doneInWeek(done, first), need);
+      if (first === currentWeek && count < need) continue;
+      got += count / need;
       weeks++;
     }
-    return weeks === 0 ? 0 : Math.round((got / (quota * weeks)) * 100);
+    return weeks === 0 ? 0 : Math.round((got / weeks) * 100);
   }
 
   const end = done.has(today) ? today : shiftDateKey(today, -1);
@@ -110,6 +128,7 @@ export function completionRate(h: HabitHistory, today: DateKey, days = 30): numb
   let hit = 0;
   for (let d = start; d <= end; d = shiftDateKey(d, 1)) {
     if (!isScheduled(h.schedule, d)) continue;
+    if (!done.has(d) && h.relaxed?.has(d)) continue;
     scheduled++;
     if (done.has(d)) hit++;
   }
