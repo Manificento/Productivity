@@ -42,8 +42,9 @@ type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
 
 /**
  * Fields of the copy created when a repeating task is completed on `completedDay`: everything but the
- * completion and the import key (`source`/`externalId` stay with the original), due on the next date after the due date that is still in the future — completing an overdue
- * daily task gives tomorrow, not another overdue copy. A task without a due date repeats from the completion day.
+ * completion and the import key (`source`/`externalId` stay with the original). It is due on the next date
+ * after the due date that is still in the future — completing an overdue daily task gives tomorrow, not
+ * another overdue copy. A task without a due date repeats from the completion day.
  */
 export function nextOccurrence(task: Task, completedDay: DateKey): NewTask | undefined {
   if (!task.recurrence) return undefined;

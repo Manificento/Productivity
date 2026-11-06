@@ -115,18 +115,20 @@ describe('nextOccurrence', () => {
     });
   });
 
-  it('Given задача с source и externalId и повтором When создаётся копия Then у копии нет source и externalId, остальные поля копируются', () => {
-    const original = task({
+  it('Given задача с source и externalId (из импорта) и повтором When я выполняю её и создаётся следующая копия (nextOccurrence) Then у копии нет полей source и externalId; остальные поля копируются как раньше', () => {
+    const fields = {
       dueDate: '2026-11-04',
-      recurrence: { kind: 'daily' },
+      dueTime: '07:00',
+      projectId: 'health',
+      recurrence: { kind: 'daily' } as const,
       tags: ['а'],
-      source: 'todoist',
-      externalId: 'ext-1',
-    });
-    const next = nextOccurrence(original, '2026-11-04')!;
-    expect(next).not.toHaveProperty('source');
-    expect(next).not.toHaveProperty('externalId');
-    expect(next).toMatchObject({ title: 'зарядка', dueDate: '2026-11-05', tags: ['а'], recurrence: { kind: 'daily' } });
+      notes: 'n',
+    };
+    const imported = nextOccurrence(task({ ...fields, source: 'todoist', externalId: 'ext-1' }), '2026-11-04')!;
+    expect(imported).not.toHaveProperty('source');
+    expect(imported).not.toHaveProperty('externalId');
+    expect(imported).toEqual(nextOccurrence(task(fields), '2026-11-04'));
+    expect(imported).toMatchObject({ projectId: 'health', dueTime: '07:00', notes: 'n', dueDate: '2026-11-05' });
   });
 
   it('a recurring task without a due date repeats from the day it was completed', () => {
