@@ -77,9 +77,14 @@ test('Given приложение запущено в нативной оболо
   await page.addInitScript(() => {
     (window as unknown as { androidBridge: object }).androidBridge = { postMessage: () => undefined };
   });
+  const workerRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/sw.js')) workerRequests.push(request.url());
+  });
   await page.goto('/');
   await expect(page.getByRole('navigation')).toBeVisible();
-  await page.waitForLoadState('load');
-  await page.waitForTimeout(500); // the web build registers right after load — give it the chance to (not) happen
+  // The web build fetches sw.js right after start; once the network is idle it would have happened.
+  await page.waitForLoadState('networkidle');
+  expect(workerRequests).toEqual([]);
   expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.length))).toBe(0);
 });

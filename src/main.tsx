@@ -1,6 +1,5 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import { App } from './app/App';
 import { startServiceWorker } from './app/serviceWorker';
 import { isNativePlatform } from './core/platform';
@@ -14,6 +13,6 @@ createRoot(document.getElementById('root')!).render(
 
 void startServiceWorker({
   native: isNativePlatform(),
-  register: () => void registerSW(),
-  container: navigator.serviceWorker,
+  container: 'serviceWorker' in navigator ? navigator.serviceWorker : undefined,
+  caches: 'caches' in window ? window.caches : undefined,
 });
