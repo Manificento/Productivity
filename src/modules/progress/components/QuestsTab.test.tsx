@@ -89,4 +89,41 @@ describe('Навыки и квесты', () => {
     expect(list).toHaveTextContent('Дыхание 5 мин');
     expect(list).not.toHaveTextContent(/тренировк/i);
   });
+
+  it('Given квест выполнен When «Квесты» не открывали Then бонус всё равно записан', async () => {
+    await db.meditationSessions.add(
+      newRecord(
+        { date: '2026-11-03', startedAt: NOW, durationMin: 60, kind: 'breathing' as const, completed: true },
+        NOW,
+      ),
+    );
+    render(
+      <MemoryRouter>
+        <ProgressPage />
+      </MemoryRouter>,
+    );
+    await waitFor(async () => expect(await db.xpEvents.count()).toBe(1));
+    expect(screen.getByTestId('level')).toBeInTheDocument(); // still on «Обзор»
+  });
+
+  it('Given запись сна сегодняшним утром с отбоем вчера в 22:30 When открыт экран Then бонус «отбой» записан на вчера, сегодняшний квест не отмечен', async () => {
+    await db.sleepLogs.add(
+      newRecord(
+        {
+          date: '2026-11-03',
+          bedtime: atLocalTime('2026-11-02', '22:30'),
+          wakeTime: atLocalTime('2026-11-03', '07:00'),
+          quality: 4,
+        },
+        NOW,
+      ),
+    );
+    await open('Квесты');
+    await waitFor(async () => {
+      const events = await db.xpEvents.toArray();
+      expect(events.some((e) => e.date === '2026-11-02' && e.questId === 'bedtime')).toBe(true);
+    });
+    expect(screen.getByTestId('quest-bedtime')).not.toHaveTextContent('Готово');
+    expect(screen.getByTestId('quest-bedtime')).toHaveTextContent('Засчитается утром');
+  });
 });

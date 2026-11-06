@@ -1,6 +1,6 @@
 import type { DailyTargets } from '../../../core/adaptation/types';
 import { shiftDateKey } from '../../../core/dates';
-import { isScheduled } from '../../../core/habitSchedule';
+import { doneDays, isDue } from '../../../core/habitSchedule';
 import { atLocalTime } from '../../../core/logging/sleepTime';
 import type { Habit, HabitLog, MeditationSession, SleepLog, Task, TimeEntry } from '../../../core/types';
 import { MIN_FOCUS_MS, XP_RULES } from './xp';
@@ -24,6 +24,8 @@ export interface Quest {
   id: string;
   title: string;
   done: boolean;
+  /** Why a quest cannot be ticked yet / what to do. */
+  hint?: string;
 }
 
 function sessionsWord(n: number): string {
@@ -34,14 +36,19 @@ function sessionsWord(n: number): string {
   return 'фокус-сессий';
 }
 
-function habitsDone(targets: DailyTargets, data: QuestData, essentialOnly: boolean): boolean {
-  const due = data.habits.filter(
-    (h) => !h.archived && (!essentialOnly || h.essential) && isScheduled(h.schedule, targets.date),
-  );
-  if (due.length === 0) return false;
-  const doneIds = new Set(data.habitLogs.filter((l) => l.date === targets.date && l.done).map((l) => l.habitId));
-  return due.every((h) => doneIds.has(h.id));
+/** Same rule as «Привычки» / «Сегодня»: `isDue` + the latest log of a day wins (`doneDays`). */
+function habitsState(targets: DailyTargets, data: QuestData, essentialOnly: boolean): { done: boolean; any: boolean } {
+  const due = data.habits.filter((h) => {
+    if (h.archived || (essentialOnly && !h.essential)) return false;
+    return isDue(h.schedule, logsOf(h, data), targets.date);
+  });
+  return {
+    any: data.habits.some((h) => !h.archived && (!essentialOnly || h.essential)),
+    done: due.length > 0 && due.every((h) => doneDays(logsOf(h, data)).has(targets.date)),
+  };
 }
+
+const logsOf = (h: Habit, data: QuestData) => data.habitLogs.filter((l) => l.habitId === h.id);
 
 function focusDone(targets: DailyTargets, data: QuestData): boolean {
   const projectOf = new Map(data.tasks.map((t) => [t.id, t.projectId]));
@@ -78,8 +85,14 @@ function meditationMinutes(targets: DailyTargets, data: QuestData, breathingOnly
  */
 export function questsFor(targets: DailyTargets, data: QuestData, opts: { projectName?: string } = {}): Quest[] {
   if (targets.phase === 'event') {
+    const key = habitsState(targets, data, true);
     return [
-      { id: 'habits', title: 'Ключевые привычки', done: habitsDone(targets, data, true) },
+      {
+        id: 'habits',
+        title: 'Ключевые привычки',
+        done: key.done,
+        ...(key.any ? {} : { hint: 'Отметьте ключевые привычки в «Привычках»' }),
+      },
       {
         id: 'breathing',
         title: `Дыхание ${BREATHING_MIN} мин`,
@@ -96,17 +109,23 @@ export function questsFor(targets: DailyTargets, data: QuestData, opts: { projec
       done: focusDone(targets, data),
     });
   }
-  candidates.push({ id: 'bedtime', title: `Отбой до ${targets.bedtime}`, done: bedtimeDone(targets, data) });
+  candidates.push({
+    id: 'bedtime',
+    title: `Отбой до ${targets.bedtime}`,
+    done: bedtimeDone(targets, data),
+    hint: 'Засчитается утром по записи сна',
+  });
   if (targets.meditationMin > 0)
     candidates.push({
       id: 'meditation',
       title: `Медитация ${targets.meditationMin} мин`,
       done: meditationMinutes(targets, data, false) >= targets.meditationMin,
     });
+  const essential = targets.habitsMode === 'essential';
   candidates.push({
     id: 'habits',
-    title: targets.habitsMode === 'essential' ? 'Ключевые привычки' : 'Привычки дня',
-    done: habitsDone(targets, data, targets.habitsMode === 'essential'),
+    title: essential ? 'Ключевые привычки' : 'Привычки дня',
+    done: habitsState(targets, data, essential).done,
   });
   return candidates.slice(0, 3);
 }

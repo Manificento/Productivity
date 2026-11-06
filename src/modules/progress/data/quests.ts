@@ -41,7 +41,8 @@ export async function awardQuest(date: DateKey, questId: string, now: number = D
 export function useQuestAwards(done: readonly { date: DateKey; questId: string }[]): void {
   const key = done.map((d) => `${d.date}:${d.questId}`).join('|');
   useEffect(() => {
-    for (const d of done) void awardQuest(d.date, d.questId).catch(() => undefined);
+    for (const d of done)
+      void awardQuest(d.date, d.questId).catch((e: unknown) => console.error('Не удалось записать бонус квеста', e));
     // `key` is the content of `done`
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

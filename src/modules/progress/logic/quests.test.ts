@@ -126,4 +126,42 @@ describe('квесты дня', () => {
     // a day-of-week habit not scheduled today is ignored; with no habits the quest is not done
     expect(questsFor(targets({ phase: 'event' }), empty)[0]?.done).toBe(false);
   });
+
+  it('Given привычка «N раз в неделю» с выполненной целью When считаю квест Then она не блокирует «Привычки дня»', () => {
+    const daily = newRecord({ name: 'a', schedule: { kind: 'daily' as const }, archived: false }, T);
+    const weekly = newRecord(
+      { name: 'w', schedule: { kind: 'timesPerWeek' as const, timesPerWeek: 1 }, archived: false },
+      T,
+    );
+    // 2026-11-06 is a Friday; the weekly goal (1) was met on Monday
+    const logs = [
+      newRecord({ habitId: weekly.id, date: '2026-11-02', done: true }, T),
+      newRecord({ habitId: daily.id, date: DAY, done: true }, T),
+    ];
+    const q = questsFor(targets({ meditationMin: 0, focusPomodoros: 0 }), {
+      ...empty,
+      habits: [daily, weekly],
+      habitLogs: logs,
+    });
+    expect(q.find((x) => x.id === 'habits')?.done).toBe(true);
+  });
+
+  it('Given отметка снята позже When считаю квест Then привычка не засчитана (побеждает последняя запись)', () => {
+    const h = newRecord({ name: 'a', schedule: { kind: 'daily' as const }, archived: false }, T);
+    const on = newRecord({ habitId: h.id, date: DAY, done: true }, 10);
+    const off = { ...newRecord({ habitId: h.id, date: DAY, done: false }, 20) };
+    const q = questsFor(targets({ meditationMin: 0, focusPomodoros: 0 }), {
+      ...empty,
+      habits: [h],
+      habitLogs: [on, off],
+    });
+    expect(q.find((x) => x.id === 'habits')?.done).toBe(false);
+  });
+
+  it('Given квесты без данных When смотрю подсказки Then отбой «засчитается утром», у ключевых привычек — как их отметить', () => {
+    const q = questsFor(targets(), empty);
+    expect(q.find((x) => x.id === 'bedtime')?.hint).toMatch(/утром/);
+    const e = questsFor(targets({ phase: 'event' }), empty);
+    expect(e[0]?.hint).toMatch(/Привычках/);
+  });
 });
