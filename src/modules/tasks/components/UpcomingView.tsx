@@ -7,11 +7,11 @@ import { AddTaskForm } from './AddTaskForm';
 import { TaskRows } from './TaskRows';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
-import { useToday } from './useToday';
+import { useTodayKey } from '../../../core/dates';
 
 export function UpcomingView() {
   const data = useTasksData();
-  const today = useToday();
+  const today = useTodayKey();
   const { actions, ui } = useTaskActions();
   const groups = data ? upcomingGroups(data.tasks, today) : [];
   return (

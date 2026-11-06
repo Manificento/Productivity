@@ -9,13 +9,13 @@ import { ListBody } from './ListBody';
 import { ProjectNameForm } from './ProjectNameForm';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
-import { useToday } from './useToday';
+import { useTodayKey } from '../../../core/dates';
 
 export function ProjectView() {
   const { projectId = '' } = useParams();
   const navigate = useNavigate();
   const data = useTasksData();
-  const today = useToday();
+  const today = useTodayKey();
   const { actions, ui } = useTaskActions();
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState<string>();

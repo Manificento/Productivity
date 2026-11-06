@@ -4,11 +4,11 @@ import { AddTaskForm } from './AddTaskForm';
 import { ListBody } from './ListBody';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
-import { useToday } from './useToday';
+import { useTodayKey } from '../../../core/dates';
 
 export function InboxView() {
   const data = useTasksData();
-  const today = useToday();
+  const today = useTodayKey();
   const { actions, ui } = useTaskActions();
   return (
     <>

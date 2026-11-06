@@ -1,9 +1,8 @@
-import { act, fireEvent, renderHook, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { findSection, NOW, renderTasks, section, seedTask, setupTasksTestEnv, TODAY } from '../testing';
-import { useToday } from './useToday';
 
 setupTasksTestEnv();
 
@@ -68,32 +67,5 @@ describe('day change', () => {
 
     expect(await within(section('Сегодня')).findByText('Завтрашняя')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Выполнено сегодня' })).not.toBeInTheDocument();
-  });
-
-  it('useToday re-arms its timer when the day did not change (clock moved back)', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 10, 4, 23, 59, 0));
-    const { result } = renderHook(() => useToday());
-    act(() => {
-      vi.setSystemTime(new Date(2026, 10, 4, 22, 0, 0)); // clock corrected backwards
-      vi.advanceTimersByTime(61_000);
-    });
-    expect(result.current).toBe(TODAY);
-    act(() => {
-      vi.advanceTimersByTime(2 * 60 * 60_000);
-    });
-    expect(result.current).toBe('2026-11-05');
-  });
-
-  it('useToday switches at local midnight by itself', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 10, 4, 23, 59, 0));
-    const { result } = renderHook(() => useToday());
-    expect(result.current).toBe(TODAY);
-
-    act(() => {
-      vi.advanceTimersByTime(61_000);
-    });
-    expect(result.current).toBe('2026-11-05');
   });
 });

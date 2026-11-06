@@ -6,7 +6,7 @@ import { useProjects } from '../data/projects';
 import { postponeToTomorrow, updateTask, useTask } from '../data/tasks';
 import { formToPatch, taskToForm, validateForm, type FormErrors, type TaskForm } from '../logic/editForm';
 import { activeProjects } from '../logic/projects';
-import { useToday } from './useToday';
+import { useTodayKey } from '../../../core/dates';
 
 const PRIORITIES: { value: TaskForm['priority']; label: string }[] = [
   { value: '1', label: 'P1' },
@@ -29,7 +29,7 @@ export function TaskEditor({ taskId, onClose }: { taskId: Id | undefined; onClos
 
 function EditorForm({ task, onClose }: { task: Task; onClose: () => void }) {
   const projects = useProjects() ?? [];
-  const today = useToday();
+  const today = useTodayKey();
   const [form, setForm] = useState<TaskForm>(() => taskToForm(task));
   const [errors, setErrors] = useState<FormErrors>({});
   const [saveError, setSaveError] = useState<string>();
