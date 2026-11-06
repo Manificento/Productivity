@@ -156,6 +156,15 @@ flowchart LR
 В тестах натив мокается `mockNativePlatform('android', ['notifications'])` из `src/test/platform.ts`; после
 каждого теста снова веб. Импорт `@capacitor/*` где-либо, кроме `platform.ts`, ломает `npm run deps`
 (правило `native-only-through-platform`). Нативная оболочка — `android/` и `capacitor.config.ts`, сборка — README.
+Напоминания (задача, привычка, отбой) — `scheduleReminder({ id, title, body?, at })` и `cancelReminder(id)` из
+`platform.ts` (#128). `id` — `<модуль>:<id записи>` (`habits:…`, `sleep:bedtime`): повтор с тем же `id` заменяет
+напоминание, удаление записи — отмена. На нативе — локальное уведомление через ОС (`@capacitor/local-notifications`,
+приходит и при закрытом приложении, восстанавливается после перезагрузки); точное, если на Android разрешены
+«Будильники и напоминания», иначе неточное с `limitation` (может опоздать до часа). На вебе — Notification API (на
+Android Chrome через service worker), пока открыта вкладка (`limitation`); после перезагрузки таймеры теряются. Поэтому модуль
+заново планирует свои напоминания при старте на любой платформе (тот же `id` заменяет). Результат всегда статус: без разрешения — `denied`, без поддержки
+— `unsupported`, отказ системы — `failed`, у каждого `hint` для показа. В тестах — `mockLocalNotifications()` из
+`src/test/platform.ts`.
 В `AndroidManifest.xml` намеренно выключены Auto Backup и перенос на новое устройство (`allowBackup="false"`,
 `data_extraction_rules.xml`): IndexedDB с данными о здоровье не покидает телефон до облака (ADR-0009) и согласия.
 Service worker PWA регистрирует `src/main.tsx` только на вебе (`src/app/serviceWorker.ts`): в нативной оболочке бандл
