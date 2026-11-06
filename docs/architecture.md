@@ -165,6 +165,19 @@ Android Chrome через service worker), пока открыта вкладк�
 заново планирует свои напоминания при старте на любой платформе (тот же `id` заменяет). Результат всегда статус: без разрешения — `denied`, без поддержки
 — `unsupported`, отказ системы — `failed`, у каждого `hint` для показа. В тестах — `mockLocalNotifications()` из
 `src/test/platform.ts`.
+Ночные датчики (#140) — `startNightSensing()` / `stopNightSensing()` / `isNightSensingActive()`, утром
+`readNightSamples()` и после сохранения `clearNightSamples(upTo)` (последняя сохранённая минута) из `platform.ts`.
+На Android — своя служба переднего плана (`android/…/NightSensingService.java`, плагин `SleepSensors`): акселерометр
+и уровень шума с микрофона, раз в минуту агрегат `NightSample` (`src/core/types.ts`) в файл приложения (не больше
+двух ночей, старые минуты уходят первыми); звук не записывается. `null` в поле — нет показаний (нет датчика,
+микрофон занят), а не «неподвижно» или «тишина»; пустые минуты не пишутся, поэтому в буфере бывают пропуски, а ночь,
+пересекающая полночь, переводится в `DateKey` модулем. Старт — только по действию пользователя при открытом
+приложении (Android 14+ иначе не запускает службу с микрофоном); ОС может остановить службу ночью — тогда
+`isNightSensingActive()` вернёт `false`. Без разрешения на уведомления (Android 13+) значок службы не виден в шторке,
+но индикатор микрофона системы горит. На вебе и без плагина — `unsupported`, без микрофона — `denied` с объяснением.
+Расчёт по минуте и политика буфера — чистые Java-классы `NightMinute` / `NightBuffer` с JUnit-тестами
+(`android/app/src/test`, CI `android.yml`). Алгоритм фаз сна — в модуле `health`. В тестах — `mockNightSensors()` из
+`src/test/platform.ts`.
 В `AndroidManifest.xml` намеренно выключены Auto Backup и перенос на новое устройство (`allowBackup="false"`,
 `data_extraction_rules.xml`): IndexedDB с данными о здоровье не покидает телефон до облака (ADR-0009) и согласия.
 Service worker PWA регистрирует `src/main.tsx` только на вебе (`src/app/serviceWorker.ts`): в нативной оболочке бандл
