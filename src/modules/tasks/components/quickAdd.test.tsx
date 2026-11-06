@@ -1,24 +1,30 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { findSection, renderTasks, seedProject, setupTasksTestEnv } from '../testing';
 
 // A gate the test can hold shut to keep `addQuickTask` "still saving".
-const gate = vi.hoisted(() => ({ release: undefined as undefined | (() => void), hold: false }));
+const gate = vi.hoisted(() => ({ release: undefined as undefined | (() => void), hold: false, fail: false }));
 vi.mock('../data/tasks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../data/tasks')>();
   return {
     ...actual,
     addQuickTask: async (...args: Parameters<typeof actual.addQuickTask>) => {
-      const result = await actual.addQuickTask(...args);
       if (gate.hold) await new Promise<void>((resolve) => (gate.release = resolve));
-      return result;
+      if (gate.fail) throw new Error('quota');
+      return actual.addQuickTask(...args);
     },
   };
 });
 
 setupTasksTestEnv();
+
+afterEach(() => {
+  gate.hold = false;
+  gate.fail = false;
+  gate.release = undefined;
+});
 
 const chips = () =>
   within(screen.getByRole('list', { name: 'Распознано' }))
@@ -29,22 +35,36 @@ describe('quick add field', () => {
   it('Given я нажал «Добавить», сохранение ещё идёт When я начинаю вводить следующую задачу Then после сохранения мой новый текст остаётся в поле (очищается только отправленная строка)', async () => {
     const user = userEvent.setup();
     gate.hold = true;
-    try {
-      renderTasks('/tasks/inbox');
-      const field = screen.getByLabelText('Новая задача');
+    renderTasks('/tasks/inbox');
+    const field = screen.getByLabelText('Новая задача');
 
-      await user.type(field, 'первая');
-      await user.click(screen.getByRole('button', { name: 'Добавить' }));
-      await waitFor(() => expect(gate.release).toBeDefined());
-      await user.type(field, 'вторая');
-      gate.release!();
+    await user.type(field, 'первая');
+    await user.click(screen.getByRole('button', { name: 'Добавить' }));
+    await waitFor(() => expect(gate.release).toBeDefined());
+    await user.type(field, 'вторая');
+    gate.release!();
 
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить' })).toBeEnabled());
-      expect(field).toHaveValue('вторая');
-    } finally {
-      gate.hold = false;
-      gate.release = undefined;
-    }
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить' })).toBeEnabled());
+    expect(field).toHaveValue('вторая');
+    expect((await db.tasks.toArray()).map((t) => t.title)).toEqual(['первая']);
+  });
+
+  it('when saving fails while the next task is being typed, the new text stays and the error names the lost task', async () => {
+    const user = userEvent.setup();
+    gate.hold = true;
+    gate.fail = true;
+    renderTasks('/tasks/inbox');
+    const field = screen.getByLabelText('Новая задача');
+
+    await user.type(field, 'первая');
+    await user.click(screen.getByRole('button', { name: 'Добавить' }));
+    await waitFor(() => expect(gate.release).toBeDefined());
+    await user.type(field, 'вторая');
+    gate.release!();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('«первая»');
+    expect(field).toHaveValue('вторая');
+    expect(await db.tasks.count()).toBe(0);
   });
 
   it('Given я печатаю «завтра 9:00 позвонить #учёба !1» When текст меняется Then под полем появляются чипы: «Завтра 09:00», «#учёба», «P1»', async () => {
