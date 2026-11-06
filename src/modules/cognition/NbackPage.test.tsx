@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
+import { NbackPage } from './NbackPage';
 import { CognitionPage } from './CognitionPage';
 import { saveNbackSession } from './data/mindSessions';
 
@@ -68,12 +69,40 @@ describe('n-back screen', () => {
   });
 });
 
+describe('n-back wiring', () => {
+  it('a press on a matching trial is a hit with its reaction time; the saved level is the one at start', async () => {
+    vi.useFakeTimers({ toFake: ['performance', 'requestAnimationFrame', 'cancelAnimationFrame', 'Date'] });
+    vi.setSystemTime(new Date(2026, 10, 4, 9));
+    // 4 trials, n = 2: cells 0, 1, 0 (match at trial 2), 4.
+    const values = [0, 0.12, 0.1, 0.9, 0.5];
+    let k = 0;
+    render(
+      <MemoryRouter initialEntries={['/?duration=10']}>
+        <NbackPage random={() => values[k++ % values.length]} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Начать' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_200); // trial 2 began at 5 000 ms
+    });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Совпало' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(await screen.findByText('Результат сохранён.')).toBeInTheDocument();
+    const row = await db.mindSessions.toCollection().first();
+    expect(row).toMatchObject({ kind: 'nback', level: 2, accuracyPct: 100, errors: 0, meanRtMs: 200 });
+  });
+});
+
 describe('n-back history', () => {
   it('Given the history When I open it Then a chart of level and accuracy by day is shown', async () => {
     await seed(2, 2, 80);
     await seed(4, 3, 90);
     renderAt('/cognition');
-    expect(await screen.findByRole('img', { name: /Уровень и точность n-back по дням/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('img', { name: /Уровень и точность n-back по дням: последний уровень 3, точность 90%/ }),
+    ).toBeInTheDocument();
   });
 
   it('with no sessions the history explains how to get one', async () => {

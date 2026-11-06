@@ -51,7 +51,7 @@ export interface NbackAnswer {
 }
 
 export interface NbackScore {
-  /** 0–100, hits plus correct rejections over scored trials. */
+  /** 0–100, mean of hit rate and correct-rejection rate. */
   accuracyPct: number;
   /** Mean RT of hits; undefined without hits. */
   meanRtMs?: number;
@@ -61,22 +61,38 @@ export interface NbackScore {
   trials: number;
 }
 
+/**
+ * Accuracy is the mean of the hit rate and the correct-rejection rate, so pressing nothing scores ~50%
+ * (not ~70%, the share of non-matches) and the «≤ 60% → easier» rule fires for a user who gave up.
+ */
 export function scoreNback(sequence: number[], n: number, answers: NbackAnswer[]): NbackScore {
-  let correct = 0;
-  let errors = 0;
+  let hits = 0;
+  let targets = 0;
+  let rejections = 0;
+  let nonTargets = 0;
   let trials = 0;
   const hitRts: number[] = [];
   for (let i = n; i < sequence.length; i++) {
     trials++;
     const answer = answers[i];
     const pressed = answer?.pressed === true;
-    if (pressed === isTarget(sequence, i, n)) {
-      correct++;
-      if (pressed && answer.rtMs !== undefined) hitRts.push(answer.rtMs);
-    } else errors++;
+    if (isTarget(sequence, i, n)) {
+      targets++;
+      if (pressed) {
+        hits++;
+        if (answer.rtMs !== undefined) hitRts.push(answer.rtMs);
+      }
+    } else {
+      nonTargets++;
+      if (!pressed) rejections++;
+    }
   }
+  const rates = [targets ? hits / targets : undefined, nonTargets ? rejections / nonTargets : undefined].filter(
+    (r): r is number => r !== undefined,
+  );
+  const accuracyPct = rates.length ? Math.round((rates.reduce((a, b) => a + b, 0) / rates.length) * 100) : 0;
   const meanRtMs = hitRts.length ? Math.round(hitRts.reduce((a, b) => a + b, 0) / hitRts.length) : undefined;
-  return { accuracyPct: trials ? Math.round((correct / trials) * 100) : 0, meanRtMs, errors, trials };
+  return { accuracyPct, meanRtMs, errors: targets - hits + (nonTargets - rejections), trials };
 }
 
 /** The fields of a saved session that level adaptation and history need. */

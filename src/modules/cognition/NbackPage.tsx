@@ -1,10 +1,9 @@
 import { useCallback, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, Empty, Page } from '../../ui';
 import { NbackTrainer, type NbackFinish } from './components/NbackTrainer';
 import { saveNbackSession, useNbackSessions } from './data/mindSessions';
 import { nextLevel, parseNbackDurationParam } from './logic/nback';
-import { useSearchParams } from 'react-router-dom';
 
 type SaveStatus = 'saving' | 'saved' | 'error';
 
@@ -23,15 +22,18 @@ export function NbackPage({ random }: { random?: () => number }) {
   const [params] = useSearchParams();
   const durationMs = parseNbackDurationParam(params.get('duration'), isTestMode());
   const sessions = useNbackSessions();
-  const [finished, setFinished] = useState<{ run: NbackFinish; status: SaveStatus } | null>(null);
+  const [finished, setFinished] = useState<{ run: NbackFinish; status: SaveStatus; next?: number } | null>(null);
 
-  const onFinish = useCallback((run: NbackFinish) => {
-    setFinished({ run, status: 'saving' });
-    saveNbackSession(run).then(
-      () => setFinished({ run, status: 'saved' }),
-      () => setFinished({ run, status: 'error' }),
-    );
-  }, []);
+  const onFinish = useCallback(
+    (run: NbackFinish) => {
+      setFinished({ run, status: 'saving' });
+      saveNbackSession(run).then(
+        (saved) => setFinished({ run, status: 'saved', next: nextLevel([...(sessions ?? []), saved]) }),
+        () => setFinished({ run, status: 'error' }),
+      );
+    },
+    [sessions],
+  );
 
   if (sessions === undefined) {
     return (
@@ -42,8 +44,7 @@ export function NbackPage({ random }: { random?: () => number }) {
   }
 
   if (finished) {
-    const { run, status } = finished;
-    const next = nextLevel(sessions);
+    const { run, status, next } = finished;
     return (
       <Page title="n-back">
         <Card title="Результат">
@@ -65,7 +66,7 @@ export function NbackPage({ random }: { random?: () => number }) {
           >
             {SAVE_MESSAGES[status]}
           </p>
-          {status === 'saved' && (
+          {status === 'saved' && next !== undefined && (
             <p className="mb-4 text-sm text-zinc-500">
               {next > run.level
                 ? `Отлично! Следующая сессия — n = ${next}.`

@@ -84,6 +84,13 @@ describe('n-back: scoring (pure functions)', () => {
   it('an unanswered tail counts as not pressed', () => {
     expect(scoreNback(seq, 1, []).accuracyPct).toBe(50);
   });
+
+  it('a session with no presses scores low enough to make the next level easier', () => {
+    const long = generateSequence(72, 2, seeded(3));
+    const { accuracyPct } = scoreNback(long, 2, []);
+    expect(accuracyPct).toBeLessThanOrEqual(60);
+    expect(nextLevel([{ date: '2026-11-02', level: 3, accuracyPct, createdAt: 1 }])).toBe(2);
+  });
 });
 
 describe('n-back: level adaptation', () => {

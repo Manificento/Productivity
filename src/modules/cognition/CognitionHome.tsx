@@ -27,6 +27,7 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
   const tests = useRecentPvt(today);
   const comparison = tests && compareWithAverage(tests);
   const nback = useNbackSessions();
+  const nbackDays = dailyProgress(nback ?? [], today, HISTORY_DAYS);
 
   return (
     <Page title="Тест внимания">
@@ -71,10 +72,10 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
       <Card title="История n-back">
         {nback === undefined ? (
           <Empty>Загружаю…</Empty>
-        ) : nback.length === 0 ? (
+        ) : !nbackDays.some((d) => d.level !== undefined) ? (
           <Empty>Пока нет сессий. Пройдите n-back — график уровня и точности появится здесь.</Empty>
         ) : (
-          <NbackChart days={dailyProgress(nback, today, HISTORY_DAYS)} />
+          <NbackChart days={nbackDays} />
         )}
       </Card>
     </Page>

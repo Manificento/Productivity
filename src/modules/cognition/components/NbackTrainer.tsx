@@ -11,6 +11,13 @@ import {
   type NbackScore,
 } from '../logic/nback';
 
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1_000);
+  if (s % 60 !== 0) return `${s} с`;
+  const m = s / 60;
+  return `${m} ${m === 1 ? 'минуту' : m < 5 ? 'минуты' : 'минут'}`;
+}
+
 export interface NbackFinish extends NbackScore {
   startedAt: number;
   durationMs: number;
@@ -37,7 +44,7 @@ export function NbackTrainer({
   onFinish: (result: NbackFinish) => void;
 }) {
   const [view, setView] = useState<View>({ phase: 'intro' });
-  const [started, setStarted] = useState<{ sequence: number[]; at: number; epoch: number } | null>(null);
+  const [started, setStarted] = useState<{ sequence: number[]; at: number; epoch: number; level: number } | null>(null);
   const answers = useRef<NbackAnswer[]>([]);
   const onFinishRef = useRef(onFinish);
   useEffect(() => {
@@ -47,7 +54,7 @@ export function NbackTrainer({
   const start = () => {
     const sequence = generateSequence(trialCountFor(durationMs), level, random);
     answers.current = [];
-    setStarted({ sequence, at: performance.now(), epoch: Date.now() });
+    setStarted({ sequence, at: performance.now(), epoch: Date.now(), level });
     setView({ phase: 'running', trial: 0, cell: sequence[0] });
   };
 
@@ -55,15 +62,15 @@ export function NbackTrainer({
 
   useEffect(() => {
     if (!running || !started) return;
-    const { sequence, at, epoch } = started;
+    const { sequence, at, epoch, level: startLevel } = started;
     let frame = 0;
     const loop = () => {
       const elapsed = performance.now() - at;
       const trial = Math.floor(elapsed / TRIAL_MS);
       if (trial >= sequence.length) {
-        const score = scoreNback(sequence, level, answers.current);
+        const score = scoreNback(sequence, startLevel, answers.current);
         setView({ phase: 'intro' });
-        onFinishRef.current({ ...score, startedAt: epoch, durationMs, level });
+        onFinishRef.current({ ...score, startedAt: epoch, durationMs, level: startLevel });
         return;
       }
       const cell = elapsed - trial * TRIAL_MS < STIMULUS_MS ? sequence[trial] : undefined;
@@ -82,7 +89,7 @@ export function NbackTrainer({
       cancelAnimationFrame(frame);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [running, started, level, durationMs]);
+  }, [running, started, durationMs]);
 
   const press = () => {
     if (!started) return;
@@ -110,7 +117,7 @@ export function NbackTrainer({
       <div className="fixed inset-0 z-30 flex flex-col bg-zinc-50 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] dark:bg-zinc-950">
         <div className="flex items-center justify-between px-4 py-2">
           <span className="text-sm text-zinc-500">
-            n = {level} · шаг {Math.min(view.trial + 1, total)} из {total}
+            n = {started?.level ?? level} · шаг {Math.min(view.trial + 1, total)} из {total}
           </span>
           <Button variant="secondary" onClick={() => setView({ phase: 'intro' })}>
             Прервать
@@ -154,7 +161,7 @@ export function NbackTrainer({
       )}
       <Card title="Как проходить">
         <ul className="mb-4 list-disc space-y-1 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
-          <li>Сессия длится {Math.round(durationMs / 1_000)} с. Квадраты загораются в сетке 3×3 один за другим.</li>
+          <li>Сессия длится {formatDuration(durationMs)}. Квадраты загораются в сетке 3×3 один за другим.</li>
           <li>
             Нажмите «Совпало», если загоревшийся квадрат — тот же, что был <strong>{level}</strong>{' '}
             {level === 1 ? 'шаг' : level < 5 ? 'шага' : 'шагов'} назад.
