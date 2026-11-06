@@ -115,6 +115,20 @@ describe('nextOccurrence', () => {
     });
   });
 
+  it('Given задача с source и externalId и повтором When создаётся копия Then у копии нет source и externalId, остальные поля копируются', () => {
+    const original = task({
+      dueDate: '2026-11-04',
+      recurrence: { kind: 'daily' },
+      tags: ['а'],
+      source: 'todoist',
+      externalId: 'ext-1',
+    });
+    const next = nextOccurrence(original, '2026-11-04')!;
+    expect(next).not.toHaveProperty('source');
+    expect(next).not.toHaveProperty('externalId');
+    expect(next).toMatchObject({ title: 'зарядка', dueDate: '2026-11-05', tags: ['а'], recurrence: { kind: 'daily' } });
+  });
+
   it('a recurring task without a due date repeats from the day it was completed', () => {
     expect(nextOccurrence(task({ recurrence: { kind: 'daily' } }), '2026-11-04')?.dueDate).toBe('2026-11-05');
   });
