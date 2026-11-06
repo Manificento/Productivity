@@ -411,7 +411,8 @@ export type HealthReadResult<T> =
   | { status: 'failed'; hint: string };
 
 export type HealthAccessResult =
-  | { status: 'granted' }
+  /** `kinds`: what may be read; the user may allow only sleep or only workouts. */
+  | { status: 'granted'; kinds: ('sleep' | 'workouts')[] }
   | { status: 'denied'; hint: string }
   | { status: 'unsupported'; hint: string }
   | { status: 'failed'; hint: string };
@@ -441,6 +442,10 @@ const MAX_WORKOUT_PAGES = 20;
 
 class TooMuchHealthData extends Error {}
 
+/**
+ * The plugin's own English texts matched below (`reason` of `isAvailable`, the iOS «not granted» rejection) are those
+ * of `@capgo/capacitor-health` 8.11.12, pinned in package.json; check them when upgrading the plugin.
+ */
 async function unavailable(): Promise<{ status: 'unsupported'; hint: string } | undefined> {
   if (!isNativePlatform()) return { status: 'unsupported', hint: HEALTH_TEXTS.web };
   if (!getCapabilities().healthImport) return { status: 'unsupported', hint: HEALTH_TEXTS.nativeUnsupported };
@@ -466,9 +471,8 @@ export function requestHealthAccess(): Promise<HealthAccessResult> {
       const blocked = await unavailable();
       if (blocked) return blocked;
       const status = await healthStore.requestAuthorization({ read: [...HEALTH_KINDS] });
-      return HEALTH_KINDS.every((k) => status.readAuthorized.includes(k))
-        ? { status: 'granted' }
-        : { status: 'denied', hint: deniedHint() };
+      const kinds = HEALTH_KINDS.filter((k) => status.readAuthorized.includes(k));
+      return kinds.length ? { status: 'granted', kinds } : { status: 'denied', hint: deniedHint() };
     } catch (e) {
       // iOS rejects when the sheet could not be completed.
       if (/not granted/i.test(String(e))) return { status: 'denied', hint: deniedHint() };

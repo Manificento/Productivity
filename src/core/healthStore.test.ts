@@ -126,7 +126,8 @@ describe('health store import', () => {
     const store = mockHealthStore([]);
     store.workouts = [run('w-6', 6)];
     const [a, b] = await Promise.all([requestHealthAccess(), requestHealthAccess()]);
-    expect([a, b]).toEqual([{ status: 'granted' }, { status: 'granted' }]);
+    const all = { status: 'granted', kinds: ['sleep', 'workouts'] };
+    expect([a, b]).toEqual([all, all]);
     expect(store.bridge.requestAuthorization).toHaveBeenCalledOnce();
     expect(store.bridge.requestAuthorization).toHaveBeenCalledWith({ read: ['sleep', 'workouts'] });
 
@@ -138,10 +139,10 @@ describe('health store import', () => {
     expect(workouts.status === 'ok' && workouts.items.map((w) => w.externalId)).toEqual(['w-6']);
   });
 
-  it('a sheet answer that differs per kind is denied for the access, and reads tell the kinds apart', async () => {
+  it('a sheet answer that differs per kind grants only that kind, and reads tell the kinds apart', async () => {
     mockNativePlatform('android', ['healthImport']);
     mockHealthStore([], { sleep: 'allow', workouts: 'deny' });
-    expect((await requestHealthAccess()).status).toBe('denied');
+    expect(await requestHealthAccess()).toEqual({ status: 'granted', kinds: ['sleep'] });
     expect((await readSleep('2026-11-06', '2026-11-06')).status).toBe('ok');
     expect((await readWorkouts('2026-11-06', '2026-11-06')).status).toBe('denied');
   });
@@ -156,7 +157,7 @@ describe('health store import', () => {
       status: 'denied',
       hint: 'Разрешите LifeOS читать сон и тренировки из приложения «Здоровье».',
     });
-    expect(await requestHealthAccess()).toEqual({ status: 'granted' });
+    expect(await requestHealthAccess()).toEqual({ status: 'granted', kinds: ['sleep', 'workouts'] });
     expect(await readWorkouts('2026-11-06', '2026-11-06')).toEqual({
       status: 'ok',
       items: [],
@@ -206,11 +207,46 @@ describe('health store import', () => {
     mockNativePlatform('android', ['healthImport']);
     const store = mockHealthStore();
     store.sleep = Array.from({ length: 20 }, (_, i) => night(`n-${i + 1}`, 'com.fitbit', i + 1));
+    // A day sleep across the first chunk border (noon of 7 Nov) is returned by both chunks.
+    store.sleep.push({ ...night('nap-7', 'com.nap', 7), startDate: iso(7, 11), endDate: iso(7, 13) });
     const result = await readSleep('2026-11-01', '2026-11-20');
-    expect(result.status === 'ok' && result.items.map((n) => n.externalId)).toEqual(
-      Array.from({ length: 20 }, (_, i) => `n-${i + 1}`),
-    );
+    expect(result.status === 'ok' && result.items.map((n) => n.externalId)).toEqual([
+      ...Array.from({ length: 7 }, (_, i) => `n-${i + 1}`),
+      'nap-7',
+      ...Array.from({ length: 13 }, (_, i) => `n-${i + 8}`),
+    ]);
     expect(store.bridge.readSamples).toHaveBeenCalledTimes(3);
+  });
+
+  it('a week with more sleep samples than one read returns is failed, not cut', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    store.sleep = Array.from({ length: 2000 }, (_, i) => ({
+      ...night(`s-${i}`, 'com.watch', 6),
+      startDate: iso(6, 1, i % 60),
+    }));
+    expect(await readSleep('2026-11-06', '2026-11-06')).toEqual({
+      status: 'failed',
+      hint: 'Слишком много записей за этот период. Выберите период короче.',
+    });
+  });
+
+  it('explains an unavailable HealthKit, a failed sheet and settings that cannot open', async () => {
+    mockNativePlatform('ios', ['healthImport']);
+    const store = mockHealthStore();
+    store.available = false;
+    expect(await readSleep('2026-11-06', '2026-11-06')).toEqual({
+      status: 'unsupported',
+      hint: 'Приложение «Здоровье» недоступно на этом устройстве.',
+    });
+    store.available = true;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    store.bridge.requestAuthorization.mockRejectedValueOnce(new Error('bridge is down'));
+    expect((await requestHealthAccess()).status).toBe('failed');
+
+    mockNativePlatform('android', ['healthImport']);
+    store.bridge.openHealthConnectSettings.mockRejectedValueOnce(new Error('no activity'));
+    expect(await openHealthSettings()).toBe(false);
   });
 
   it('follows the workout pages, drops repeats at page borders and stops with failed instead of cutting data', async () => {
