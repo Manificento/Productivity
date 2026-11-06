@@ -143,7 +143,7 @@ test.describe('cognition: daily plan', () => {
     await expect(page.getByText('Сегодня 10 мин: n-back 5 мин, Струп 5 мин')).toBeVisible();
     await expect(page.getByText('Выполнено 0 из 10 мин')).toBeVisible();
 
-    await page.getByRole('link', { name: 'Начать: Струп' }).click();
+    await expect(page.getByRole('link', { name: 'Начать: Струп' })).toHaveAttribute('href', '#/cognition/stroop');
     await page.goto('/#/cognition/stroop?duration=3');
     await page.getByRole('button', { name: 'Начать' }).click();
     await page.getByRole('button', { name: 'Красный' }).click();

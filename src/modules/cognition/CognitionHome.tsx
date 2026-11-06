@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
-import { todayKey } from '../../core/dates';
+import { useTodayKey } from '../../core/dates';
 import type { DateKey } from '../../core/types';
 import { Card, Empty, Page } from '../../ui';
 import { NbackChart } from './components/NbackChart';
@@ -26,7 +26,9 @@ function ComparisonText({ latestMs, averageMs, diffMs }: { latestMs: number; ave
 }
 
 /** `/cognition` — start the test and see the 14-day history. */
-export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
+export function CognitionHome({ today: todayProp }: { today?: DateKey }) {
+  const liveToday = useTodayKey();
+  const today = todayProp ?? liveToday;
   const tests = useRecentPvt(today);
   const comparison = tests && compareWithAverage(tests);
   const targets = useDailyTargets(today);

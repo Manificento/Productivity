@@ -1,7 +1,6 @@
-/** Today's mind-training plan from `DailyTargets` (adaptation is only ever read through `useDailyTargets`). */
+import type { DailyTargets } from '../../../core/adaptation/types';
 
-/** A light day (taper, event) allows only short easy sessions. */
-export const LIGHT_DAY_MAX_MIN = 5;
+/** Today's mind-training plan from `DailyTargets` (adaptation is only ever read through `useDailyTargets`). */
 
 export interface PlanItem {
   kind: 'nback' | 'stroop';
@@ -17,27 +16,29 @@ export type MindPlan =
 
 export interface PlanInput {
   mindTrainingMin: number;
-  deload: boolean;
+  /** Adaptation phase of the day; taper and event are «light» days. */
+  phase: DailyTargets['phase'];
   reasons: readonly string[];
 }
 
 /** «Низкая энергия в чек-ине: нагрузка −20%, без тренажёров ума» → «низкая энергия в чек-ине». */
 function causeOf(reasons: readonly string[]): string | undefined {
-  const reason = reasons.find((r) => /тренажёр/i.test(r));
+  // The reason that explains the zero is the last one that says «без тренажёров» (phase reasons come first).
+  const reason = [...reasons].reverse().find((r) => /без тренажёров/i.test(r));
   if (!reason) return undefined;
   const head = reason.split(/[:,]/)[0].trim();
   return head ? head.charAt(0).toLowerCase() + head.slice(1) : undefined;
 }
 
 /**
- * 0 min → no trainers (with the cause). A light day (deload: taper or event) → one easy Stroop session of
- * ≤ 5 min. Otherwise the minutes are split between n-back (the larger half) and Stroop.
+ * 0 min → no trainers (with the cause). A light day (taper or event) → one easy Stroop block with the
+ * minutes the engine gave. Otherwise the minutes are split between n-back (the larger half) and Stroop.
  */
-export function planMindTraining({ mindTrainingMin, deload, reasons }: PlanInput): MindPlan {
+export function planMindTraining({ mindTrainingMin, phase, reasons }: PlanInput): MindPlan {
   if (mindTrainingMin <= 0) return { kind: 'none', cause: causeOf(reasons) };
-  if (deload) {
-    const min = Math.min(mindTrainingMin, LIGHT_DAY_MAX_MIN);
-    return { kind: 'plan', totalMin: min, items: [{ kind: 'stroop', min }], light: true };
+  if (phase === 'taper' || phase === 'event') {
+    // The engine already caps the minutes; the module only decides how a light day is presented.
+    return { kind: 'plan', totalMin: mindTrainingMin, items: [{ kind: 'stroop', min: mindTrainingMin }], light: true };
   }
   const nback = Math.ceil(mindTrainingMin / 2);
   const items: PlanItem[] = [{ kind: 'nback', min: nback }];
@@ -54,5 +55,5 @@ export interface DayProgress {
 /** Minutes done today (trainer sessions of the day, planned or manual) against the plan. */
 export function planProgress(totalMin: number, sessionDurationsMs: number[]): DayProgress {
   const doneMs = sessionDurationsMs.reduce((a, b) => a + b, 0);
-  return { doneMin: Math.round(doneMs / 60_000), closed: totalMin > 0 && doneMs >= totalMin * 60_000 };
+  return { doneMin: Math.floor(doneMs / 60_000), closed: totalMin > 0 && doneMs >= totalMin * 60_000 };
 }
