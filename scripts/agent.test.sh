@@ -10,6 +10,7 @@ export REPO=acme/app
 # Plain local git: the developer's global config (proxies, push negotiation) must not leak into the sandbox.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 failures=0
+ORIGINAL_PATH=$PATH
 
 # Fresh sandbox: $SANDBOX/work is a clone on main with one commit, $SANDBOX/gh holds the fake's state.
 setup() {
@@ -34,11 +35,12 @@ done
 line="$method $path ${fields[*]}"
 printf '%s\n' "${line//$'\n'/⏎}" >> "$FAKE_GH/calls.log"
 file="$FAKE_GH/responses/$(printf '%s %s' "$method" "$path" | tr -c 'A-Za-z0-9' '_').json"
+[[ -f $file.fail ]] && { echo "gh: HTTP 502" >&2; exit 1; }
 [[ -f $file ]] || exit 0
 if [[ -n $filter ]]; then jq -r "$filter" < "$file"; else cat "$file"; fi
 FAKE
   chmod +x "$SANDBOX/bin/gh"
-  export PATH="$SANDBOX/bin:$PATH" FAKE_GH="$SANDBOX/gh"
+  export PATH="$SANDBOX/bin:$ORIGINAL_PATH" FAKE_GH="$SANDBOX/gh"
   git init -q --bare -b main "$SANDBOX/origin.git"
   cd "$SANDBOX/work" || exit 1
   git init -q -b main
@@ -55,6 +57,11 @@ teardown() {
 # respond METHOD PATH JSON — what the fake gh returns for that call.
 respond() {
   printf '%s' "$3" > "$FAKE_GH/responses/$(printf '%s %s' "$1" "$2" | tr -c 'A-Za-z0-9' '_').json"
+}
+
+# fail METHOD PATH — the fake gh exits 1 for that call, like a network or auth error.
+fail() {
+  : > "$FAKE_GH/responses/$(printf '%s %s' "$1" "$2" | tr -c 'A-Za-z0-9' '_').json.fail"
 }
 
 commit() {
@@ -100,6 +107,30 @@ test_title_from_issue_when_first_commit_is_not_conventional() {
     "$(calls | grep -qF 'title=feat(tasks): быстрые задачи'; echo $?)" "$(calls)"
 }
 
+test_unreadable_issue_stops_pr() {
+  git switch -q -c feat/7
+  commit "WIP quick tasks"
+  respond GET "repos/acme/app/pulls?state=open&head=acme:feat/7" '[]'
+  fail GET repos/acme/app/issues/7
+  respond POST repos/acme/app/pulls '{"number":44}'
+  "$AGENT" pr 7 > /dev/null 2>&1
+  local code=$?
+  check "код выхода ≠ 0" "$([[ $code != 0 ]]; echo $?)" "exit $code"
+  check "PR не создаётся" "$(! calls | grep -q '^POST '; echo $?)" "$(calls)"
+}
+
+test_issue_without_area_stops_pr() {
+  git switch -q -c feat/7
+  commit "WIP quick tasks"
+  respond GET "repos/acme/app/pulls?state=open&head=acme:feat/7" '[]'
+  respond GET repos/acme/app/issues/7 '{"title":"быстрые задачи","labels":[{"name":"priority:P0"}]}'
+  respond POST repos/acme/app/pulls '{"number":45}'
+  "$AGENT" pr 7 > /dev/null 2>&1
+  local code=$?
+  check "код выхода ≠ 0" "$([[ $code != 0 ]]; echo $?)" "exit $code"
+  check "PR не создаётся" "$(! calls | grep -q '^POST '; echo $?)" "$(calls)"
+}
+
 test_existing_pr_keeps_title() {
   git switch -q -c feat/7
   commit "feat(tasks): parse Russian relative dates"
@@ -126,6 +157,10 @@ run_test "Given ветка с несколькими коммитами When age
   test_title_from_first_commit
 run_test "Given первый коммит не Conventional When agent.sh pr Then заголовок feat(<area>): <заголовок issue>" \
   test_title_from_issue_when_first_commit_is_not_conventional
+run_test "Given gh не может прочитать issue When agent.sh pr Then PR не создаётся, код выхода ≠ 0" \
+  test_unreadable_issue_stops_pr
+run_test "Given у issue нет метки area: When agent.sh pr Then PR не создаётся, код выхода ≠ 0" \
+  test_issue_without_area_stops_pr
 run_test "Given PR уже существует When agent.sh pr повторно Then заголовок не меняется" \
   test_existing_pr_keeps_title
 run_test "Given agent.sh merge When идёт squash Then заголовок коммита = заголовок PR (#PR)" \

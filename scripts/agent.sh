@@ -69,14 +69,17 @@ cmd_start() {
 # PR title (and so the squash commit): the branch's first Conventional Commit subject — later commits are
 # usually review fixes. Otherwise `feat(<area>): <issue title>` from the issue's area label.
 pr_title() {
-  local n=$1 first area title
+  local n=$1 first info area title
   first=$(git log origin/main..HEAD --no-merges --reverse --format=%s | head -1)
   if [[ "$first" =~ ^(feat|fix|docs|test|chore|refactor|perf|build|ci|style|revert)(\([^\)]+\))?!?:\ .+ ]]; then
     echo "$first"
     return
   fi
-  area=$(api "repos/$R/issues/$n" --jq '[.labels[].name | select(startswith("area:"))][0] // "core" | sub("^area:"; "")')
-  title=$(api "repos/$R/issues/$n" --jq .title)
+  # Runs inside $(…), where set -e is off: every failure must return non-zero explicitly.
+  info=$(api "repos/$R/issues/$n" --jq '"\([.labels[].name | select(startswith("area:"))][0] // "" | sub("^area:"; ""))\t\(.title // "")"') ||
+    { echo "error: cannot read issue #$n for the PR title" >&2; return 1; }
+  IFS=$'\t' read -r area title <<< "$info"
+  [[ -n $area && -n $title ]] || { echo "error: issue #$n needs an area: label and a title for the PR title" >&2; return 1; }
   echo "feat($area): ${title#"$area: "}"
 }
 
@@ -88,7 +91,7 @@ cmd_pr() {
   git push -q -u origin "$branch"
   existing=$(api "repos/$R/pulls?state=open&head=$owner:$branch" --jq '.[0].number // empty')
   if [[ -n "$existing" ]]; then echo "$existing"; return; fi
-  title=$(pr_title "$n")
+  title=$(pr_title "$n") || exit 1
   local body
   body=$(sed "s/Closes #<issue>/Closes #$n/" .github/pull_request_template.md)
   [[ -f "${PR_BODY_FILE:-}" ]] && body="$(cat "$PR_BODY_FILE")"$'\n\n'"Closes #$n"
