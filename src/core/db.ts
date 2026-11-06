@@ -90,6 +90,10 @@ export class LifeDB extends Dexie {
     this.version(4).stores({
       tasks: 'id, projectId, dueDate, priority, completedAt, *tags, [source+externalId]',
     });
+    // v5 (contract #215): re-import of workouts from Health Connect / HealthKit finds them by source + external id.
+    this.version(5).stores({
+      workoutLogs: 'id, date, [sourceId+externalId]',
+    });
   }
 }
 

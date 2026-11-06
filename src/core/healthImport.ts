@@ -128,7 +128,7 @@ export function toSleepNights(samples: readonly StoreSleepSample[]): ImportedSle
   return nights
     .sort((a, b) => a.from - b.from)
     .map((n) => ({
-      externalId: n.id ?? fallbackId(n.sourceId, n.from, n.to),
+      externalId: n.id || fallbackId(n.sourceId, n.from, n.to),
       sourceId: n.sourceId,
       ...(n.sourceName !== undefined && { sourceName: n.sourceName }),
       bedtime: n.from,
@@ -165,7 +165,7 @@ export function toImportedWorkouts(workouts: readonly StoreWorkout[]): ImportedW
     const sourceId = w.sourceId || UNKNOWN_SOURCE;
     const seconds = Number.isFinite(w.duration) && w.duration > 0 ? w.duration : (to - from) / 1000;
     result.push({
-      externalId: w.platformId ?? fallbackId(sourceId, from, to),
+      externalId: w.platformId || fallbackId(sourceId, from, to),
       sourceId,
       ...(w.sourceName !== undefined && { sourceName: w.sourceName }),
       date: toDateKey(from),

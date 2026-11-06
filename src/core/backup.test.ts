@@ -61,4 +61,13 @@ describe('backup of the SPEC 0.3 tables (contract C3)', () => {
     expect((await db.notes.toArray())[0].title).toBe('План');
     expect((await db.xpEvents.toArray())[0].amount).toBe(10);
   });
+
+  it('Given резервная копия со старыми записями When она импортируется Then записи без externalId читаются как раньше', async () => {
+    const old = { id: 'w-old', createdAt: 0, updatedAt: 0, date: '2026-10-01', type: 'Бег', durationMin: 30, rpe: 6 };
+    const imported = { ...old, id: 'w-new', sourceId: 'com.strava', externalId: 'hk-1' };
+    const backup = await exportAll();
+    await importAll({ ...backup, tables: { ...backup.tables, workoutLogs: [old, imported] } });
+    expect(await db.workoutLogs.get('w-old')).toEqual(old);
+    expect(await db.workoutLogs.where('[sourceId+externalId]').equals(['com.strava', 'hk-1']).count()).toBe(1);
+  });
 });

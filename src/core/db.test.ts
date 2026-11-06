@@ -131,7 +131,7 @@ describe('contract: imported tasks (Dexie v4)', () => {
     v3.close();
 
     const db = new LifeDB(name);
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBeGreaterThanOrEqual(4);
     expect((await db.tasks.get('t1'))?.title).toBe('старая задача');
     expect((await db.projects.get('p1'))?.name).toBe('Дом');
     expect((await db.weightLogs.get('w1'))?.kg).toBe(70);
@@ -147,6 +147,35 @@ describe('contract: imported tasks (Dexie v4)', () => {
     });
     expect(await db.tasks.where('[source+externalId]').equals(['todoist', '1001']).count()).toBe(1);
     expect(await db.tasks.where('[source+externalId]').equals(['other', '1001']).count()).toBe(0);
+    db.close();
+  });
+});
+
+describe('contract: imported workouts (Dexie v5)', () => {
+  it('Given тренировки из старой базы When база открывается Then они читаются как раньше, а у новых есть индекс [sourceId+externalId]', async () => {
+    const name = `migration-v5-${Math.random()}`;
+    const v4 = new Dexie(name);
+    v4.version(1).stores({ workoutLogs: 'id, date', tasks: 'id, projectId, dueDate, priority, completedAt, *tags' });
+    v4.version(4).stores({ tasks: 'id, projectId, dueDate, priority, completedAt, *tags, [source+externalId]' });
+    await v4.table('workoutLogs').add({ id: 'w1', date: '2026-11-04', type: 'Бег', durationMin: 30, rpe: 6 });
+    v4.close();
+
+    const db = new LifeDB(name);
+    expect(db.verno).toBeGreaterThanOrEqual(5);
+    expect((await db.workoutLogs.get('w1'))?.type).toBe('Бег');
+    await db.workoutLogs.add({
+      id: 'w2',
+      createdAt: 0,
+      updatedAt: 0,
+      date: '2026-11-05',
+      type: 'Бег',
+      durationMin: 30,
+      rpe: 6,
+      sourceId: 'com.strava',
+      externalId: 'hc-1',
+    });
+    expect(await db.workoutLogs.where('[sourceId+externalId]').equals(['com.strava', 'hc-1']).count()).toBe(1);
+    expect(await db.workoutLogs.where('[sourceId+externalId]').equals(['com.other', 'hc-1']).count()).toBe(0);
     db.close();
   });
 });
