@@ -2,8 +2,7 @@ import type { AppModule } from '../../app/moduleTypes';
 import { ProgressPage } from './ProgressPage';
 
 /**
- * «Прогресс» (SPEC 0.3). A skeleton for the `progress` lane: not pinned, reached through «Блоки» and
- * marked «скоро» there; the route works and shows «скоро» until the block has content.
+ * «Прогресс» (SPEC 0.3). Опыт и уровни по данным всех блоков; не закреплён в нижней панели, открывается через «Блоки».
  */
 export const progressModule: AppModule = {
   id: 'progress',
@@ -12,6 +11,5 @@ export const progressModule: AppModule = {
   icon: '🏆',
   group: 'system',
   summary: 'Опыт, уровни и квесты',
-  comingSoon: true,
   Page: ProgressPage,
 };
