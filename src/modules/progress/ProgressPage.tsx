@@ -1,10 +1,21 @@
+import { useState } from 'react';
 import { todayKey } from '../../core/dates';
-import { Card, Empty, Page } from '../../ui';
+import { Card, Empty, Page, Segmented } from '../../ui';
+import { QuestsTab } from './components/QuestsTab';
+import { SkillsTab } from './components/SkillsTab';
 import { useXpSources } from './data/sources';
 import { XP_HINTS, summarize } from './logic/xp';
 
 /** `/progress` — level and experience over all blocks, computed from their tables. */
+type Tab = 'overview' | 'skills' | 'quests';
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'overview', label: 'Обзор' },
+  { value: 'skills', label: 'Навыки' },
+  { value: 'quests', label: 'Квесты' },
+];
+
 export function ProgressPage() {
+  const [tab, setTab] = useState<Tab>('overview');
   const sources = useXpSources();
   if (!sources)
     return (
@@ -16,8 +27,24 @@ export function ProgressPage() {
     );
   const s = summarize(sources, todayKey());
   const pct = Math.round((s.into / s.needed) * 100);
+  const switcher = <Segmented label="Раздел" value={tab} options={TABS} onChange={setTab} />;
+  if (tab === 'skills')
+    return (
+      <Page title="Прогресс">
+        {switcher}
+        <SkillsTab sources={sources} />
+      </Page>
+    );
+  if (tab === 'quests')
+    return (
+      <Page title="Прогресс">
+        {switcher}
+        <QuestsTab />
+      </Page>
+    );
   return (
     <Page title="Прогресс">
+      {switcher}
       <Card>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">Уровень</p>
         <p className="text-4xl font-bold" data-testid="level">

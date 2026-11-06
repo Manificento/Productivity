@@ -3,12 +3,14 @@ import type {
   CognitiveTest,
   DateKey,
   HabitLog,
+  MealLog,
   MeditationSession,
   MindSession,
   SleepLog,
   Task,
   TimeEntry,
   WorkoutLog,
+  XpEvent,
 } from '../../../core/types';
 
 /** XP per completed action. Experience is derived from the block tables, never stored. */
@@ -20,7 +22,30 @@ export const XP_RULES = {
   workout: 15,
   meditation: 5,
   test: 5,
+  meal: 3,
+  /** Bonus for a finished daily quest (written to `xpEvents`). */
+  quest: 20,
 } as const;
+
+/** The six skills; each block's XP flows into one of them. */
+export const SKILLS = [
+  { id: 'tasks', label: 'Дела' },
+  { id: 'body', label: 'Тело' },
+  { id: 'sleep', label: 'Сон' },
+  { id: 'food', label: 'Питание' },
+  { id: 'mind', label: 'Ум' },
+  { id: 'calm', label: 'Покой' },
+] as const;
+export type SkillId = (typeof SKILLS)[number]['id'];
+
+/** Which skill a quest bonus belongs to (`xpEvents.questId`). */
+export const QUEST_SKILL: Record<string, SkillId> = {
+  focus: 'tasks',
+  habits: 'tasks',
+  bedtime: 'sleep',
+  meditation: 'calm',
+  breathing: 'calm',
+};
 
 /** The slices of the block tables that earn experience. */
 export interface XpSources {
@@ -32,30 +57,36 @@ export interface XpSources {
   meditationSessions: readonly MeditationSession[];
   cognitiveTests: readonly CognitiveTest[];
   mindSessions: readonly MindSession[];
+  mealLogs: readonly MealLog[];
+  /** Quest bonuses — the only experience that is stored. */
+  xpEvents: readonly XpEvent[];
 }
 
 /** A focus session is a pomodoro of at least 10 minutes (the `time` module's rule, #16; no cross-module import). */
-const MIN_FOCUS_MS = 10 * 60_000;
+export const MIN_FOCUS_MS = 10 * 60_000;
 
 export interface XpGain {
   date: DateKey;
+  skill: SkillId;
   amount: number;
 }
 
 /** One gain per qualifying record; a record that is undone or deleted simply stops appearing. */
 export function xpEventsFrom(s: XpSources): XpGain[] {
   const out: XpGain[] = [];
-  for (const t of s.tasks)
-    if (t.completedAt !== undefined) out.push({ date: toDateKey(t.completedAt), amount: XP_RULES.task });
-  for (const h of s.habitLogs) if (h.done) out.push({ date: h.date, amount: XP_RULES.habit });
+  const add = (date: DateKey, skill: SkillId, amount: number) => out.push({ date, skill, amount });
+  for (const t of s.tasks) if (t.completedAt !== undefined) add(toDateKey(t.completedAt), 'tasks', XP_RULES.task);
+  for (const h of s.habitLogs) if (h.done) add(h.date, 'tasks', XP_RULES.habit);
   for (const e of s.timeEntries)
     if (e.source === 'pomodoro' && e.end !== undefined && e.end - e.start >= MIN_FOCUS_MS)
-      out.push({ date: e.date, amount: XP_RULES.focus });
-  for (const l of s.sleepLogs) out.push({ date: l.date, amount: XP_RULES.sleep });
-  for (const w of s.workoutLogs) out.push({ date: w.date, amount: XP_RULES.workout });
-  for (const m of s.meditationSessions) if (m.completed) out.push({ date: m.date, amount: XP_RULES.meditation });
-  for (const c of s.cognitiveTests) out.push({ date: c.date, amount: XP_RULES.test });
-  for (const m of s.mindSessions) out.push({ date: m.date, amount: XP_RULES.test });
+      add(e.date, 'tasks', XP_RULES.focus);
+  for (const l of s.sleepLogs) add(l.date, 'sleep', XP_RULES.sleep);
+  for (const w of s.workoutLogs) add(w.date, 'body', XP_RULES.workout);
+  for (const m of s.meditationSessions) if (m.completed) add(m.date, 'calm', XP_RULES.meditation);
+  for (const c of s.cognitiveTests) add(c.date, 'mind', XP_RULES.test);
+  for (const m of s.mindSessions) add(m.date, 'mind', XP_RULES.test);
+  for (const m of s.mealLogs) add(m.date, 'food', XP_RULES.meal);
+  for (const q of s.xpEvents) add(q.date, QUEST_SKILL[q.questId] ?? 'tasks', q.amount);
   return out;
 }
 
@@ -84,6 +115,22 @@ export function levelFromXp(xp: number): LevelInfo {
     level += 1;
   }
   return { level, into: rest, needed: xpForLevel(level) };
+}
+
+export interface SkillLevel extends LevelInfo {
+  id: SkillId;
+  label: string;
+  xp: number;
+}
+
+/** Level of each of the six skills from the XP that flows into it. */
+export function skillLevels(s: XpSources): SkillLevel[] {
+  const sums = new Map<SkillId, number>();
+  for (const e of xpEventsFrom(s)) sums.set(e.skill, (sums.get(e.skill) ?? 0) + e.amount);
+  return SKILLS.map((k) => {
+    const xp = sums.get(k.id) ?? 0;
+    return { id: k.id, label: k.label, xp, ...levelFromXp(xp) };
+  });
 }
 
 export interface ProgressSummary extends LevelInfo {
@@ -116,4 +163,6 @@ export const XP_HINTS: readonly { label: string; xp: number }[] = [
   { label: 'Тренировка', xp: XP_RULES.workout },
   { label: 'Завершённая медитация', xp: XP_RULES.meditation },
   { label: 'Тест или тренажёр', xp: XP_RULES.test },
+  { label: 'Приём пищи в дневнике', xp: XP_RULES.meal },
+  { label: 'Выполненный квест дня', xp: XP_RULES.quest },
 ];
