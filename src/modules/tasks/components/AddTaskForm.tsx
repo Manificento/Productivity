@@ -51,11 +51,15 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; 
     }
     busy.current = true;
     setSaving(true);
+    // Clear at once: whatever is typed while saving belongs to the next task and must survive.
+    const submitted = text;
+    setText('');
     try {
       await addQuickTask(draft);
-      setText('');
       setError(undefined);
     } catch {
+      // Put the line back for another try, unless the next one has been started meanwhile.
+      setText((current) => (current === '' ? submitted : current));
       setError('Не удалось сохранить задачу — попробуйте ещё раз');
     } finally {
       busy.current = false;

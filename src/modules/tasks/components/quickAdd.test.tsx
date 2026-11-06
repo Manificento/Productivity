@@ -1,8 +1,22 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { findSection, renderTasks, seedProject, setupTasksTestEnv } from '../testing';
+
+// A gate the test can hold shut to keep `addQuickTask` "still saving".
+const gate = vi.hoisted(() => ({ release: undefined as undefined | (() => void), hold: false }));
+vi.mock('../data/tasks', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../data/tasks')>();
+  return {
+    ...actual,
+    addQuickTask: async (...args: Parameters<typeof actual.addQuickTask>) => {
+      const result = await actual.addQuickTask(...args);
+      if (gate.hold) await new Promise<void>((resolve) => (gate.release = resolve));
+      return result;
+    },
+  };
+});
 
 setupTasksTestEnv();
 
@@ -12,6 +26,27 @@ const chips = () =>
     .map((li) => li.textContent);
 
 describe('quick add field', () => {
+  it('Given я нажал «Добавить», сохранение ещё идёт When я начинаю вводить следующую задачу Then после сохранения мой новый текст остаётся в поле (очищается только отправленная строка)', async () => {
+    const user = userEvent.setup();
+    gate.hold = true;
+    try {
+      renderTasks('/tasks/inbox');
+      const field = screen.getByLabelText('Новая задача');
+
+      await user.type(field, 'первая');
+      await user.click(screen.getByRole('button', { name: 'Добавить' }));
+      await waitFor(() => expect(gate.release).toBeDefined());
+      await user.type(field, 'вторая');
+      gate.release!();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Добавить' })).toBeEnabled());
+      expect(field).toHaveValue('вторая');
+    } finally {
+      gate.hold = false;
+      gate.release = undefined;
+    }
+  });
+
   it('Given я печатаю «завтра 9:00 позвонить #учёба !1» When текст меняется Then под полем появляются чипы: «Завтра 09:00», «#учёба», «P1»', async () => {
     const user = userEvent.setup();
     renderTasks('/tasks/inbox');
