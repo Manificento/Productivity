@@ -42,3 +42,16 @@ issue → ветка → тесты и код → `npm run check` → PR → CI 
 Любой статический хостинг: команда сборки `npm run build`, папка `dist`. Рекомендуется Cloudflare Pages или
 Netlify — подключите репозиторий, и каждый `main` будет публиковаться автоматически. На телефоне откройте
 сайт и выберите «Добавить на главный экран».
+
+### Android (Capacitor)
+
+Тот же бандл в нативной оболочке ([ADR-0008](docs/adr/0008-web-and-native-one-codebase.md)). Нужны JDK 21 и
+Android SDK (`ANDROID_HOME`):
+
+```
+npm run build && npx cap sync android
+cd android && ./gradlew assembleDebug   # android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+CI собирает debug APK на каждом PR, который меняет `android/`, `src/core/platform.ts` или `capacitor.config.ts`,
+и прикладывает его артефактом `lifeos-debug-apk` (workflow «Android»). iOS — после аккаунта Apple.

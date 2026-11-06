@@ -42,6 +42,14 @@ module.exports = {
       to: { path: '^src/core/db\\.ts$|node_modules/(react|react-dom|dexie|dexie-react-hooks)/' },
     },
     {
+      name: 'native-only-through-platform',
+      comment:
+        'Native plugins are reached only through src/core/platform.ts (ADR-0008): modules ask for capability flags.',
+      severity: 'error',
+      from: { path: '^src/', pathNot: '^src/core/platform\\.ts$' },
+      to: { path: '(^|/)node_modules/@capacitor/|^@capacitor/' },
+    },
+    {
       name: 'no-circular',
       severity: 'error',
       from: {},
@@ -56,6 +64,8 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
+    // Deliberately broken files that tests cruise to prove a rule fires (src/core/boundaries.test.ts).
+    exclude: { path: '^src/test/fixtures/' },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.app.json' },
     enhancedResolveOptions: { exportsFields: ['exports'], conditionNames: ['import', 'require', 'node', 'default'] },
