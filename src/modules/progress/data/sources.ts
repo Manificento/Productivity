@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../core/db';
 import type { XpSources } from '../logic/xp';
 
-/** Read-only snapshot of every table that earns experience; live, so undo/delete recalculates. */
+/** Read-only snapshot of every XP table; live, so undo/delete recalculates. Full scans are fine at one person's data volume — do not stack more on top. */
 export function useXpSources(): XpSources | undefined {
   return useLiveQuery(async () => {
     const [tasks, habitLogs, timeEntries, sleepLogs, workoutLogs, meditationSessions, cognitiveTests, mindSessions] =

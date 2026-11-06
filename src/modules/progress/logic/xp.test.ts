@@ -32,7 +32,7 @@ describe('опыт из таблиц блоков', () => {
           {
             categoryId: 'c',
             start: day('2026-11-03'),
-            end: day('2026-11-03') + 1,
+            end: day('2026-11-03') + 10 * 60_000,
             date: '2026-11-03',
             source: 'pomodoro' as const,
           },
@@ -94,6 +94,15 @@ describe('опыт из таблиц блоков', () => {
       T,
     );
     expect(xpEventsFrom({ ...empty, tasks: [t] })).toEqual([{ date: '2026-11-03', amount: XP_RULES.task }]);
+  });
+});
+
+describe('фокус-сессии', () => {
+  const pomo = (minutes: number) =>
+    newRecord({ categoryId: 'c', start: 0, end: minutes * 60_000, date: '2026-11-03', source: 'pomodoro' as const }, T);
+  it('Given помодоро короче 10 минут When считаю опыт Then 0; от 10 минут — XP_RULES.focus', () => {
+    expect(totalXp({ ...empty, timeEntries: [pomo(9)] })).toBe(0);
+    expect(totalXp({ ...empty, timeEntries: [pomo(10)] })).toBe(XP_RULES.focus);
   });
 });
 

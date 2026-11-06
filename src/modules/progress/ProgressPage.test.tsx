@@ -24,6 +24,16 @@ const open = () =>
   );
 
 describe('Прогресс', () => {
+  it('Given сумма опыта When я смотрю экран Then уровень и прогресс до следующего', async () => {
+    await db.workoutLogs.bulkAdd(
+      Array.from({ length: 7 }, () => newRecord({ date: '2026-11-03', type: 'run', durationMin: 30, rpe: 5 }, NOW)),
+    );
+    open();
+    // 7 × 15 = 105 XP: level 1 costs 100, so level 2 with 5 of 150 done
+    await waitFor(() => expect(screen.getByTestId('level')).toHaveTextContent('2'));
+    expect(screen.getByTestId('level-progress')).toHaveTextContent('5 / 150 XP до уровня 3');
+  });
+
   it('Given пустая база When я открываю блок Then уровень 1 и подсказка, что даёт опыт', async () => {
     open();
     await waitFor(() => expect(screen.getByTestId('level')).toHaveTextContent('1'));
@@ -31,7 +41,7 @@ describe('Прогресс', () => {
     expect(screen.getByRole('list', { name: 'Что даёт опыт' })).toHaveTextContent('Тренировка');
   });
 
-  it('Given записи в таблицах блоков When я открываю «Прогресс» Then опыт за сегодня и неделю, уровень растёт', async () => {
+  it('Given записи в таблицах блоков When я открываю «Прогресс» Then опыт = сумма по правилам xp.ts, за сегодня и за 7 дней', async () => {
     await db.workoutLogs.add(newRecord({ date: '2026-11-03', type: 'run', durationMin: 30, rpe: 5 }, NOW));
     await db.habitLogs.add(newRecord({ habitId: 'h', date: '2026-11-01', done: true }, NOW));
     open();

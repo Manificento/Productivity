@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { skipOnboarding } from './helpers.ts';
 
 /** SPEC 0.3 skeleton block (#105): the route answers with an empty state, the bottom bar does not list them yet. */
-test('Given модуль notes When я открываю их маршруты Then пустое состояние с названием блока и «скоро»; в навигации они пока скрыты', async ({
+test('Given модуль notes When я открываю его маршрут Then пустое состояние с названием блока и «скоро»; в навигации он пока скрыт', async ({
   page,
 }) => {
   await skipOnboarding(page);

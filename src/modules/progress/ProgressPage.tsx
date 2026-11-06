@@ -46,7 +46,7 @@ export function ProgressPage() {
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-zinc-500 dark:text-zinc-400">За неделю</dt>
+            <dt className="text-xs text-zinc-500 dark:text-zinc-400">За 7 дней</dt>
             <dd className="text-lg font-semibold" data-testid="xp-week">
               {s.week} XP
             </dd>

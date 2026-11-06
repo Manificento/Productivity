@@ -34,6 +34,9 @@ export interface XpSources {
   mindSessions: readonly MindSession[];
 }
 
+/** A focus session is a pomodoro of at least 10 minutes (the `time` module's rule, #16; no cross-module import). */
+const MIN_FOCUS_MS = 10 * 60_000;
+
 export interface XpGain {
   date: DateKey;
   amount: number;
@@ -46,7 +49,8 @@ export function xpEventsFrom(s: XpSources): XpGain[] {
     if (t.completedAt !== undefined) out.push({ date: toDateKey(t.completedAt), amount: XP_RULES.task });
   for (const h of s.habitLogs) if (h.done) out.push({ date: h.date, amount: XP_RULES.habit });
   for (const e of s.timeEntries)
-    if (e.source === 'pomodoro' && e.end !== undefined) out.push({ date: e.date, amount: XP_RULES.focus });
+    if (e.source === 'pomodoro' && e.end !== undefined && e.end - e.start >= MIN_FOCUS_MS)
+      out.push({ date: e.date, amount: XP_RULES.focus });
   for (const l of s.sleepLogs) out.push({ date: l.date, amount: XP_RULES.sleep });
   for (const w of s.workoutLogs) out.push({ date: w.date, amount: XP_RULES.workout });
   for (const m of s.meditationSessions) if (m.completed) out.push({ date: m.date, amount: XP_RULES.meditation });
