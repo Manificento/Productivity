@@ -4,6 +4,7 @@ import { todayKey } from '../../core/dates';
 import { Button, Card, Page } from '../../ui';
 import { DemoDataCard } from './components/DemoDataCard';
 import { InstallCard } from './components/InstallCard';
+import { TodoistImportCard } from './components/TodoistImportCard';
 
 export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -53,6 +54,7 @@ export function SettingsPage() {
         </div>
         {status && <p className="mt-3 text-sm">{status}</p>}
       </Card>
+      <TodoistImportCard />
       <DemoDataCard onExport={onExport} />
     </Page>
   );
