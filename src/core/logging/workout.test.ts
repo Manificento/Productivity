@@ -118,6 +118,12 @@ describe('saveWorkout — the one write path for workoutLogs (ADR-0007)', () => 
       });
     });
 
+    it('a re-import without changes writes nothing', async () => {
+      const first = await saveWorkout(imported, 1_000);
+      expect(await saveWorkout(imported, 2_000)).toEqual(first);
+      expect((await db.workoutLogs.get(first.id))?.updatedAt).toBe(1_000);
+    });
+
     it('the same id from another app is another workout', async () => {
       await saveWorkout(imported);
       await saveWorkout({ ...imported, sourceId: 'com.garmin' });
@@ -136,6 +142,7 @@ describe('saveWorkout — the one write path for workoutLogs (ADR-0007)', () => 
 
     it('externalId and sourceId come together and are not empty', async () => {
       await expect(saveWorkout({ ...imported, sourceId: undefined })).rejects.toThrow(/источник/i);
+      await expect(saveWorkout({ ...imported, externalId: undefined })).rejects.toThrow(/источник/i);
       await expect(saveWorkout({ ...imported, externalId: '  ' })).rejects.toThrow();
       expect(await db.workoutLogs.count()).toBe(0);
     });

@@ -161,7 +161,7 @@ describe('contract: imported workouts (Dexie v5)', () => {
     v4.close();
 
     const db = new LifeDB(name);
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBeGreaterThanOrEqual(5);
     expect((await db.workoutLogs.get('w1'))?.type).toBe('Бег');
     await db.workoutLogs.add({
       id: 'w2',

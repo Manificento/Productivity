@@ -39,6 +39,7 @@ export const WorkoutInput = z
     /** …and its id in the health store. Both or neither. */
     externalId: ImportKey.optional(),
   })
+  // Because of this refine, `.pick()` / `.omit()` on WorkoutInput throw at runtime (zod 4); `.shape` / `.extend` work.
   .refine((w) => (w.sourceId === undefined) === (w.externalId === undefined), {
     message: 'У импортированной тренировки нужны и источник, и внешний id',
     path: ['externalId'],
@@ -69,6 +70,8 @@ export async function saveWorkout(input: WorkoutInput, now: number = Date.now())
       await db.workoutLogs.add(record);
       return record;
     }
+    // Nothing changed in the store: no write, so live queries are not woken on every re-import.
+    if (IMPORT_OWNED.every((key) => existing[key] === valid[key])) return existing;
     const updated: WorkoutLog = { ...existing, updatedAt: now };
     for (const key of IMPORT_OWNED) Object.assign(updated, { [key]: valid[key] });
     await db.workoutLogs.put(updated);
