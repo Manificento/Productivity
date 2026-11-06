@@ -51,9 +51,22 @@ public class SleepSensorsPlugin extends Plugin {
         call.resolve(result);
     }
 
+    /** Removes the minutes with `minuteStart <= upTo`, so a minute written after the morning read is kept. */
     @PluginMethod
     public void clearSamples(PluginCall call) {
-        NightSampleStore.clear(getContext());
+        Long upTo = call.getLong("upTo");
+        if (upTo == null) {
+            call.reject("upTo is required");
+            return;
+        }
+        NightSampleStore.clearUpTo(getContext(), upTo);
         call.resolve();
+    }
+
+    @PluginMethod
+    public void isActive(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("active", NightSensingService.active);
+        call.resolve(result);
     }
 }

@@ -125,18 +125,22 @@ export interface SleepLog extends BaseRecord {
 }
 
 /**
- * One minute of night sensing (`startNightSensing()` in `platform.ts`): aggregates only — no raw motion,
- * no audio is stored. The health module reads the buffer in the morning and derives sleep phases from it.
+ * One minute of night sensing (`startNightSensing()` in `platform.ts`): aggregates only — no raw motion, no audio
+ * is stored. The health module reads the buffer in the morning and derives sleep phases from it.
+ * `null` means «no readings» (no sensor, microphone busy or failed) — never treat it as «still» or «silence».
+ * Minutes without any readings are not written, so the buffer may have gaps; the first and last minutes are partial.
  */
 export interface NightSample {
-  /** Start of the minute, epoch ms. */
+  /** Start of the minute, epoch ms (whole minutes; map to a `DateKey` in the module — a night crosses midnight). */
   minuteStart: Millis;
-  /** Movement: mean change of the acceleration magnitude between readings, m/s² (0 — lying still). */
-  movement: number;
-  /** Mean noise level over the minute, dBFS (−90 … 0; −90 — silence or no microphone readings). */
-  noiseDb: number;
-  /** Loudest moment of the minute, dBFS (−90 … 0). */
-  noisePeakDb: number;
+  /** Mean change of the acceleration vector between readings, m/s² (0 — lying still; turning over counts). */
+  movement: number | null;
+  /** Largest single change of the acceleration vector in the minute, m/s² (short movements). */
+  movementPeak: number | null;
+  /** Mean noise level over the minute, dBFS (−90 … 0). */
+  noiseDb: number | null;
+  /** Loudest 100 ms of the minute, dBFS (−90 … 0). */
+  noisePeakDb: number | null;
 }
 
 export interface Food extends BaseRecord {

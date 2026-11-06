@@ -101,9 +101,10 @@ export function mockNightSensors(
     stop: vi.fn(async () => {
       fake.running = false;
     }),
+    isActive: vi.fn(async () => ({ active: fake.running })),
     getSamples: vi.fn(async () => ({ samples: [...fake.buffer] })),
-    clearSamples: vi.fn(async () => {
-      fake.buffer = [];
+    clearSamples: vi.fn(async ({ upTo }) => {
+      fake.buffer = fake.buffer.filter((s) => s.minuteStart > upTo);
     }),
   };
   setSleepSensorsBridge(fake.bridge);

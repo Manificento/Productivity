@@ -8,20 +8,22 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.Locale;
+import java.util.ArrayList;
+import java.util.List;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * Buffer of minute aggregates (NightSample in src/core/types.ts): one JSON object per line in the app's
- * private files, written by NightSensingService and read by JS in the morning. Never holds raw audio.
+ * Buffer of minute aggregates (NightSample in src/core/types.ts): one JSON line per minute in the app's private
+ * files, written by NightSensingService and read by JS in the morning. Never holds raw audio. The policy (newest
+ * kept, clear up to a minute) is NightBuffer, unit-tested.
  */
 final class NightSampleStore {
 
     private static final String TAG = "NightSampleStore";
     private static final String FILE = "night_samples.jsonl";
-    /** Two nights of minutes: if JS never clears the buffer, the newest are kept out of an unbounded file. */
-    private static final int MAX_LINES = 2 * 24 * 60;
+    /** Lines in the file; -1 until counted once (so appends do not re-read the file every minute). */
+    private static int lineCount = -1;
 
     private NightSampleStore() {}
 
@@ -29,56 +31,61 @@ final class NightSampleStore {
         return new File(context.getFilesDir(), FILE);
     }
 
-    static synchronized void append(Context context, long minuteStart, double movement, double noiseDb, double noisePeakDb) {
+    static synchronized void append(Context context, String line) {
         File f = file(context);
-        if (countLines(f) >= MAX_LINES) return;
-        String line = String.format(
-            Locale.ROOT,
-            "{\"minuteStart\":%d,\"movement\":%.4f,\"noiseDb\":%.1f,\"noisePeakDb\":%.1f}\n",
-            minuteStart,
-            movement,
-            noiseDb,
-            noisePeakDb
-        );
-        try (FileWriter writer = new FileWriter(f, true)) {
-            writer.write(line);
-        } catch (IOException e) {
-            Log.e(TAG, "append failed", e);
+        if (lineCount < 0) lineCount = readLines(f).size();
+        if (lineCount < NightBuffer.MAX_LINES) {
+            try (FileWriter writer = new FileWriter(f, true)) {
+                writer.write(line + "\n");
+                lineCount++;
+            } catch (IOException e) {
+                Log.e(TAG, "append failed", e);
+            }
+            return;
         }
+        // Full: drop the oldest minutes, keep the newest night.
+        writeLines(f, NightBuffer.append(readLines(f), line, NightBuffer.MAX_LINES));
     }
 
     static synchronized JSArray read(Context context) {
         JSArray samples = new JSArray();
-        File f = file(context);
-        if (!f.exists()) return samples;
-        try (BufferedReader reader = new BufferedReader(new FileReader(f))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                try {
-                    samples.put(new JSONObject(line));
-                } catch (JSONException e) {
-                    // A line cut by a crash: skip it, JS validates the rest.
-                }
+        for (String line : readLines(file(context))) {
+            try {
+                samples.put(new JSONObject(line));
+            } catch (JSONException e) {
+                // A line cut by a crash: skip it, JS validates the rest.
             }
-        } catch (IOException e) {
-            Log.e(TAG, "read failed", e);
         }
         return samples;
     }
 
-    static synchronized void clear(Context context) {
+    /** Removes the minutes up to and including `upTo`; minutes written after the morning read stay. */
+    static synchronized void clearUpTo(Context context, long upTo) {
         File f = file(context);
-        if (f.exists() && !f.delete()) Log.w(TAG, "could not delete the buffer");
+        writeLines(f, NightBuffer.keepAfter(readLines(f), upTo));
     }
 
-    private static int countLines(File f) {
-        if (!f.exists()) return 0;
-        int lines = 0;
+    private static List<String> readLines(File f) {
+        List<String> lines = new ArrayList<>();
+        if (!f.exists()) return lines;
         try (BufferedReader reader = new BufferedReader(new FileReader(f))) {
-            while (reader.readLine() != null) lines++;
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.isEmpty()) lines.add(line);
+            }
         } catch (IOException e) {
-            Log.e(TAG, "count failed", e);
+            Log.e(TAG, "read failed", e);
         }
         return lines;
+    }
+
+    private static void writeLines(File f, List<String> lines) {
+        try (FileWriter writer = new FileWriter(f, false)) {
+            for (String line : lines) writer.write(line + "\n");
+            lineCount = lines.size();
+        } catch (IOException e) {
+            Log.e(TAG, "write failed", e);
+            lineCount = -1;
+        }
     }
 }
