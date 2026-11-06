@@ -98,3 +98,12 @@ describe('habitStats', () => {
     expect(cellStatusLabel('future')).toBe('впереди');
   });
 });
+
+describe('calendarGrid: облегчённые дни', () => {
+  it('непомеченный облегчённый день — «не считается», а не «пропущено»', () => {
+    const h = { schedule: { kind: 'daily' } as const, logs: [], since: '2026-10-01', relaxed: new Set(['2026-11-02']) };
+    const cells = calendarGrid(h, '2026-11-05').flat();
+    expect(cells.find((c) => c.date === '2026-11-02')?.status).toBe('relaxed');
+    expect(cells.find((c) => c.date === '2026-11-03')?.status).toBe('missed');
+  });
+});

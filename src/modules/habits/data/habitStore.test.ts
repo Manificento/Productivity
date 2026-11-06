@@ -41,6 +41,7 @@ describe('habitStore', () => {
     await updateHabit(id, { name: 'Йога утром', schedule: { kind: 'daily' }, color: '#fff', essential: true }, 20);
     expect(await db.habits.get(id)).toMatchObject({
       name: 'Йога утром',
+      essential: true,
       schedule: { kind: 'daily' },
       archived: false,
       updatedAt: 20,

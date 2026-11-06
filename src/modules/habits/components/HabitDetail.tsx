@@ -31,6 +31,10 @@ function cellClass(
       return { className: `${base} border-2 border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300` };
     case 'off':
       return { className: `${base} bg-zinc-100 text-zinc-400 dark:bg-zinc-800/60 dark:text-zinc-600` };
+    case 'relaxed':
+      return {
+        className: `${base} border-2 border-dashed border-zinc-300 text-zinc-400 dark:border-zinc-700 dark:text-zinc-500`,
+      };
     case 'future':
       return { className: `${base} text-zinc-300 dark:text-zinc-700` };
   }

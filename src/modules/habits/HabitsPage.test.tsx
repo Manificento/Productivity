@@ -137,7 +137,7 @@ describe('HabitsPage', () => {
     expect(await screen.findByText('пн, ср')).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: '← Все привычки' }));
     await waitFor(() => expect(screen.queryByRole('list', { name: 'Привычки на сегодня' })).not.toBeInTheDocument());
-    expect(screen.getByRole('link', { name: 'Открыть «Бег»' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Открыть «Бег»' })).toBeInTheDocument();
     expect((await db.habits.get(saved!.id))?.schedule).toEqual({ kind: 'weekdays', weekdays: [1, 3] });
   });
 

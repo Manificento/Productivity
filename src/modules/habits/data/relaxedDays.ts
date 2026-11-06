@@ -1,18 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { shiftDateKey } from '../../../core/dates';
+import { db } from '../../../core/db';
 import { loadDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import type { DateKey } from '../../../core/types';
 
-/** How far back streaks take «только ключевые» days into account. */
-export const RELAXED_LOOKBACK_DAYS = 60;
-
 /**
- * Days up to `today` (inclusive) whose daily targets say `habitsMode = 'essential'`.
- * Adaptation rules stay in the core: this only reads its result for each day.
+ * Days up to `today` whose daily targets say `habitsMode = 'essential'`.
+ * Only event days (and today) can be such days, so the core is asked for those alone; it still decides the mode.
  */
 export function useRelaxedDays(today: DateKey): ReadonlySet<DateKey> | undefined {
   return useLiveQuery(async () => {
-    const days = Array.from({ length: RELAXED_LOOKBACK_DAYS + 1 }, (_, i) => shiftDateKey(today, -i));
+    const events = await db.lifeEvents.where('date').belowOrEqual(today).toArray();
+    const days = [...new Set([today, ...events.map((e) => e.date)])];
     const targets = await Promise.all(days.map((d) => loadDailyTargets(d)));
     return new Set(days.filter((_, i) => targets[i]?.habitsMode === 'essential'));
   }, [today]);
