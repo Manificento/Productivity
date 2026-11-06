@@ -1,9 +1,10 @@
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import type { Baseline, Phase } from '../../../core/adaptation/types';
-import { fromDateKey } from '../../../core/dates';
+import type { Phase } from '../../../core/adaptation/types';
+import { useDailyTargetsRange } from '../../../core/adaptation/useDailyTargets';
+import { fromDateKey, shiftDateKey } from '../../../core/dates';
 import type { DateKey, LifeEvent, MeditationKind, WorkoutIntensity } from '../../../core/types';
-import { formatCapacity, previewDays } from '../logic/preview';
+import { formatCapacity, PREVIEW_DAYS } from '../logic/preview';
 
 // Short labels so six columns fit a 360 px screen.
 const PHASE_SHORT: Record<Phase, string> = {
@@ -51,19 +52,13 @@ const MEDITATION_SHORT: Record<MeditationKind, string> = {
   body: 'тело',
 };
 
-/** «Как изменятся следующие 10 дней» — targets per day with one (possibly unsaved) event among the others. */
-export function PlanPreview({
-  event,
-  others,
-  baseline,
-  today,
-}: {
-  event: LifeEvent;
-  others: LifeEvent[];
-  baseline: Baseline;
-  today: DateKey;
-}) {
-  const rows = previewDays(event, others, baseline, today);
+/**
+ * «Как изменятся следующие 10 дней» — the day targets from today with `event` (possibly unsaved; it replaces the
+ * stored event with the same id) next to the user's other events: a more important event still drives its days.
+ */
+export function PlanPreview({ event, today }: { event: LifeEvent; today: DateKey }) {
+  const rows = useDailyTargetsRange(today, shiftDateKey(today, PREVIEW_DAYS - 1), { event });
+  if (rows === undefined) return <p className="text-sm text-zinc-500">Загрузка…</p>;
   if (rows.every((r) => r.phase === 'normal')) {
     return <p className="text-sm text-zinc-500">Ближайшие 10 дней идут в обычном режиме.</p>;
   }

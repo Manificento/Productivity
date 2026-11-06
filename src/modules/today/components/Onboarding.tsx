@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { todayKey } from '../../../core/dates';
 import type { DateKey, LifeEvent } from '../../../core/types';
-import { Button, Card, Empty, Field, Input, Page, Segmented } from '../../../ui';
-import { useBaseline } from '../data/baseline';
+import { Button, Card, Field, Input, Page, Segmented } from '../../../ui';
 import { createEvent } from '../data/events';
 import { finishOnboarding } from '../data/onboarding';
 import { emptyEventForm, IMPORTANCE_LABEL, parseEventForm, type EventFormErrors } from '../logic/events';
@@ -141,15 +140,10 @@ function PlanStep({
   busy: boolean;
   onStart: () => void;
 }) {
-  const baseline = useBaseline();
   return (
     <Page title="Твой план на 10 дней">
       <Card title={event.title}>
-        {baseline ? (
-          <PlanPreview event={event} others={[]} baseline={baseline} today={today} />
-        ) : (
-          <Empty>Загрузка…</Empty>
-        )}
+        <PlanPreview event={event} today={today} />
       </Card>
       <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
         Цели каждого дня на «Сегодня» будут меняться по этому плану. Событие можно изменить в «Событиях».

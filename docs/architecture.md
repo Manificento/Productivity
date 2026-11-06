@@ -101,6 +101,13 @@ flowchart LR
 Модули только **читают** `DailyTargets`. Новое правило добавляется в `core/adaptation/rules.ts`
 с тестом — ни один модуль не меняется.
 
+Чтение целей — `core/adaptation/useDailyTargets.ts`: `useDailyTargets(date)` для одного дня и
+`useDailyTargetsRange(from, to, whatIf?)` для диапазона до 31 дня — один живой запрос на весь диапазон, а не по запросу
+на день (план тренировок на 2 недели, предпросмотр 10 дней события; `whatIf.event` — несохранённое событие формы).
+Общие коэффициенты (`KCAL_PER_KG`, `DELOAD_FACTOR`, `LIGHT_DAY_RPE_LIMIT`) экспортирует `core/adaptation/rules.ts` —
+модули не держат своих копий. «Сегодня», меняющееся в полночь без перезагрузки, — хук `useTodayKey()` из
+`core/dates.ts` (#182).
+
 ## Владение таблицами
 
 | Модуль     | Пишет в таблицы                                                                                                                                  | Читает (кроме своих)                 |

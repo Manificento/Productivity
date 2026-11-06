@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
+import type { DailyTargets } from '../../../core/adaptation/types';
+import { useDailyTargetsRange } from '../../../core/adaptation/useDailyTargets';
 import { fromDateKey, shiftDateKey } from '../../../core/dates';
 import type { DateKey, PlannedSession } from '../../../core/types';
 import { Card, Chip, Empty } from '../../../ui';
@@ -10,11 +11,10 @@ import { dayMark } from '../logic/periodization';
 export const OUTLOOK_DAYS = 14;
 
 /** One future day: its session (if any) and the deload / rest mark from that day's targets. */
-function PlanDay({ date, session }: { date: DateKey; session?: PlannedSession }) {
-  const targets = useDailyTargets(date);
-  const mark = targets && dayMark(targets);
+function PlanDay({ targets, session }: { targets: DailyTargets; session?: PlannedSession }) {
+  const mark = dayMark(targets);
   if (!session && !mark) return null;
-  const label = format(fromDateKey(date), 'EEEEEE, d MMMM', { locale: ru });
+  const label = format(fromDateKey(targets.date), 'EEEEEE, d MMMM', { locale: ru });
   return (
     <li
       aria-label={label}
@@ -32,18 +32,19 @@ function PlanDay({ date, session }: { date: DateKey; session?: PlannedSession })
   );
 }
 
-/** «План на 2 недели»: upcoming sessions with deload and rest days marked ahead (targets of each future date). */
+/** «План на 2 недели»: upcoming sessions with deload and rest days marked ahead (targets of the 14 days, one query). */
 export function PlanOutlook({ today }: { today: DateKey }) {
   const from = shiftDateKey(today, 1);
-  const sessions = useUpcomingSessions(from, shiftDateKey(today, OUTLOOK_DAYS));
-  if (sessions === undefined) return null;
-  const dates = Array.from({ length: OUTLOOK_DAYS }, (_, i) => shiftDateKey(from, i));
+  const to = shiftDateKey(today, OUTLOOK_DAYS);
+  const sessions = useUpcomingSessions(from, to);
+  const days = useDailyTargetsRange(from, to);
+  if (sessions === undefined || days === undefined) return null;
   return (
     <Card title="План на 2 недели">
       {sessions.length === 0 && <Empty>Тренировок не запланировано</Empty>}
       <ul aria-label="План на 2 недели">
-        {dates.map((d) => (
-          <PlanDay key={d} date={d} session={sessions.find((s) => s.date === d)} />
+        {days.map((t) => (
+          <PlanDay key={t.date} targets={t} session={sessions.find((s) => s.date === t.date)} />
         ))}
       </ul>
     </Card>

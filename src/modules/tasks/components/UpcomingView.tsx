@@ -1,3 +1,4 @@
+import { useTodayKey } from '../../../core/dates';
 import { shiftDateKey } from '../../../core/dates';
 import { Empty } from '../../../ui';
 import { useTasksData } from '../data/useTasksData';
@@ -7,11 +8,10 @@ import { AddTaskForm } from './AddTaskForm';
 import { TaskRows } from './TaskRows';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
-import { useToday } from './useToday';
 
 export function UpcomingView() {
   const data = useTasksData();
-  const today = useToday();
+  const today = useTodayKey();
   const { actions, ui } = useTaskActions();
   const groups = data ? upcomingGroups(data.tasks, today) : [];
   return (

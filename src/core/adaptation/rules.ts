@@ -17,7 +17,20 @@ export const DEFAULT_BASELINE: Baseline = {
 /** Smart alarm window before the wake-up time, minutes. */
 export const WAKE_WINDOW_MIN = 30;
 
-const KCAL_PER_KG = 7700;
+/** Energy equivalent of 1 kg of body mass, kcal. Shared with the nutrition module's expenditure estimate. */
+export const KCAL_PER_KG = 7700;
+
+/**
+ * Share of the planned training volume and weight kept on a deload day (−40 %, as the taper/event reason
+ * text says). Applied by the training module to the planned session when `DailyTargets.deload` is set.
+ */
+export const DELOAD_FACTOR = 0.6;
+
+/**
+ * RPE target from which an exercise is too hard for a light day (`maxWorkoutIntensity` 'light' or 'rest'):
+ * the training module marks it «сегодня легче».
+ */
+export const LIGHT_DAY_RPE_LIMIT = 7;
 /** A deficit or a surplus is never bigger than this share of the expenditure. */
 const MAX_CHANGE_SHARE = 0.25;
 

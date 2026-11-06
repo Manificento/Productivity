@@ -1,3 +1,4 @@
+import { useTodayKey } from '../../../core/dates';
 import { Empty } from '../../../ui';
 import { useCompletedTasks } from '../data/tasks';
 import { useMemo } from 'react';
@@ -7,7 +8,6 @@ import { completedGroups } from '../logic/lists';
 import { TaskRows } from './TaskRows';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
-import { useToday } from './useToday';
 
 /** «Выполнено»: every completed task, grouped by the day it was completed. Unchecking reopens it. */
 export function DoneView() {
@@ -15,7 +15,7 @@ export function DoneView() {
   const projects = useProjects();
   // Only project names are needed here — not the whole tasks table.
   const projectNames = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.name])), [projects]);
-  const today = useToday();
+  const today = useTodayKey();
   const { actions, ui } = useTaskActions();
   const groups = done ? completedGroups(done) : [];
   return (

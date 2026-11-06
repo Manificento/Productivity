@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { todayKey } from '../../../core/dates';
 import type { DateKey, WorkoutLog } from '../../../core/types';
 import { Button, Card, Empty, Sheet } from '../../../ui';
 import { deleteWorkout, HISTORY_DAYS, useRecentWorkouts } from '../data/workouts';
@@ -8,7 +7,7 @@ import { WorkoutCard, workoutLabel } from './WorkoutCard';
 import { WorkoutForm } from './WorkoutForm';
 
 /** «Тренировки»: this week's volume, a new-workout form and the recent history. */
-export function WorkoutsTab({ today = todayKey() }: { today?: DateKey }) {
+export function WorkoutsTab({ today }: { today: DateKey }) {
   const workouts = useRecentWorkouts(today);
   // Bumping `version` re-mounts the form with a fresh `initial` draft.
   const [form, setForm] = useState({ version: 0, initial: emptyDraft(today) });

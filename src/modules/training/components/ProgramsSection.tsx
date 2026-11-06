@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
-import { todayKey } from '../../../core/dates';
 import type { DateKey, Program } from '../../../core/types';
 import { Button, Card, Empty, Sheet } from '../../../ui';
 import { archiveProgram, skipMissedSessions, useActivePrograms, useTodaySession } from '../data/programs';
@@ -16,7 +15,7 @@ import { PlanOutlook } from './PlanOutlook';
 import { SessionRunner } from './SessionRunner';
 
 /** «Программы»: today's session, active programs, templates and the create form. */
-export function ProgramsSection({ today = todayKey() }: { today?: DateKey }) {
+export function ProgramsSection({ today }: { today: DateKey }) {
   const programs = useActivePrograms();
   // A session of an earlier day that was not done becomes «пропущена»; the plan is not shifted.
   useEffect(() => {
