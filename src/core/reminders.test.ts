@@ -167,6 +167,20 @@ describe('scheduleReminder: веб', () => {
     expect(constructor).not.toHaveBeenCalled();
   });
 
+  it('falls back to the constructor when the service worker cannot show it yet', async () => {
+    const { shown } = stubWebNotifications('granted');
+    const showNotification = vi.fn(async () => {
+      throw new TypeError('No active registration');
+    });
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      serviceWorker: { getRegistration: async () => ({ showNotification }) },
+    });
+    await scheduleReminder(reminder);
+    await vi.advanceTimersByTimeAsync(BEDTIME.getTime() - NOW.getTime());
+    expect(shown).toHaveLength(1);
+  });
+
   it('explains when the browser cannot show notifications at all', async () => {
     vi.stubGlobal('Notification', undefined);
     expect(await scheduleReminder(reminder)).toEqual({

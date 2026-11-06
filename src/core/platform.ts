@@ -149,8 +149,12 @@ export function clearWebReminders(): void {
 /** Android Chrome forbids `new Notification()`: it shows notifications only through the service worker. */
 async function showWebNotification(reminder: Reminder): Promise<void> {
   const options = { body: reminder.body, tag: reminder.id };
-  const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
-  if (registration) return registration.showNotification(reminder.title, options);
+  try {
+    const registration = await navigator.serviceWorker?.getRegistration();
+    if (registration) return await registration.showNotification(reminder.title, options);
+  } catch {
+    // No active worker yet (first load): try the constructor below.
+  }
   try {
     new Notification(reminder.title, options);
   } catch (e) {
@@ -225,9 +229,11 @@ async function scheduleWeb(reminder: Reminder, generation: number): Promise<Remi
 
 /**
  * The one way to remind the user (a task, a habit, bedtime) on any platform. Native: a local notification
- * scheduled with the OS, delivered while the app is closed. Web: the Notification API while the tab is open —
- * reminders are lost on reload, so a module schedules its pending ones again when the app starts.
- * The same `id` again replaces the earlier reminder. Asks for the permission once, if it was not decided.
+ * scheduled with the OS, delivered while the app is closed. Web: the Notification API while the tab is open.
+ * Web timers are lost on reload and Android drops exact reminders when «Alarms & reminders» is revoked, so a module
+ * schedules its pending reminders again when the app starts, on every platform (the same `id` replaces).
+ * Asks for the permission once, if it was not decided. A schedule overtaken by a later call for the same `id`
+ * (e.g. a cancel) is dropped and still reports `scheduled`: the later call decides.
  * Never rejects for platform reasons (see `ReminderResult`); an invalid `at` is a bug and throws `RangeError`.
  */
 export async function scheduleReminder(reminder: Reminder): Promise<ReminderResult> {
