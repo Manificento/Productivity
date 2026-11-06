@@ -16,12 +16,11 @@ describe('shared adaptation constants', () => {
 
     const expenditure = source('../../modules/nutrition/logic/expenditure.ts');
     const periodization = source('../../modules/training/logic/periodization.ts');
-    expect(expenditure).toMatch(
-      /import \{[^}]*\bKCAL_PER_KG\b[^}]*\} from '\.\.\/\.\.\/\.\.\/core\/adaptation\/rules'/,
-    );
-    expect(periodization).toMatch(
-      /import \{[^}]*\bDELOAD_FACTOR\b[^}]*\bLIGHT_DAY_RPE_LIMIT\b[^}]*\} from '\.\.\/\.\.\/\.\.\/core\/adaptation\/rules'/,
-    );
+    const importsFromCore = (src: string, name: string) =>
+      new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from '[./]+core/adaptation/rules'`).test(src);
+    expect(importsFromCore(expenditure, 'KCAL_PER_KG')).toBe(true);
+    expect(importsFromCore(periodization, 'DELOAD_FACTOR')).toBe(true);
+    expect(importsFromCore(periodization, 'LIGHT_DAY_RPE_LIMIT')).toBe(true);
     // No own copies: neither file declares the constants again.
     expect(expenditure).not.toMatch(/const KCAL_PER_KG\b/);
     expect(periodization).not.toMatch(/const (DELOAD_FACTOR|HARD_RPE|LIGHT_DAY_RPE_LIMIT)\b/);

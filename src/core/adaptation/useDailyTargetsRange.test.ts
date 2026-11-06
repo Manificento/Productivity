@@ -103,7 +103,15 @@ describe('loadDailyTargetsRange', () => {
 
   it('Given диапазон When загружаются цели Then число запросов к БД не зависит от числа дней', async () => {
     await seed();
-    const tables = [db.lifeEvents, db.sleepLogs, db.checkIns, db.workoutLogs, db.weightLogs, db.cognitiveTests];
+    const tables = [
+      db.lifeEvents,
+      db.sleepLogs,
+      db.checkIns,
+      db.workoutLogs,
+      db.weightLogs,
+      db.cognitiveTests,
+      db.meditationSessions,
+    ];
     const spies = [...tables.map((t) => vi.spyOn(t, 'where')), vi.spyOn(db.settings, 'get')];
     const calls = () => spies.reduce((n, s) => n + s.mock.calls.length, 0);
 
@@ -146,6 +154,25 @@ describe('useDailyTargetsRange', () => {
     // The live query follows the DB: a new event re-plans the whole range.
     await act(() => db.lifeEvents.add(exam));
     await waitFor(() => expect(result.current![8]).toMatchObject({ date: '2026-11-09', phase: 'event' }));
+  });
+
+  it('never shows targets computed from the rows of the previous range while a new range loads', async () => {
+    await db.sleepLogs.add(night('2026-11-05', 5));
+    const { result, rerender } = renderHook(({ from }: { from: string }) => useDailyTargetsRange(from, from), {
+      initialProps: { from: '2026-11-04' },
+    });
+    await waitFor(() => expect(result.current?.[0].date).toBe('2026-11-04'));
+    rerender({ from: '2026-11-05' });
+    // Either still loading or the new day with its own short night — never 5 Nov computed without it.
+    expect(result.current).toBeUndefined();
+    await waitFor(() =>
+      expect(result.current?.[0]).toMatchObject({ date: '2026-11-05', maxWorkoutIntensity: 'light' }),
+    );
+  });
+
+  it('returns an empty list for an empty range', async () => {
+    const { result } = renderHook(() => useDailyTargetsRange('2026-11-05', '2026-11-04'));
+    await waitFor(() => expect(result.current).toEqual([]));
   });
 
   it('recomputes a what-if event at once, from the rows already loaded', async () => {

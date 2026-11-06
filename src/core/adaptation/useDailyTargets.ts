@@ -178,15 +178,21 @@ export function useDailyTargets(date: DateKey): DailyTargets | undefined {
 }
 
 /**
- * React hook: live targets for every day of `from..to` (up to 31 days) from ONE live query. The rows are
- * loaded once per range; a `whatIf` change (a form being edited) is recomputed at once, without a new query.
+ * React hook: live targets for every day of `from..to` (up to 31 days; a longer range throws) from ONE live
+ * query. The rows are loaded once per range; a `whatIf` change (a form being edited) is recomputed at once,
+ * without a new query. While a new range is loading the result is `undefined`, never targets from old rows.
  */
 export function useDailyTargetsRange(from: DateKey, to: DateKey, whatIf?: TargetsWhatIf): DailyTargets[] | undefined {
   const days = useMemo(() => rangeDays(from, to), [from, to]);
-  const data = useLiveQuery(() => loadRangeData(from, to), [from, to]);
-  const event = whatIf?.event;
-  return useMemo(
-    () => data && days.map((d) => computeDailyTargets(d, contextFor(d, data, { event }))),
-    [data, days, event],
+  const loaded = useLiveQuery(
+    async () => ({ from, to, data: days.length ? await loadRangeData(from, to) : undefined }),
+    [from, to, days.length],
   );
+  const event = whatIf?.event;
+  return useMemo(() => {
+    // dexie-react-hooks keeps the previous result while it re-subscribes: rows of another range do not count.
+    if (!loaded || loaded.from !== from || loaded.to !== to) return undefined;
+    const data = loaded.data;
+    return data ? days.map((d) => computeDailyTargets(d, contextFor(d, data, { event }))) : [];
+  }, [loaded, from, to, days, event]);
 }

@@ -1,3 +1,4 @@
+import { useTodayKey } from '../../../core/dates';
 import { Empty } from '../../../ui';
 import { useCompletedTasks } from '../data/tasks';
 import { useMemo } from 'react';
@@ -7,7 +8,6 @@ import { completedGroups } from '../logic/lists';
 import { TaskRows } from './TaskRows';
 import { TaskSection } from './TaskSection';
 import { useTaskActions } from './useTaskActions';
-import { useTodayKey } from '../../../core/dates';
 
 /** «Выполнено»: every completed task, grouped by the day it was completed. Unchecking reopens it. */
 export function DoneView() {
