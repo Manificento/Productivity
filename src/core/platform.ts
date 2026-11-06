@@ -1,5 +1,6 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PermissionState } from '@capacitor/core';
 import { LocalNotifications, type LocalNotificationsPlugin } from '@capacitor/local-notifications';
+import type { NightSample } from './types';
 
 /**
  * The only door to the native platform (ADR-0008). Modules never import `@capacitor/*` — `npm run deps` forbids it —
@@ -253,4 +254,89 @@ export async function cancelReminder(id: string): Promise<void> {
       console.error('cancelReminder failed', e);
     }
   }
+}
+
+// ---------- night sensing (background accelerometer + microphone) ----------
+
+/** The app's own native plugin (`android/…/SleepSensorsPlugin.java`): a foreground service writes minute aggregates. */
+export interface SleepSensorsBridge {
+  checkPermissions(): Promise<{ microphone: PermissionState }>;
+  requestPermissions(): Promise<{ microphone: PermissionState }>;
+  /** Starts the foreground service; it keeps writing one `NightSample` per minute until `stop()`. */
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  /** The buffer of minute aggregates written since the last `clearSamples()`, oldest first. */
+  getSamples(): Promise<{ samples: NightSample[] }>;
+  clearSamples(): Promise<void>;
+}
+
+const SleepSensors = registerPlugin<SleepSensorsBridge>(CAPABILITY_PLUGINS.backgroundSensors);
+let sleepSensors: SleepSensorsBridge = SleepSensors;
+
+/** Tests swap the plugin through `src/test/platform.ts`; app code never calls this. */
+export function setSleepSensorsBridge(next: SleepSensorsBridge | null): void {
+  sleepSensors = next ?? SleepSensors;
+}
+
+export type NightSensingResult =
+  | { status: 'started' }
+  | { status: 'denied'; hint: string }
+  | { status: 'unsupported'; hint: string }
+  | { status: 'failed'; hint: string };
+
+export const NIGHT_SENSING_TEXTS = {
+  web: 'Трекинг сна по датчикам работает только в приложении для Android: браузер не может слушать датчики ночью.',
+  nativeUnsupported: 'Трекинг сна по датчикам недоступен в этой версии приложения. Обновите приложение.',
+  denied:
+    'Нужен доступ к микрофону: он измеряет только уровень шума ночью, звук не записывается и не сохраняется. Разрешите микрофон для LifeOS в настройках телефона.',
+  failed: 'Не удалось запустить трекинг сна. Попробуйте ещё раз.',
+} as const;
+
+const sensorsAvailable = () => getCapabilities().backgroundSensors;
+
+/**
+ * Starts night sensing: a native foreground service records movement (accelerometer) and the noise level
+ * (microphone, levels only) and writes one `NightSample` per minute, also while the app is closed.
+ * Asks for the microphone once, if it was not decided. Never rejects: the result says what happened.
+ */
+export async function startNightSensing(): Promise<NightSensingResult> {
+  if (!isNativePlatform()) return { status: 'unsupported', hint: NIGHT_SENSING_TEXTS.web };
+  if (!sensorsAvailable()) return { status: 'unsupported', hint: NIGHT_SENSING_TEXTS.nativeUnsupported };
+  try {
+    let { microphone } = await sleepSensors.checkPermissions();
+    if (microphone === 'prompt' || microphone === 'prompt-with-rationale') {
+      ({ microphone } = await sleepSensors.requestPermissions());
+    }
+    if (microphone !== 'granted') return { status: 'denied', hint: NIGHT_SENSING_TEXTS.denied };
+    await sleepSensors.start();
+    return { status: 'started' };
+  } catch (e) {
+    console.error('startNightSensing failed', e);
+    return { status: 'failed', hint: NIGHT_SENSING_TEXTS.failed };
+  }
+}
+
+/** Stops the service; the buffer stays until `clearNightSamples()`. Does nothing where sensing is unavailable. */
+export async function stopNightSensing(): Promise<void> {
+  if (isNativePlatform() && sensorsAvailable()) await sleepSensors.stop();
+}
+
+const isSample = (s: unknown): s is NightSample => {
+  const v = s as Partial<NightSample> | null;
+  return (
+    !!v &&
+    [v.minuteStart, v.movement, v.noiseDb, v.noisePeakDb].every((n) => typeof n === 'number' && Number.isFinite(n))
+  );
+};
+
+/** The minute aggregates recorded so far (read them in the morning); malformed entries are dropped. */
+export async function readNightSamples(): Promise<NightSample[]> {
+  if (!isNativePlatform() || !sensorsAvailable()) return [];
+  const { samples } = await sleepSensors.getSamples();
+  return (samples ?? []).filter(isSample);
+}
+
+/** Empties the buffer once the module has saved what it needs. */
+export async function clearNightSamples(): Promise<void> {
+  if (isNativePlatform() && sensorsAvailable()) await sleepSensors.clearSamples();
 }

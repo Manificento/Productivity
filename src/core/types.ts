@@ -124,6 +124,21 @@ export interface SleepLog extends BaseRecord {
   quality: number;
 }
 
+/**
+ * One minute of night sensing (`startNightSensing()` in `platform.ts`): aggregates only — no raw motion,
+ * no audio is stored. The health module reads the buffer in the morning and derives sleep phases from it.
+ */
+export interface NightSample {
+  /** Start of the minute, epoch ms. */
+  minuteStart: Millis;
+  /** Movement: mean change of the acceleration magnitude between readings, m/s² (0 — lying still). */
+  movement: number;
+  /** Mean noise level over the minute, dBFS (−90 … 0; −90 — silence or no microphone readings). */
+  noiseDb: number;
+  /** Loudest moment of the minute, dBFS (−90 … 0). */
+  noisePeakDb: number;
+}
+
 export interface Food extends BaseRecord {
   name: string;
   /** Per 100 g. */
