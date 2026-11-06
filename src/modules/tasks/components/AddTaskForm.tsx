@@ -16,7 +16,13 @@ import { validateTitle } from '../logic/tasks';
  */
 export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; hint?: string }) {
   const projects = useProjects() ?? [];
-  const [text, setText] = useState('');
+  const [text, setTextState] = useState('');
+  // The current line for async code: after an await the `text` of this render is stale.
+  const latest = useRef('');
+  const setText = (value: string) => {
+    latest.current = value;
+    setTextState(value);
+  };
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   // A ref, not state: a second tap can arrive before React re-renders with saving = true.
@@ -51,12 +57,21 @@ export function AddTaskForm({ defaults = {}, hint }: { defaults?: ListDefaults; 
     }
     busy.current = true;
     setSaving(true);
+    // Clear at once: whatever is typed while saving belongs to the next task and must survive.
+    const submitted = text;
+    setText('');
     try {
       await addQuickTask(draft);
-      setText('');
       setError(undefined);
     } catch {
-      setError('Не удалось сохранить задачу — попробуйте ещё раз');
+      if (latest.current === '') {
+        // Nothing typed meanwhile: put the line back for another try.
+        setText(submitted);
+        setError('Не удалось сохранить задачу — попробуйте ещё раз');
+      } else {
+        // The next task is already being typed: keep it and name the lost one so it can be retyped.
+        setError(`Не удалось сохранить «${draft.title}» — попробуйте ещё раз`);
+      }
     } finally {
       busy.current = false;
       setSaving(false);
