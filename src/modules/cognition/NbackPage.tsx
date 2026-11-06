@@ -1,17 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { Button, Card, Empty, Page } from '../../ui';
+import { useSearchParams } from 'react-router-dom';
+import { Empty, Page } from '../../ui';
+import { MindResult, type MindSaveStatus } from './components/MindResult';
 import { NbackTrainer, type NbackFinish } from './components/NbackTrainer';
 import { saveNbackSession, useNbackSessions } from './data/mindSessions';
+import { compareToAverage, comparisonText } from './logic/summary';
 import { nextLevel, parseNbackDurationParam } from './logic/nback';
-
-type SaveStatus = 'saving' | 'saved' | 'error';
-
-const SAVE_MESSAGES: Record<SaveStatus, string> = {
-  saving: 'Сохраняю результат…',
-  saved: 'Результат сохранён.',
-  error: 'Не удалось сохранить результат. Попробуйте ещё раз.',
-};
 
 function isTestMode(): boolean {
   return import.meta.env.DEV || navigator.webdriver === true;
@@ -22,13 +16,31 @@ export function NbackPage({ random }: { random?: () => number }) {
   const [params] = useSearchParams();
   const durationMs = parseNbackDurationParam(params.get('duration'), isTestMode());
   const sessions = useNbackSessions();
-  const [finished, setFinished] = useState<{ run: NbackFinish; status: SaveStatus; next?: number } | null>(null);
+  const [finished, setFinished] = useState<{
+    run: NbackFinish;
+    status: MindSaveStatus;
+    next?: number;
+    comparison?: string;
+  } | null>(null);
 
   const onFinish = useCallback(
     (run: NbackFinish) => {
       setFinished({ run, status: 'saving' });
       saveNbackSession(run).then(
-        (saved) => setFinished({ run, status: 'saved', next: nextLevel([...(sessions ?? []), saved]) }),
+        (saved) =>
+          setFinished({
+            run,
+            status: 'saved',
+            next: nextLevel([...(sessions ?? []), saved]),
+            comparison: comparisonText(
+              compareToAverage(
+                run.accuracyPct,
+                (sessions ?? []).filter((x) => (x.level ?? 2) === run.level).map((x) => x.accuracyPct),
+                false,
+              ),
+              (v) => `${Math.round(v)}%`,
+            ),
+          }),
         () => setFinished({ run, status: 'error' }),
       );
     },
@@ -44,54 +56,28 @@ export function NbackPage({ random }: { random?: () => number }) {
   }
 
   if (finished) {
-    const { run, status, next } = finished;
+    const { run, status, next, comparison } = finished;
+    const levelNote =
+      next === undefined
+        ? ''
+        : next > run.level
+          ? ` Отлично! Следующая сессия — n = ${next}.`
+          : next < run.level
+            ? ` Следующая сессия — легче: n = ${next}.`
+            : ` Следующая сессия — n = ${next}.`;
     return (
       <Page title="n-back">
-        <Card title="Результат">
-          <dl className="mb-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
-            <dt>Уровень</dt>
-            <dd className="text-right font-semibold tabular-nums">n = {run.level}</dd>
-            <dt>Точность</dt>
-            <dd className="text-right font-semibold tabular-nums">{run.accuracyPct}%</dd>
-            <dt>Среднее время реакции</dt>
-            <dd className="text-right font-semibold tabular-nums">
-              {run.meanRtMs === undefined ? '—' : `${run.meanRtMs} мс`}
-            </dd>
-            <dt>Ошибки</dt>
-            <dd className="text-right font-semibold tabular-nums">{run.errors}</dd>
-          </dl>
-          <p
-            role={status === 'error' ? 'alert' : 'status'}
-            className={`mb-2 text-sm ${status === 'error' ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-500'}`}
-          >
-            {SAVE_MESSAGES[status]}
-          </p>
-          {status === 'saved' && next !== undefined && (
-            <p className="mb-4 text-sm text-zinc-500">
-              {next > run.level
-                ? `Отлично! Следующая сессия — n = ${next}.`
-                : next < run.level
-                  ? `Следующая сессия — легче: n = ${next}.`
-                  : `Следующая сессия — n = ${next}.`}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              className="flex-1"
-              onClick={() => setFinished(null)}
-              disabled={status === 'saving'}
-            >
-              Ещё раз
-            </Button>
-            <Link
-              to="/cognition"
-              className="flex min-h-11 flex-1 items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Готово
-            </Link>
-          </div>
-        </Card>
+        <MindResult
+          rows={[
+            ['Уровень', `n = ${run.level}`],
+            ['Точность', `${run.accuracyPct}%`],
+            ['Среднее время реакции', run.meanRtMs === undefined ? '—' : `${run.meanRtMs} мс`],
+            ['Ошибки', String(run.errors)],
+          ]}
+          status={status}
+          comparison={comparison === undefined ? undefined : comparison + levelNote}
+          onRetry={() => setFinished(null)}
+        />
       </Page>
     );
   }

@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { loadNbackSessions, saveNbackSession } from './mindSessions';
+import {
+  loadMindSessions,
+  loadNbackSessions,
+  saveNbackSession,
+  saveSchulteSession,
+  saveStroopSession,
+} from './mindSessions';
 
 beforeEach(async () => {
   await db.mindSessions.clear();
@@ -42,5 +48,26 @@ describe('n-back storage', () => {
       accuracyPct: 1,
     });
     expect(await loadNbackSessions()).toEqual([]);
+  });
+});
+
+describe('Stroop and Schulte storage', () => {
+  it('a Stroop run is saved with accuracy, mean time and interference; Schulte with time and errors', async () => {
+    const startedAt = new Date(2026, 10, 4, 9).getTime();
+    await saveStroopSession({
+      startedAt,
+      durationMs: 60_000,
+      accuracyPct: 92,
+      meanRtMs: 640,
+      errors: 4,
+      interferenceMs: 120,
+    });
+    await saveSchulteSession({ startedAt, durationMs: 41_200, accuracyPct: 96, errors: 1 });
+    expect(await loadMindSessions('stroop')).toMatchObject([
+      { kind: 'stroop', date: '2026-11-04', accuracyPct: 92, meanRtMs: 640, interferenceMs: 120 },
+    ]);
+    expect(await loadMindSessions('schulte')).toMatchObject([
+      { kind: 'schulte', durationMs: 41_200, errors: 1, accuracyPct: 96 },
+    ]);
   });
 });
