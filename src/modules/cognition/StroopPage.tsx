@@ -22,6 +22,10 @@ export function StroopPage({ random }: { random?: () => number }) {
 
   const onFinish = useCallback(
     (run: StroopFinish) => {
+      if (run.trials === 0) {
+        setFinished({ run, status: 'empty' });
+        return;
+      }
       setFinished({ run, status: 'saving' });
       const earlier = (sessions ?? []).flatMap((x) => (x.meanRtMs === undefined ? [] : [x.meanRtMs]));
       saveStroopSession(run).then(
@@ -31,7 +35,14 @@ export function StroopPage({ random }: { random?: () => number }) {
             status: 'saved',
             comparison:
               run.meanRtMs === undefined
-                ? undefined
+                ? comparisonText(
+                    compareToAverage(
+                      run.accuracyPct,
+                      (sessions ?? []).map((x) => x.accuracyPct),
+                      false,
+                    ),
+                    (v) => `${Math.round(v)}%`,
+                  )
                 : comparisonText(compareToAverage(run.meanRtMs, earlier, true), (v) => `${Math.round(v)} мс`),
           }),
         () => setFinished({ run, status: 'error' }),

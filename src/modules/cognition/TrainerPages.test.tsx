@@ -103,9 +103,11 @@ describe('Schulte', () => {
   });
 
   it('the table is different at every launch', async () => {
+    let seed = 11;
+    const random = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
     render(
       <MemoryRouter>
-        <SchultePage />
+        <SchultePage random={random} />
       </MemoryRouter>,
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Начать' }));
@@ -114,6 +116,50 @@ describe('Schulte', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Начать' }));
     expect(tableOrder()).not.toEqual(first);
     expect([...tableOrder()].sort((a, b) => Number(a) - Number(b))).toHaveLength(25);
+  });
+});
+
+describe('empty and interrupted runs', () => {
+  it('a Stroop run with no answers is not saved and says so', async () => {
+    fakeClock();
+    render(
+      <MemoryRouter initialEntries={['/?duration=3']}>
+        <StroopPage random={() => 0} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Начать' }));
+    await advance(3_500);
+    expect(await screen.findByText(/Ни одного ответа/)).toBeInTheDocument();
+    expect(await db.mindSessions.count()).toBe(0);
+  });
+
+  it('a Stroop run with only wrong answers is saved and compared by accuracy', async () => {
+    await saveStroopSession({ startedAt: at(1), durationMs: 60_000, accuracyPct: 90, meanRtMs: 900, errors: 2 });
+    fakeClock();
+    render(
+      <MemoryRouter initialEntries={['/?duration=3']}>
+        <StroopPage random={() => 0} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Начать' }));
+    await advance(300);
+    fireEvent.click(screen.getByRole('button', { name: 'Синий' }));
+    await advance(3_500);
+    expect(await screen.findByText('На 90% хуже, чем личное среднее 90%.')).toBeInTheDocument();
+  });
+
+  it('a Schulte run is cancelled when the app goes to the background', async () => {
+    render(
+      <MemoryRouter>
+        <SchultePage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Начать' }));
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(await screen.findByText(/Сессия прервана/)).toBeInTheDocument();
+    spy.mockRestore();
+    expect(await db.mindSessions.count()).toBe(0);
   });
 });
 

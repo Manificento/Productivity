@@ -8,7 +8,7 @@ export const STROOP_COLORS = [
   { id: 'red', name: 'Красный', ink: 'text-red-600 dark:text-red-400' },
   { id: 'blue', name: 'Синий', ink: 'text-blue-600 dark:text-blue-400' },
   { id: 'green', name: 'Зелёный', ink: 'text-green-600 dark:text-green-400' },
-  { id: 'yellow', name: 'Жёлтый', ink: 'text-yellow-500 dark:text-yellow-300' },
+  { id: 'yellow', name: 'Жёлтый', ink: 'text-yellow-600 dark:text-yellow-300' },
 ] as const;
 
 export type StroopColorId = (typeof STROOP_COLORS)[number]['id'];

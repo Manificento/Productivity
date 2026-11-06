@@ -92,10 +92,10 @@ export async function saveSchulteSession(run: SchulteRun, now: number = Date.now
   return record;
 }
 
-export function loadMindSessions(kind: MindSessionKind): Promise<StroopSession[]> {
+export function loadMindSessions(kind: MindSessionKind): Promise<MindSession[]> {
   return db.mindSessions.where('kind').equals(kind).toArray();
 }
 
-export function useMindSessions(kind: MindSessionKind): StroopSession[] | undefined {
+export function useMindSessions(kind: MindSessionKind): MindSession[] | undefined {
   return useLiveQuery(() => loadMindSessions(kind), [kind]);
 }

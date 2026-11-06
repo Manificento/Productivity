@@ -74,15 +74,17 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
       <Card title="Упражнения">
         <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
           {exercises.map((x) => (
-            <li key={x.to} className="flex min-h-11 items-center justify-between gap-3 py-2">
-              <div className="min-w-0">
-                <Link to={x.to} className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
-                  {x.title}
-                </Link>
-                <p className="truncate text-xs text-zinc-500" data-testid="last-result">
+            <li key={x.to}>
+              <Link
+                to={x.to}
+                aria-label={x.title}
+                className="flex min-h-11 flex-col justify-center py-2 text-sm font-medium text-indigo-600 dark:text-indigo-400"
+              >
+                {x.title}
+                <span className="truncate text-xs font-normal text-zinc-500" data-testid="last-result">
                   {x.last ?? 'Ещё нет результатов'}
-                </p>
-              </div>
+                </span>
+              </Link>
             </li>
           ))}
         </ul>

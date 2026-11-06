@@ -95,6 +95,29 @@ describe('n-back wiring', () => {
   });
 });
 
+describe('n-back summary', () => {
+  it('Given an earlier n-back session at the same level When I finish Then the result is compared with my average and the next level is named', async () => {
+    await seed(1, 2, 100);
+    vi.useFakeTimers({ toFake: ['performance', 'requestAnimationFrame', 'cancelAnimationFrame', 'Date'] });
+    vi.setSystemTime(new Date(2026, 10, 4, 9));
+    const values = [0, 0.12, 0.1, 0.9, 0.5]; // trial 2 is a match
+    let k = 0;
+    render(
+      <MemoryRouter initialEntries={['/?duration=10']}>
+        <NbackPage random={() => values[k++ % values.length]} />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Начать' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_500);
+    });
+    // Nothing pressed: balanced accuracy 50% → 50 points below the earlier 100%.
+    expect(
+      await screen.findByText('На 50% хуже, чем личное среднее 100%. Следующая сессия — легче: n = 1.'),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('n-back history', () => {
   it('Given the history When I open it Then a chart of level and accuracy by day is shown', async () => {
     await seed(2, 2, 80);

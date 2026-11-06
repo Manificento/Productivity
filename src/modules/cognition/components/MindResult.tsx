@@ -1,12 +1,13 @@
 import { Link } from 'react-router-dom';
 import { Button, Card } from '../../../ui';
 
-export type MindSaveStatus = 'saving' | 'saved' | 'error';
+export type MindSaveStatus = 'saving' | 'saved' | 'error' | 'empty';
 
 const SAVE_MESSAGES: Record<MindSaveStatus, string> = {
   saving: 'Сохраняю результат…',
   saved: 'Результат сохранён.',
   error: 'Не удалось сохранить результат. Попробуйте ещё раз.',
+  empty: 'Ни одного ответа — результат не сохранён. Попробуйте ещё раз.',
 };
 
 /** Short summary of a finished trainer session with the comparison to my average. */
@@ -22,6 +23,7 @@ export function MindResult({
   comparison?: string;
   onRetry: () => void;
 }) {
+  const failed = status === 'error' || status === 'empty';
   return (
     <Card title="Результат">
       <dl className="mb-4 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
@@ -33,8 +35,8 @@ export function MindResult({
         ))}
       </dl>
       <p
-        role={status === 'error' ? 'alert' : 'status'}
-        className={`mb-2 text-sm ${status === 'error' ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-500'}`}
+        role={failed ? 'alert' : 'status'}
+        className={`mb-2 text-sm ${failed ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-500'}`}
       >
         {SAVE_MESSAGES[status]}
       </p>

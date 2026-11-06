@@ -7,8 +7,6 @@ import { saveNbackSession, useNbackSessions } from './data/mindSessions';
 import { compareToAverage, comparisonText } from './logic/summary';
 import { nextLevel, parseNbackDurationParam } from './logic/nback';
 
-type SaveStatus = MindSaveStatus;
-
 function isTestMode(): boolean {
   return import.meta.env.DEV || navigator.webdriver === true;
 }
@@ -20,7 +18,7 @@ export function NbackPage({ random }: { random?: () => number }) {
   const sessions = useNbackSessions();
   const [finished, setFinished] = useState<{
     run: NbackFinish;
-    status: SaveStatus;
+    status: MindSaveStatus;
     next?: number;
     comparison?: string;
   } | null>(null);
@@ -37,7 +35,7 @@ export function NbackPage({ random }: { random?: () => number }) {
             comparison: comparisonText(
               compareToAverage(
                 run.accuracyPct,
-                (sessions ?? []).map((x) => x.accuracyPct),
+                (sessions ?? []).filter((x) => (x.level ?? 2) === run.level).map((x) => x.accuracyPct),
                 false,
               ),
               (v) => `${Math.round(v)}%`,
