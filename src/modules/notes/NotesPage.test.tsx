@@ -78,6 +78,24 @@ describe('NotesPage', () => {
     expect(screen.queryByText('Идеи')).not.toBeInTheDocument();
   });
 
+  it('Given я набрал текст When ухожу со страницы без «Готово» Then заметка всё равно сохранена', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderNotes();
+    await user.click(await screen.findByRole('button', { name: 'Новая заметка' }));
+    await user.type(await screen.findByLabelText('Название'), 'Черновик');
+    unmount();
+    await waitFor(async () => expect((await db.notes.toArray())[0]?.title).toBe('Черновик'));
+  });
+
+  it('Given новая заметка без текста When нажимаю «Готово» Then пустая заметка не остаётся в списке', async () => {
+    const user = userEvent.setup();
+    renderNotes();
+    await user.click(await screen.findByRole('button', { name: 'Новая заметка' }));
+    await user.click(await screen.findByRole('button', { name: 'Готово' }));
+    expect(await screen.findByText(/Заметок пока нет/)).toBeInTheDocument();
+    expect(await db.notes.count()).toBe(0);
+  });
+
   it('Given список заметок When я ищу по слову Then фильтр по заголовку и тексту без учёта регистра', async () => {
     const user = userEvent.setup();
     await db.notes.bulkAdd([

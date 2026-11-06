@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Card, Chip, Field, Input, Textarea } from '../../../ui';
+import { Button, Card, Field, Input, Textarea } from '../../../ui';
 import type { Note } from '../../../core/types';
 import { toggleLink } from '../logic/notes';
-import { deleteNote, saveNote, useLinkTargets } from '../data/notes';
+import { saveNote, useLinkTargets } from '../data/notes';
 import { Markdown } from './Markdown';
 
 const SAVE_DELAY_MS = 600;
@@ -20,16 +20,19 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const flush = async () => {
+  /** Saves pending edits; false when saving failed (the error stays on screen and the edits stay pending). */
+  const flush = async (): Promise<boolean> => {
     clearTimeout(timer.current);
-    if (!dirty.current) return;
+    if (!dirty.current) return true;
     dirty.current = false;
     try {
       await saveNote(note.id, latest.current);
       setError('');
+      return true;
     } catch {
       dirty.current = true;
       setError('Не удалось сохранить заметку');
+      return false;
     }
   };
   const change = (next: Partial<typeof latest.current>) => {
@@ -38,11 +41,22 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
     clearTimeout(timer.current);
     timer.current = setTimeout(() => void flush(), SAVE_DELAY_MS);
   };
-  // Save what is left when the editor unmounts (leaving the page).
+  // Save when the app is hidden or closed (a swipe away on a phone) and when the editor unmounts.
+  useEffect(() => {
+    const onHide = () => {
+      if (dirty.current)
+        saveNote(note.id, latest.current).then(
+          () => (dirty.current = false),
+          () => undefined,
+        );
+    };
+    window.addEventListener('pagehide', onHide);
+    return () => window.removeEventListener('pagehide', onHide);
+  }, [note.id]);
   useEffect(
     () => () => {
       clearTimeout(timer.current);
-      if (dirty.current) void saveNote(note.id, latest.current);
+      if (dirty.current) saveNote(note.id, latest.current).catch(() => undefined);
     },
     [note.id],
   );
@@ -53,13 +67,6 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
     void flush();
   };
   const dayKeys = linkIds.filter((id) => /^\d{4}-\d{2}-\d{2}$/.test(id));
-
-  const remove = async () => {
-    dirty.current = false;
-    clearTimeout(timer.current);
-    await deleteNote(note.id);
-    onClose();
-  };
 
   return (
     <Card>
@@ -155,24 +162,19 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
         </Field>
       </fieldset>
       {error && (
-        <p role="alert" className="mb-2 text-sm text-rose-600">
+        <p role="alert" className="mb-2 text-sm text-rose-600 dark:text-rose-400">
           {error}
         </p>
       )}
       <div className="flex gap-2">
         <Button
           onClick={async () => {
-            await flush();
-            onClose();
+            if (await flush()) onClose();
           }}
         >
           Готово
         </Button>
-        <Button variant="danger" onClick={() => void remove()}>
-          Удалить
-        </Button>
       </div>
-      {linkIds.length > 0 && <Chip>{linkIds.length} привяз.</Chip>}
     </Card>
   );
 }

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Page, Select } from '../../ui';
 import { NoteEditor } from './components/NoteEditor';
-import { addNote, useLinkTargets, useNotes } from './data/notes';
+import { db } from '../../core/db';
+import { addNote, deleteNote, useLinkTargets, useNotes } from './data/notes';
 import { filterNotes, noteTitle } from './logic/notes';
 
 /** `/notes` — markdown notes linked to projects, events and days, with search and link filters. */
@@ -35,14 +36,23 @@ export function NotesPage() {
   if (open)
     return (
       <Page title="Заметки">
-        <NoteEditor key={open.id} note={open} onClose={() => setOpenId(null)} />
+        <NoteEditor
+          key={open.id}
+          note={open}
+          onClose={async () => {
+            // A note nothing was typed into is not worth keeping.
+            const saved = await db.notes.get(open.id);
+            if (saved && !saved.title.trim() && !saved.body.trim()) await deleteNote(open.id);
+            setOpenId(null);
+          }}
+        />
       </Page>
     );
 
   return (
     <Page title="Заметки" actions={<Button onClick={() => void create()}>Новая заметка</Button>}>
       {error && (
-        <p role="alert" className="mb-2 text-sm text-rose-600">
+        <p role="alert" className="mb-2 text-sm text-rose-600 dark:text-rose-400">
           {error}
         </p>
       )}
@@ -98,7 +108,9 @@ export function NotesPage() {
                       className="min-h-11 w-full py-2 text-left text-sm font-medium"
                     >
                       {noteTitle(n)}
-                      <span className="block truncate text-xs font-normal text-zinc-500">{n.body.slice(0, 80)}</span>
+                      <span className="block truncate text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                        {n.body.slice(0, 80)}
+                      </span>
                     </button>
                   </li>
                 ))}

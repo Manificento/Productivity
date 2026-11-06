@@ -15,7 +15,13 @@ function inline(i: Inline, key: number): ReactNode {
       );
     case 'link':
       return (
-        <a key={key} href={i.href} target="_blank" rel="noreferrer noopener" className="text-indigo-600 underline">
+        <a
+          key={key}
+          href={i.href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-indigo-600 underline dark:text-indigo-400"
+        >
           {i.text}
         </a>
       );
