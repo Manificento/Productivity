@@ -134,3 +134,23 @@ test.describe('cognition: Stroop and Schulte', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe('cognition: daily plan', () => {
+  test('the block shows today’s plan from the daily targets and counts a finished session', async ({ page }) => {
+    await page.goto('/');
+    await skipOnboarding(page);
+    await page.goto('/#/cognition');
+    await expect(page.getByText('Сегодня 10 мин: n-back 5 мин, Струп 5 мин')).toBeVisible();
+    await expect(page.getByText('Выполнено 0 из 10 мин')).toBeVisible();
+
+    await page.getByRole('link', { name: 'Начать: Струп' }).click();
+    await page.goto('/#/cognition/stroop?duration=3');
+    await page.getByRole('button', { name: 'Начать' }).click();
+    await page.getByRole('button', { name: 'Красный' }).click();
+    await expect(page.getByText('Результат сохранён.')).toBeVisible({ timeout: 8_000 });
+    await page.getByRole('link', { name: 'Готово' }).click();
+    await expect(page.getByRole('list', { name: 'Сегодня сделано' })).toContainText('Струп');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});

@@ -1,11 +1,13 @@
 import { Link } from 'react-router-dom';
+import { useDailyTargets } from '../../core/adaptation/useDailyTargets';
 import { todayKey } from '../../core/dates';
 import type { DateKey } from '../../core/types';
 import { Card, Empty, Page } from '../../ui';
 import { NbackChart } from './components/NbackChart';
+import { MindPlanCard } from './components/MindPlanCard';
 import { MedianChart } from './components/MedianChart';
 import { useRecentPvt } from './data/cognitiveTests';
-import { useMindSessions, useNbackSessions } from './data/mindSessions';
+import { useMindSessions, useMindSessionsOn, useNbackSessions } from './data/mindSessions';
 import { compareWithAverage, dailyMedians, HISTORY_DAYS } from './logic/history';
 import { dailyProgress } from './logic/nback';
 import { lastResultText, latestOf } from './logic/summary';
@@ -27,6 +29,8 @@ function ComparisonText({ latestMs, averageMs, diffMs }: { latestMs: number; ave
 export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
   const tests = useRecentPvt(today);
   const comparison = tests && compareWithAverage(tests);
+  const targets = useDailyTargets(today);
+  const todaySessions = useMindSessionsOn(today);
   const nback = useNbackSessions();
   const stroop = useMindSessions('stroop');
   const schulte = useMindSessions('schulte');
@@ -44,6 +48,7 @@ export function CognitionHome({ today = todayKey() }: { today?: DateKey }) {
 
   return (
     <Page title="Тест внимания">
+      {targets && todaySessions && <MindPlanCard targets={targets} sessions={todaySessions} />}
       <Card>
         <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
           Одна минута, чтобы объективно оценить внимание: время реакции, пропуски и фальстарты.
