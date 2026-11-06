@@ -7,8 +7,13 @@ on:
       - 'android/**'
       - 'src/core/platform.ts'
       - 'capacitor.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: android-${{ github.ref }}
@@ -29,6 +34,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
+      - uses: gradle/actions/wrapper-validation@v4
       - run: npm ci
       - run: npm run build
       - run: npx cap sync android

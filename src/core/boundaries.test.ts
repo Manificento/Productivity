@@ -16,11 +16,11 @@ async function violationsOf(files: string[]): Promise<{ rule: string; from: stri
 
 describe('npm run deps: границы платформы', () => {
   it('модуль импортирует @capacitor/* напрямую → ошибка границ', async () => {
-    const violations = await violationsOf(['src/test/fixtures/directCapacitorImport.ts']);
+    const violations = await violationsOf(['src/test/fixtures/modules/tasks/directCapacitorImport.ts']);
     expect(violations).toContainEqual(
       expect.objectContaining({
         rule: 'native-only-through-platform',
-        from: 'src/test/fixtures/directCapacitorImport.ts',
+        from: 'src/test/fixtures/modules/tasks/directCapacitorImport.ts',
       }),
     );
   }, 20_000);

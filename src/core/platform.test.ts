@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mockNativePlatform } from '../test/platform';
+import { mockNativePlatform, resetPlatform } from '../test/platform';
 import { getCapabilities, getPlatform, isNativePlatform, setPlatformRuntime } from './platform';
 
 const ALL_OFF = { alarms: false, backgroundSensors: false, healthImport: false, notifications: false };
@@ -35,8 +35,9 @@ describe('platform.ts: флаги возможностей false на вебе �
     expect(getCapabilities()).toEqual(ALL_OFF);
   });
 
-  it('в тестах мокаются: после теста снова настоящая платформа (веб)', () => {
-    // The previous tests installed fakes; setup.ts restored the real bridge in between.
+  it('в тестах мокаются: сброс возвращает настоящую платформу (веб)', () => {
+    mockNativePlatform('android', ['alarms']);
+    resetPlatform(); // what src/test/setup.ts runs after every test
     expect(getPlatform()).toBe('web');
     expect(getCapabilities()).toEqual(ALL_OFF);
   });
