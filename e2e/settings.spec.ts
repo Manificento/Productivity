@@ -31,4 +31,21 @@ test.describe('settings', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+  test('Todoist CSV: preview, confirm, repeat upload does not duplicate', async ({ page }) => {
+    await page.goto('/#/settings');
+    const pick = async () => {
+      await page.getByLabel('Файл CSV Todoist').setInputFiles('docs/samples/todoist-template.csv');
+      return page.getByRole('dialog', { name: 'Импорт из Todoist' });
+    };
+    let dialog = await pick();
+    await expect(dialog).toContainText('Найдено 4 задачи, 1 проект');
+    await expect(dialog).toContainText('3 срока не распознаны, проверьте после импорта');
+    await dialog.getByRole('button', { name: 'Импортировать' }).click();
+    await expect(page.getByRole('status')).toContainText('новых задач 4');
+    dialog = await pick();
+    await dialog.getByRole('button', { name: 'Импортировать' }).click();
+    await expect(page.getByRole('status')).toContainText('новых задач 0, обновлено 4');
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
 });
