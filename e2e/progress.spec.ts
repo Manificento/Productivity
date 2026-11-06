@@ -12,3 +12,16 @@ test('Given пустая база When я открываю «Прогресс» 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('Given пустая база When я открываю «Навыки» и «Квесты» Then шесть навыков и три квеста, без горизонтального скролла', async ({
+  page,
+}) => {
+  await skipOnboarding(page);
+  await page.goto('/#/progress');
+  await page.getByRole('radio', { name: 'Навыки' }).click();
+  await expect(page.getByRole('list', { name: 'Навыки' }).getByRole('listitem')).toHaveCount(6);
+  await page.getByRole('radio', { name: 'Квесты' }).click();
+  await expect(page.getByRole('list', { name: 'Квесты дня' }).getByRole('listitem')).toHaveCount(3);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

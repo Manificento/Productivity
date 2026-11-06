@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { atLocalTime } from '../../../core/logging/sleepTime';
 import { newRecord } from '../../../core/ids';
-import { XP_RULES, levelFromXp, summarize, totalXp, xpEventsFrom, xpForLevel, type XpSources } from './xp';
+import { XP_RULES, levelFromXp, skillLevels, summarize, totalXp, xpEventsFrom, xpForLevel, type XpSources } from './xp';
 
 const T = 1_000;
 const empty: XpSources = {
@@ -13,12 +13,16 @@ const empty: XpSources = {
   meditationSessions: [],
   cognitiveTests: [],
   mindSessions: [],
+  mealLogs: [],
+  xpEvents: [],
 };
 const day = (d: string) => atLocalTime(d, '10:00');
 
 describe('опыт из таблиц блоков', () => {
   it('Given записи в таблицах блоков When считаю опыт Then сумма по правилам xp.ts за задачи, привычки, фокус, сон, тренировки, медитации и тесты', () => {
     const src: XpSources = {
+      mealLogs: [],
+      xpEvents: [],
       tasks: [
         newRecord({ title: 'a', priority: 4 as const, tags: [], completedAt: day('2026-11-03') }, T),
         newRecord({ title: 'b', priority: 4 as const, tags: [] }, T), // not done → 0
@@ -93,7 +97,9 @@ describe('опыт из таблиц блоков', () => {
       { title: 'a', priority: 4 as const, tags: [], completedAt: atLocalTime('2026-11-03', '23:30') },
       T,
     );
-    expect(xpEventsFrom({ ...empty, tasks: [t] })).toEqual([{ date: '2026-11-03', amount: XP_RULES.task }]);
+    expect(xpEventsFrom({ ...empty, tasks: [t] })).toEqual([
+      { date: '2026-11-03', skill: 'tasks', amount: XP_RULES.task },
+    ]);
   });
 });
 
@@ -134,5 +140,26 @@ describe('уровни', () => {
   it('Given пустая база When считаю Then уровень 1 и нули', () => {
     const s = summarize(empty, '2026-11-06');
     expect(s).toMatchObject({ total: 0, today: 0, week: 0, level: 1, into: 0 });
+  });
+});
+
+describe('навыки', () => {
+  it('Given опыт по источникам When я открываю «Навыки» Then шесть навыков — Дела, Тело, Сон, Питание, Ум, Покой — с уровнями по вкладу блоков', () => {
+    const levels = skillLevels({
+      ...empty,
+      workoutLogs: Array.from({ length: 7 }, () =>
+        newRecord({ date: '2026-11-03', type: 'run', durationMin: 30, rpe: 5 }, T),
+      ),
+      mealLogs: [newRecord({ date: '2026-11-03', time: 0, kind: 'lunch' as const, items: [] }, T)],
+      mindSessions: [newRecord({ date: '2026-11-03', kind: 'nback' as const, durationMs: 1, accuracyPct: 80 }, T)],
+      xpEvents: [newRecord({ date: '2026-11-03', source: 'quest' as const, questId: 'bedtime', amount: 20 }, T)],
+    });
+    expect(levels.map((l) => l.label)).toEqual(['Дела', 'Тело', 'Сон', 'Питание', 'Ум', 'Покой']);
+    const by = Object.fromEntries(levels.map((l) => [l.id, l]));
+    expect(by.body).toMatchObject({ xp: 7 * XP_RULES.workout, level: 2 });
+    expect(by.food).toMatchObject({ xp: XP_RULES.meal, level: 1 });
+    expect(by.mind?.xp).toBe(XP_RULES.test);
+    expect(by.sleep?.xp).toBe(20); // quest bonus flows into the quest's skill
+    expect(by.tasks?.xp).toBe(0);
   });
 });
