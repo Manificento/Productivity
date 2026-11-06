@@ -62,3 +62,29 @@ test('Given Chrome на Android When сайт открыт Then доступна
   await install.click();
   await expect(page.getByText('Приложение установлено')).toBeVisible();
 });
+
+test('Given веб-сборка When я открываю PWA Then service worker регистрируется как раньше', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('navigation')).toBeVisible();
+  const script = await page.evaluate(() => navigator.serviceWorker.ready.then((r) => r.active?.scriptURL ?? ''));
+  expect(script).toMatch(/\/sw\.js$/);
+});
+
+test('Given приложение запущено в нативной оболочке When оно стартует Then service worker PWA не регистрируется', async ({
+  page,
+}) => {
+  // What the Android WebView of the Capacitor shell injects; @capacitor/core then reports platform "android".
+  await page.addInitScript(() => {
+    (window as unknown as { androidBridge: object }).androidBridge = { postMessage: () => undefined };
+  });
+  const workerRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/sw.js')) workerRequests.push(request.url());
+  });
+  await page.goto('/');
+  await expect(page.getByRole('navigation')).toBeVisible();
+  // The web build fetches sw.js right after start; once the network is idle it would have happened.
+  await page.waitForLoadState('networkidle');
+  expect(workerRequests).toEqual([]);
+  expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.length))).toBe(0);
+});
