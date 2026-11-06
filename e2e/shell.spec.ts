@@ -99,7 +99,7 @@ test('Given 12 модулей When я открываю приложение на
 
   await nav.getByRole('link', { name: /Блоки/ }).click();
   await expect(page.getByRole('heading', { name: 'Все блоки', level: 1 })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Заметки/ })).toContainText('скоро');
+  await expect(page.getByRole('link', { name: /Заметки/ })).not.toContainText('скоро');
   await expect(page.getByRole('link', { name: /Медитация/ })).not.toContainText('скоро');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
