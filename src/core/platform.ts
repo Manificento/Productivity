@@ -1,6 +1,10 @@
 import { Capacitor, registerPlugin, type PermissionState } from '@capacitor/core';
+import { Health, type HealthPlugin } from '@capgo/capacitor-health';
 import { LocalNotifications, type LocalNotificationsPlugin } from '@capacitor/local-notifications';
-import type { Millis, NightSample } from './types';
+import { fromDateKey, shiftDateKey, toDateKey } from './dates';
+import { toImportedWorkouts, toSleepNights, type StoreSleepSample, type StoreWorkout } from './healthImport';
+import { atLocalTime } from './logging/sleepTime';
+import type { DateKey, ImportedSleep, ImportedWorkout, Millis, NightSample } from './types';
 
 /**
  * The only door to the native platform (ADR-0008). Modules never import `@capacitor/*` — `npm run deps` forbids it —
@@ -372,4 +376,207 @@ export async function readNightSamples(): Promise<NightSample[]> {
  */
 export async function clearNightSamples(upTo: Millis): Promise<void> {
   if (sensorsAvailable()) await sleepSensors.clearSamples({ upTo });
+}
+
+// ---------- health store import (Health Connect / HealthKit) ----------
+
+/** What the import needs from the health plugin; `@capgo/capacitor-health` in the app, a fake in tests. */
+export type HealthStoreBridge = Pick<
+  HealthPlugin,
+  | 'isAvailable'
+  | 'checkAuthorization'
+  | 'requestAuthorization'
+  | 'readSamples'
+  | 'queryWorkouts'
+  | 'openHealthConnectSettings'
+>;
+
+let healthStore: HealthStoreBridge = Health;
+let accessRequest: Promise<HealthAccessResult> | undefined;
+
+/** Tests swap the plugin through `src/test/platform.ts`; app code never calls this. */
+export function setHealthStoreBridge(next: HealthStoreBridge | null): void {
+  healthStore = next ?? Health;
+  accessRequest = undefined;
+}
+
+/**
+ * `ok` with the records (possibly none), or why nothing could be read, with a ready-to-show Russian `hint`.
+ * On iOS an `ok` without records may carry a `hint`: HealthKit never tells whether reading was refused.
+ */
+export type HealthReadResult<T> =
+  | { status: 'ok'; items: T[]; hint?: string }
+  | { status: 'denied'; hint: string }
+  | { status: 'unsupported'; hint: string }
+  | { status: 'failed'; hint: string };
+
+export type HealthAccessResult =
+  /** `kinds`: what may be read; the user may allow only sleep or only workouts. */
+  | { status: 'granted'; kinds: ('sleep' | 'workouts')[] }
+  | { status: 'denied'; hint: string }
+  | { status: 'unsupported'; hint: string }
+  | { status: 'failed'; hint: string };
+
+export const HEALTH_TEXTS = {
+  web: 'Импорт из Health Connect и Apple Health работает только в приложении для телефона.',
+  nativeUnsupported: 'Импорт данных о здоровье недоступен в этой версии приложения. Обновите приложение.',
+  updateHealthConnect: 'Обновите «Health Connect» в Google Play, чтобы LifeOS мог читать сон и тренировки.',
+  noHealthConnectOnDevice: 'Health Connect недоступен на этом телефоне: нужен Android 9 или новее.',
+  noHealthConnect: 'Health Connect недоступен. Установите или обновите его в Google Play.',
+  noHealthKit: 'Приложение «Здоровье» недоступно на этом устройстве.',
+  deniedAndroid: 'Нет доступа к сну и тренировкам. Разрешите их LifeOS в настройках Health Connect.',
+  askIos: 'Разрешите LifeOS читать сон и тренировки из приложения «Здоровье».',
+  maybeDeniedIos: 'Данных нет. Если вы не разрешили доступ: Настройки → Здоровье → Доступ к данным → LifeOS.',
+  tooMuch: 'Слишком много записей за этот период. Выберите период короче.',
+  failed: 'Не удалось прочитать данные о здоровье. Попробуйте ещё раз.',
+} as const;
+
+const HEALTH_KINDS = ['sleep', 'workouts'] as const;
+type HealthDataKind = (typeof HEALTH_KINDS)[number];
+/** Sleep is read a week at a time; a week never has this many samples, so hitting it means data would be lost. */
+const SLEEP_CHUNK_DAYS = 7;
+const SLEEP_CHUNK_LIMIT = 2000;
+const WORKOUT_PAGE = 100;
+/** About 2000 workouts per read; more is reported as `failed` instead of being cut silently. */
+const MAX_WORKOUT_PAGES = 20;
+
+class TooMuchHealthData extends Error {}
+
+/**
+ * The plugin's own English texts matched below (`reason` of `isAvailable`, the iOS «not granted» rejection) are those
+ * of `@capgo/capacitor-health` 8.11.12, pinned in package.json; check them when upgrading the plugin.
+ */
+async function unavailable(): Promise<{ status: 'unsupported'; hint: string } | undefined> {
+  if (!isNativePlatform()) return { status: 'unsupported', hint: HEALTH_TEXTS.web };
+  if (!getCapabilities().healthImport) return { status: 'unsupported', hint: HEALTH_TEXTS.nativeUnsupported };
+  const { available, reason = '' } = await healthStore.isAvailable();
+  if (available) return undefined;
+  if (getPlatform() !== 'android') return { status: 'unsupported', hint: HEALTH_TEXTS.noHealthKit };
+  if (/update/i.test(reason)) return { status: 'unsupported', hint: HEALTH_TEXTS.updateHealthConnect };
+  if (/unavailable on this device/i.test(reason)) {
+    return { status: 'unsupported', hint: HEALTH_TEXTS.noHealthConnectOnDevice };
+  }
+  return { status: 'unsupported', hint: HEALTH_TEXTS.noHealthConnect };
+}
+
+const deniedHint = () => (getPlatform() === 'android' ? HEALTH_TEXTS.deniedAndroid : HEALTH_TEXTS.askIos);
+
+/**
+ * Shows the system access sheet once for both sleep and workouts (call it from a user action, e.g. «Подключить»).
+ * Concurrent calls share one sheet. On iOS `granted` only means the sheet was answered: HealthKit hides refusals.
+ */
+export function requestHealthAccess(): Promise<HealthAccessResult> {
+  accessRequest ??= (async (): Promise<HealthAccessResult> => {
+    try {
+      const blocked = await unavailable();
+      if (blocked) return blocked;
+      const status = await healthStore.requestAuthorization({ read: [...HEALTH_KINDS] });
+      const kinds = HEALTH_KINDS.filter((k) => status.readAuthorized.includes(k));
+      return kinds.length ? { status: 'granted', kinds } : { status: 'denied', hint: deniedHint() };
+    } catch (e) {
+      // iOS rejects when the sheet could not be completed.
+      if (/not granted/i.test(String(e))) return { status: 'denied', hint: deniedHint() };
+      console.error('requestHealthAccess failed', e);
+      return { status: 'failed', hint: HEALTH_TEXTS.failed };
+    }
+  })().finally(() => {
+    accessRequest = undefined;
+  });
+  return accessRequest;
+}
+
+/** Opens the Health Connect settings (Android) so the user can allow access; `false` where there are none. */
+export async function openHealthSettings(): Promise<boolean> {
+  if (getPlatform() !== 'android' || !getCapabilities().healthImport) return false;
+  try {
+    await healthStore.openHealthConnectSettings();
+    return true;
+  } catch (e) {
+    console.error('openHealthSettings failed', e);
+    return false;
+  }
+}
+
+async function readHealth<T>(
+  kind: HealthDataKind,
+  from: DateKey,
+  to: DateKey,
+  read: () => Promise<T[]>,
+): Promise<HealthReadResult<T>> {
+  try {
+    const blocked = await unavailable();
+    if (blocked) return blocked;
+    if (from > to) return { status: 'ok', items: [] };
+    // Reads never open the access sheet: `requestHealthAccess()` does, once, from a user action.
+    const status = await healthStore.checkAuthorization({ read: [kind] });
+    if (!status.readAuthorized.includes(kind)) return { status: 'denied', hint: deniedHint() };
+    const items = await read();
+    return items.length === 0 && getPlatform() === 'ios'
+      ? { status: 'ok', items, hint: HEALTH_TEXTS.maybeDeniedIos }
+      : { status: 'ok', items };
+  } catch (e) {
+    if (e instanceof TooMuchHealthData) return { status: 'failed', hint: HEALTH_TEXTS.tooMuch };
+    console.error(`read ${kind} from the health store failed`, e);
+    return { status: 'failed', hint: HEALTH_TEXTS.failed };
+  }
+}
+
+const inDays = (day: DateKey, from: DateKey, to: DateKey) => day >= from && day <= to;
+/** Noon of a day: sleep windows run noon to noon, so a night is never cut at midnight. */
+const noon = (day: DateKey) => atLocalTime(day, '12:00');
+
+/**
+ * Nights from Health Connect (Android) / HealthKit (iOS) whose wake-up day is in `from..to` — the day `saveSleep`
+ * files a night under. Each night carries `externalId` / `sourceId` (the same night from two apps or read twice is
+ * told apart) and `main` (naps are extra entries). Read a week at a time; never rejects. Call
+ * `requestHealthAccess()` first; without access the result is `denied`.
+ */
+export async function readSleep(from: DateKey, to: DateKey): Promise<HealthReadResult<ImportedSleep>> {
+  return readHealth('sleep', from, to, async () => {
+    const samples = new Map<string, StoreSleepSample>();
+    // From noon before the first wake-up day to noon after the last one.
+    for (let start = shiftDateKey(from, -1); start <= to; start = shiftDateKey(start, SLEEP_CHUNK_DAYS)) {
+      const end = [shiftDateKey(start, SLEEP_CHUNK_DAYS), shiftDateKey(to, 1)].sort()[0];
+      const chunk = await healthStore.readSamples({
+        dataType: 'sleep',
+        startDate: new Date(noon(start)).toISOString(),
+        endDate: new Date(noon(end)).toISOString(),
+        limit: SLEEP_CHUNK_LIMIT,
+        ascending: true,
+      });
+      if (chunk.samples.length >= SLEEP_CHUNK_LIMIT) throw new TooMuchHealthData();
+      // A sample crossing a chunk border comes twice.
+      for (const s of chunk.samples) samples.set(s.platformId ?? `${s.sourceId}|${s.startDate}|${s.endDate}`, s);
+    }
+    return toSleepNights([...samples.values()] as StoreSleepSample[]).filter((n) =>
+      inDays(toDateKey(n.wakeTime), from, to),
+    );
+  });
+}
+
+/**
+ * Workouts from Health Connect / HealthKit that started on a day in `from..to`, in the app's types (the module adds
+ * `rpe` and writes through `saveWorkout`). Each carries `externalId` / `sourceId`. Never rejects; more than about
+ * 2000 workouts in the range is `failed` (choose a shorter range). Call `requestHealthAccess()` first.
+ */
+export async function readWorkouts(from: DateKey, to: DateKey): Promise<HealthReadResult<ImportedWorkout>> {
+  return readHealth('workouts', from, to, async () => {
+    const workouts = new Map<string, StoreWorkout>();
+    let anchor: string | undefined;
+    for (let page = 0; ; page++) {
+      if (page === MAX_WORKOUT_PAGES) throw new TooMuchHealthData();
+      const result = await healthStore.queryWorkouts({
+        startDate: fromDateKey(from).toISOString(),
+        endDate: fromDateKey(shiftDateKey(to, 1)).toISOString(),
+        limit: WORKOUT_PAGE,
+        ascending: true,
+        ...(anchor && { anchor }),
+      });
+      // iOS pages overlap: a long workout at a page border comes twice.
+      for (const w of result.workouts) workouts.set(w.platformId ?? `${w.sourceId}|${w.startDate}|${w.endDate}`, w);
+      anchor = result.anchor ?? undefined;
+      if (!anchor) break;
+    }
+    return toImportedWorkouts([...workouts.values()]).filter((w) => inDays(w.date, from, to));
+  });
 }

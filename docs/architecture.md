@@ -178,6 +178,21 @@ Android Chrome через service worker), пока открыта вкладк�
 Расчёт по минуте и политика буфера — чистые Java-классы `NightMinute` / `NightBuffer` с JUnit-тестами
 (`android/app/src/test`, CI `android.yml`). Алгоритм фаз сна — в модуле `health`. В тестах — `mockNightSensors()` из
 `src/test/platform.ts`.
+Импорт из хранилища здоровья (#141) — `requestHealthAccess()` (одно окно доступа к сну и тренировкам, по действию
+пользователя), затем `readSleep(from, to)` / `readWorkouts(from, to)` из `platform.ts` (плагин `@capgo/capacitor-health`:
+Health Connect на Android, HealthKit на iOS). Чтение само окно доступа не открывает: без доступа — `denied` с `hint`, на
+Android кнопка «Открыть настройки» — `openHealthSettings()`. HealthKit не сообщает об отказе: после окна доступа чтение
+на iOS всегда `ok`, а пустой результат несёт `hint`, где проверить доступ. Возвращаются ночи (`ImportedSleep`, по дню
+подъёма; окно чтения — от полудня до полудня, неделями; дневной сон — отдельная запись с `main: false`) и тренировки
+(`ImportedWorkout`, типы формы тренировок; `kcal` и `distanceM` на Android не приходят — для них нужны лишние права) из
+`src/core/types.ts` с `externalId` и `sourceId`: одна ночь из двух приложений — две записи, повторное чтение — те же
+id. Модуль `health` пишет через `saveSleep` / `saveWorkout`; хранение `externalId` у тренировки — отдельный контракт.
+Больше ~2000 тренировок или 2000 отрезков сна за неделю — `failed` («выберите период короче»), а не тихая обрезка.
+Сопоставление — чистые функции `src/core/healthImport.ts`. Из прав плагина в манифесте оставлены только `READ_SLEEP`
+и `READ_EXERCISE` (CI `android.yml` это проверяет), `minSdk` — 26 (требование клиента Health Connect; сам Health
+Connect есть с Android 9). Для iOS-оболочки понадобятся entitlement HealthKit и `NSHealthShareUsageDescription`;
+политика конфиденциальности для экрана Health Connect — контент владельца (#214). В тестах — `mockHealthStore()` из
+`src/test/platform.ts` (`hidesDenial` повторяет поведение HealthKit).
 В `AndroidManifest.xml` намеренно выключены Auto Backup и перенос на новое устройство (`allowBackup="false"`,
 `data_extraction_rules.xml`): IndexedDB с данными о здоровье не покидает телефон до облака (ADR-0009) и согласия.
 Service worker PWA регистрирует `src/main.tsx` только на вебе (`src/app/serviceWorker.ts`): в нативной оболочке бандл
