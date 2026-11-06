@@ -62,3 +62,24 @@ test('Given Chrome на Android When сайт открыт Then доступна
   await install.click();
   await expect(page.getByText('Приложение установлено')).toBeVisible();
 });
+
+test('Given веб-сборка When я открываю PWA Then service worker регистрируется как раньше', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('navigation')).toBeVisible();
+  const script = await page.evaluate(() => navigator.serviceWorker.ready.then((r) => r.active?.scriptURL ?? ''));
+  expect(script).toMatch(/\/sw\.js$/);
+});
+
+test('Given приложение запущено в нативной оболочке When оно стартует Then service worker PWA не регистрируется', async ({
+  page,
+}) => {
+  // What the Android WebView of the Capacitor shell injects; @capacitor/core then reports platform "android".
+  await page.addInitScript(() => {
+    (window as unknown as { androidBridge: object }).androidBridge = { postMessage: () => undefined };
+  });
+  await page.goto('/');
+  await expect(page.getByRole('navigation')).toBeVisible();
+  await page.waitForLoadState('load');
+  await page.waitForTimeout(500); // the web build registers right after load — give it the chance to (not) happen
+  expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.length))).toBe(0);
+});
