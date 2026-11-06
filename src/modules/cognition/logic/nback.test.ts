@@ -5,6 +5,7 @@ import {
   generateSequence,
   isTarget,
   nextLevel,
+  parseNbackDurationParam,
   scoreNback,
   trialCountFor,
   type NbackAnswer,
@@ -124,5 +125,15 @@ describe('n-back: history by day', () => {
     expect(days[0]).toEqual({ date: '2026-11-01' });
     expect(days[1]).toEqual({ date: '2026-11-02', level: 2, accuracyPct: 90 });
     expect(days[3]).toEqual({ date: '2026-11-04', level: 3, accuracyPct: 75 });
+  });
+});
+
+describe('n-back: duration param', () => {
+  it('is honoured only in test mode and only within 1–180 s', () => {
+    expect(parseNbackDurationParam('10', true)).toBe(10_000);
+    expect(parseNbackDurationParam('10', false)).toBe(180_000);
+    expect(parseNbackDurationParam('0', true)).toBe(180_000);
+    expect(parseNbackDurationParam('999', true)).toBe(180_000);
+    expect(parseNbackDurationParam(null, true)).toBe(180_000);
   });
 });

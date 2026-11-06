@@ -126,3 +126,11 @@ export function dailyProgress(sessions: NbackPoint[], today: DateKey, days: numb
     return { date, level, accuracyPct };
   });
 }
+
+/** E2E runs and the dev server may shorten the session with `?duration=<s>` (1–180). */
+export function parseNbackDurationParam(param: string | null, testMode: boolean): number {
+  if (!testMode || param === null) return NBACK_DURATION_MS;
+  const seconds = Number(param);
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > NBACK_DURATION_MS / 1_000) return NBACK_DURATION_MS;
+  return seconds * 1_000;
+}
