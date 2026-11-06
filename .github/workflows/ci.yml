@@ -25,6 +25,7 @@ jobs:
       - run: npm run lint
       - run: npm run deps
       - run: npm run test:coverage
+      - run: npm run test:scripts
       - run: npm run build
 
   e2e:
