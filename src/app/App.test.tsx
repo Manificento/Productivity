@@ -38,11 +38,8 @@ describe('App shell', () => {
     expect(screen.queryByText(/Цели дня/)).not.toBeInTheDocument();
   });
 
-  it('Given модули progress, notes When я открываю их маршруты Then пустое состояние с названием блока и «скоро»; в навигации они пока скрыты', async () => {
-    const skeletons: [string, string][] = [
-      ['progress', 'Прогресс'],
-      ['notes', 'Заметки'],
-    ];
+  it('Given модуль notes When я открываю его маршрут Then пустое состояние с названием блока и «скоро»; в навигации он пока скрыт', async () => {
+    const skeletons: [string, string][] = [['notes', 'Заметки']];
     for (const [id, title] of skeletons) {
       window.location.hash = `#/${id}`;
       const { unmount } = render(<App />);
