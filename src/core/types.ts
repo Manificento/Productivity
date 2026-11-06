@@ -143,6 +143,39 @@ export interface NightSample {
   noisePeakDb: number | null;
 }
 
+/**
+ * Where a record imported from Health Connect / HealthKit came from (`readSleep` / `readWorkouts` in `platform.ts`).
+ * The same record read twice has the same `externalId`; the same night logged by two apps has two `sourceId`s.
+ */
+export interface HealthImportSource {
+  /** Id of the record in the health store (HealthKit UUID / Health Connect metadata id). */
+  externalId: string;
+  /** App that recorded it (bundle / package id), e.g. `com.sec.android.app.shealth`; `unknown` if not reported. */
+  sourceId: string;
+  /** Human-readable app or device name, when the store reports one. */
+  sourceName?: string;
+}
+
+/** One night from the health store, ready for `saveSleep` (the module adds `quality`). */
+export interface ImportedSleep extends HealthImportSource {
+  bedtime: Millis;
+  wakeTime: Millis;
+  /** Minutes actually asleep (stages «asleep», «light», «deep», «REM»), when the store reports stages. */
+  asleepMin?: number;
+}
+
+/** One workout from the health store, ready for `saveWorkout` (the module adds `rpe`). */
+export interface ImportedWorkout extends HealthImportSource {
+  /** Local day of the start. */
+  date: DateKey;
+  startedAt: Millis;
+  /** The app's workout type name: Силовая, Бег, Велосипед, Плавание, Йога, Ходьба or Другое. */
+  type: string;
+  durationMin: number;
+  kcal?: number;
+  distanceM?: number;
+}
+
 export interface Food extends BaseRecord {
   name: string;
   /** Per 100 g. */

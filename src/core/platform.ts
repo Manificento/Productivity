@@ -1,6 +1,10 @@
 import { Capacitor, registerPlugin, type PermissionState } from '@capacitor/core';
+import { Health, type HealthPlugin } from '@capgo/capacitor-health';
 import { LocalNotifications, type LocalNotificationsPlugin } from '@capacitor/local-notifications';
-import type { Millis, NightSample } from './types';
+import { fromDateKey, shiftDateKey, toDateKey } from './dates';
+import { toImportedWorkouts, toSleepNights, type StoreSleepSample, type StoreWorkout } from './healthImport';
+import { atLocalTime } from './logging/sleepTime';
+import type { DateKey, ImportedSleep, ImportedWorkout, Millis, NightSample } from './types';
 
 /**
  * The only door to the native platform (ADR-0008). Modules never import `@capacitor/*` — `npm run deps` forbids it —
@@ -372,4 +376,115 @@ export async function readNightSamples(): Promise<NightSample[]> {
  */
 export async function clearNightSamples(upTo: Millis): Promise<void> {
   if (sensorsAvailable()) await sleepSensors.clearSamples({ upTo });
+}
+
+// ---------- health store import (Health Connect / HealthKit) ----------
+
+/** What the import needs from the health plugin; `@capgo/capacitor-health` in the app, a fake in tests. */
+export type HealthStoreBridge = Pick<
+  HealthPlugin,
+  'isAvailable' | 'checkAuthorization' | 'requestAuthorization' | 'readSamples' | 'queryWorkouts'
+>;
+
+let healthStore: HealthStoreBridge = Health;
+
+/** Tests swap the plugin through `src/test/platform.ts`; app code never calls this. */
+export function setHealthStoreBridge(next: HealthStoreBridge | null): void {
+  healthStore = next ?? Health;
+}
+
+/** `ok` with the records (possibly none), or why nothing could be read, with a ready-to-show Russian `hint`. */
+export type HealthReadResult<T> =
+  | { status: 'ok'; items: T[] }
+  | { status: 'denied'; hint: string }
+  | { status: 'unsupported'; hint: string }
+  | { status: 'failed'; hint: string };
+
+export const HEALTH_TEXTS = {
+  web: 'Импорт из Health Connect и Apple Health работает только в приложении для телефона.',
+  nativeUnsupported: 'Импорт данных о здоровье недоступен в этой версии приложения. Обновите приложение.',
+  noHealthConnect: 'Установите «Health Connect» из Google Play, чтобы LifeOS мог читать сон и тренировки.',
+  noHealthKit: 'Приложение «Здоровье» недоступно на этом устройстве.',
+  deniedAndroid: 'Нет доступа к данным. Разрешите LifeOS читать сон и тренировки в настройках Health Connect.',
+  deniedIos: 'Нет доступа к данным. Разрешите LifeOS читать сон и тренировки: Настройки → Здоровье → Доступ к данным.',
+  failed: 'Не удалось прочитать данные о здоровье. Попробуйте ещё раз.',
+} as const;
+
+type HealthDataKind = 'sleep' | 'workouts';
+/** Health Connect / HealthKit pages: enough for a month of workouts, bounded so a broken anchor cannot loop. */
+const WORKOUT_PAGE = 100;
+const MAX_WORKOUT_PAGES = 20;
+const MAX_SLEEP_SAMPLES = 2000;
+
+async function healthAccess(kind: HealthDataKind): Promise<HealthReadResult<never> | undefined> {
+  if (!isNativePlatform()) return { status: 'unsupported', hint: HEALTH_TEXTS.web };
+  if (!getCapabilities().healthImport) return { status: 'unsupported', hint: HEALTH_TEXTS.nativeUnsupported };
+  const android = getPlatform() === 'android';
+  if (!(await healthStore.isAvailable()).available) {
+    return { status: 'unsupported', hint: android ? HEALTH_TEXTS.noHealthConnect : HEALTH_TEXTS.noHealthKit };
+  }
+  const request = { read: [kind] };
+  let status = await healthStore.checkAuthorization(request);
+  if (!status.readAuthorized.includes(kind)) status = await healthStore.requestAuthorization(request);
+  if (!status.readAuthorized.includes(kind)) {
+    return { status: 'denied', hint: android ? HEALTH_TEXTS.deniedAndroid : HEALTH_TEXTS.deniedIos };
+  }
+  return undefined;
+}
+
+async function readHealth<T>(kind: HealthDataKind, read: () => Promise<T[]>): Promise<HealthReadResult<T>> {
+  try {
+    const blocked = await healthAccess(kind);
+    if (blocked) return blocked;
+    return { status: 'ok', items: await read() };
+  } catch (e) {
+    console.error(`read ${kind} from the health store failed`, e);
+    return { status: 'failed', hint: HEALTH_TEXTS.failed };
+  }
+}
+
+const inDays = (day: DateKey, from: DateKey, to: DateKey) => day >= from && day <= to;
+
+/**
+ * Nights from Health Connect (Android) / HealthKit (iOS) whose wake-up day is in `from..to` — the day `saveSleep`
+ * files a night under. Each night carries `externalId` / `sourceId`, so the same night from two apps or read twice
+ * is told apart. Asks for read access once. Never rejects; the module writes through `saveSleep` itself.
+ */
+export async function readSleep(from: DateKey, to: DateKey): Promise<HealthReadResult<ImportedSleep>> {
+  return readHealth('sleep', async () => {
+    const { samples } = await healthStore.readSamples({
+      dataType: 'sleep',
+      // A night that ends on `from` began the evening before.
+      startDate: new Date(atLocalTime(shiftDateKey(from, -1), '12:00')).toISOString(),
+      endDate: fromDateKey(shiftDateKey(to, 1)).toISOString(),
+      limit: MAX_SLEEP_SAMPLES,
+      ascending: true,
+    });
+    return toSleepNights(samples as StoreSleepSample[]).filter((n) => inDays(toDateKey(n.wakeTime), from, to));
+  });
+}
+
+/**
+ * Workouts from Health Connect / HealthKit that started on a day in `from..to`, in the app's types (the module adds
+ * `rpe` and writes through `saveWorkout`). Each carries `externalId` / `sourceId`. Asks for read access once.
+ * Never rejects.
+ */
+export async function readWorkouts(from: DateKey, to: DateKey): Promise<HealthReadResult<ImportedWorkout>> {
+  return readHealth('workouts', async () => {
+    const workouts: StoreWorkout[] = [];
+    let anchor: string | undefined;
+    for (let page = 0; page < MAX_WORKOUT_PAGES; page++) {
+      const result = await healthStore.queryWorkouts({
+        startDate: fromDateKey(from).toISOString(),
+        endDate: fromDateKey(shiftDateKey(to, 1)).toISOString(),
+        limit: WORKOUT_PAGE,
+        ascending: true,
+        ...(anchor && { anchor }),
+      });
+      workouts.push(...result.workouts);
+      anchor = result.anchor ?? undefined;
+      if (!anchor) break;
+    }
+    return toImportedWorkouts(workouts).filter((w) => inDays(w.date, from, to));
+  });
 }

@@ -178,6 +178,15 @@ Android Chrome через service worker), пока открыта вкладк�
 Расчёт по минуте и политика буфера — чистые Java-классы `NightMinute` / `NightBuffer` с JUnit-тестами
 (`android/app/src/test`, CI `android.yml`). Алгоритм фаз сна — в модуле `health`. В тестах — `mockNightSensors()` из
 `src/test/platform.ts`.
+Импорт из хранилища здоровья (#141) — `readSleep(from, to)` и `readWorkouts(from, to)` из `platform.ts` (плагин
+`@capgo/capacitor-health`: Health Connect на Android, HealthKit на iOS). Возвращают ночи (`ImportedSleep`, по дню
+подъёма) и тренировки (`ImportedWorkout`, типы формы тренировок) из `src/core/types.ts` с `externalId` и `sourceId`:
+одна ночь из двух приложений — две записи, повторное чтение — те же id. Модуль `health` сам решает про дубли и пишет
+через `saveSleep` / `saveWorkout`. Сопоставление — чистые функции `src/core/healthImport.ts`. Результат всегда статус:
+`denied` / `unsupported` (веб, нет плагина, не установлен Health Connect) / `failed` с `hint`. Из прав плагина в
+манифесте оставлены только `READ_SLEEP` и `READ_EXERCISE`, `minSdk` — 26 (Health Connect нет ниже Android 8).
+Политика конфиденциальности для экрана Health Connect — контент владельца, отдельная задача. В тестах —
+`mockHealthStore()` из `src/test/platform.ts`.
 В `AndroidManifest.xml` намеренно выключены Auto Backup и перенос на новое устройство (`allowBackup="false"`,
 `data_extraction_rules.xml`): IndexedDB с данными о здоровье не покидает телефон до облака (ADR-0009) и согласия.
 Service worker PWA регистрирует `src/main.tsx` только на вебе (`src/app/serviceWorker.ts`): в нативной оболочке бандл

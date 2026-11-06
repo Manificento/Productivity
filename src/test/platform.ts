@@ -2,10 +2,12 @@ import { vi } from 'vitest';
 import {
   CAPABILITY_PLUGINS,
   clearWebReminders,
+  setHealthStoreBridge,
   setLocalNotificationsBridge,
   setPlatformRuntime,
   setSleepSensorsBridge,
   type Capability,
+  type HealthStoreBridge,
   type LocalNotificationsBridge,
   type SleepSensorsBridge,
 } from '../core/platform';
@@ -111,10 +113,65 @@ export function mockNightSensors(
   return fake;
 }
 
+type HealthKind = 'sleep' | 'workouts';
+type StoreSamples = Awaited<ReturnType<HealthStoreBridge['readSamples']>>['samples'];
+type StoreWorkouts = Awaited<ReturnType<HealthStoreBridge['queryWorkouts']>>['workouts'];
+
+/** A fake Health Connect / HealthKit plugin with stored samples and the user's answers to the access sheet. */
+export interface FakeHealthStore {
+  available: boolean;
+  /** Kinds already allowed; `answer` is what the access sheet adds for the asked kinds. */
+  granted: HealthKind[];
+  answer: 'allow' | 'deny';
+  sleep: StoreSamples;
+  workouts: StoreWorkouts;
+  /** Workouts per page (pages are chained with an anchor, as the plugin does). */
+  pageSize: number;
+  bridge: { [K in keyof HealthStoreBridge]: ReturnType<typeof vi.fn<HealthStoreBridge[K]>> };
+}
+
+export function mockHealthStore(granted: HealthKind[] = ['sleep', 'workouts'], answer: 'allow' | 'deny' = 'allow') {
+  const fake = {
+    available: true,
+    granted: [...granted],
+    answer,
+    sleep: [],
+    workouts: [],
+    pageSize: 100,
+  } as unknown as FakeHealthStore;
+  const status = (asked: HealthKind[]) => ({
+    readAuthorized: asked.filter((k) => fake.granted.includes(k)),
+    readDenied: asked.filter((k) => !fake.granted.includes(k)),
+    writeAuthorized: [],
+    writeDenied: [],
+  });
+  const asked = (options: { read?: string[] }) => (options.read ?? []) as HealthKind[];
+  fake.bridge = {
+    isAvailable: vi.fn(async () => ({ available: fake.available })),
+    checkAuthorization: vi.fn(async (options) => status(asked(options))),
+    requestAuthorization: vi.fn(async (options) => {
+      if (fake.answer === 'allow') fake.granted.push(...asked(options));
+      return status(asked(options));
+    }),
+    readSamples: vi.fn(async ({ startDate, endDate }) => ({
+      samples: fake.sleep.filter((s) => s.endDate > (startDate ?? '') && s.startDate < (endDate ?? '9')),
+    })),
+    queryWorkouts: vi.fn(async ({ startDate, endDate, anchor }) => {
+      const inRange = fake.workouts.filter((w) => w.startDate >= (startDate ?? '') && w.startDate < (endDate ?? '9'));
+      const from = anchor ? Number(anchor) : 0;
+      const next = from + fake.pageSize;
+      return { workouts: inRange.slice(from, next), ...(next < inRange.length && { anchor: String(next) }) };
+    }),
+  };
+  setHealthStoreBridge(fake.bridge);
+  return fake;
+}
+
 /** Back to the real bridge: in jsdom that is the web, where every capability is `false`. */
 export function resetPlatform(): void {
   setPlatformRuntime(null);
   setLocalNotificationsBridge(null);
   setSleepSensorsBridge(null);
+  setHealthStoreBridge(null);
   clearWebReminders();
 }
