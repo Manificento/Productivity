@@ -1,3 +1,5 @@
+import { isValid } from 'date-fns';
+import { fromDateKey, toDateKey } from '../../../core/dates';
 import type { ImportProject, ImportTask } from '../../../core/logging/tasks';
 
 /**
@@ -11,6 +13,8 @@ export const NOTE_DUE_LABEL = 'срок из Todoist';
 export interface TodoistPreview {
   project: ImportProject;
   tasks: ImportTask[];
+  /** Длительность каждой задачи в минутах (как в `tasks`), undefined — не указана. */
+  durationsMin: (number | undefined)[];
   /** Задач с распознанной длительностью (30 мин, 2 ч …). */
   durations: number;
   /** Задач, у которых DATE написан словами и срок не перенесён. */
@@ -76,17 +80,36 @@ function hash(s: string): string {
   return h.toString(16).padStart(8, '0');
 }
 
-export function todoistExternalId(project: string, title: string): string {
-  return `${hash(`${project}\u0000${title}`)}${hash(`${title}\u0000${project}`)}`;
+/** Проект сравнивается без учёта регистра, как в `importTasks`; `occurrence` — номер повтора того же текста в файле. */
+export function todoistExternalId(project: string, title: string, occurrence = 1): string {
+  const p = project.trim().toLocaleLowerCase('ru');
+  const t = occurrence > 1 ? `${title}\u0000#${occurrence}` : title;
+  return `${hash(`${p}\u0000${t}`)}${hash(`${t}\u0000${p}`)}`;
 }
 
-const ISO = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+const ISO = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** ISO-срок: `2025-03-31`, `2025-03-31T11:00:00` → день и время; иначе undefined. */
-export function parseIsoDue(value: string): { dueDate: string; dueTime?: string } | undefined {
+type ParsedDue = { dueDate: string; dueTime?: string } | { dueAt: number };
+
+/**
+ * ISO-срок: `2025-03-31`, `2025-03-31T11:00:00` → день и время как записано;
+ * со смещением (`Z`, `+03:00`) — момент времени, локальный день и время выведет `importTasks`.
+ * Несуществующий день или время → undefined.
+ */
+export function parseIsoDue(value: string): ParsedDue | undefined {
   const m = ISO.exec(value.trim());
-  if (!m?.[1]) return undefined;
-  return { dueDate: m[1], ...(m[2] && { dueTime: m[2] }) };
+  const day = m?.[1];
+  if (!m || !day) return undefined;
+  const d = fromDateKey(day);
+  if (!isValid(d) || toDateKey(d) !== day) return undefined;
+  const time = m[2];
+  if (time && !HH_MM.test(time)) return undefined;
+  if (m[3] && time) {
+    const at = Date.parse(`${day}T${time}:00${m[3] === 'Z' ? 'Z' : m[3].replace(/^([+-]\d{2})(\d{2})$/, '$1:$2')}`);
+    return Number.isNaN(at) ? undefined : { dueAt: at };
+  }
+  return { dueDate: day, ...(time && { dueTime: time }) };
 }
 
 function durationMinutes(value: string, unit: string): number | undefined {
@@ -125,7 +148,8 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
 
   const tasks: ImportTask[] = [];
   let section: string | undefined;
-  let durations = 0;
+  const durationsMin: (number | undefined)[] = [];
+  const seen = new Map<string, number>();
   let unrecognizedDates = 0;
   let last: ImportTask | undefined;
 
@@ -150,23 +174,26 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
 
     const dateRaw = cell(r, idx.date);
     const deadlineRaw = cell(r, idx.deadline);
-    let due = dateRaw ? parseIsoDue(dateRaw) : parseIsoDue(deadlineRaw);
-    if (dateRaw && !due) {
+    const date = dateRaw ? parseIsoDue(dateRaw) : undefined;
+    const due = date ?? (dateRaw ? undefined : parseIsoDue(deadlineRaw));
+    if (dateRaw && !date) {
       unrecognizedDates += 1;
       notes.push(`${NOTE_DUE_LABEL}: ${dateRaw}`);
-    }
-    if (!dateRaw && deadlineRaw && !due) {
+      // Срок со слов не переносим, но дедлайн не теряем.
+      if (deadlineRaw) notes.push(`дедлайн из Todoist: ${deadlineRaw}`);
+    } else if (!dateRaw && deadlineRaw && !due) {
       unrecognizedDates += 1;
-      notes.push(`${NOTE_DUE_LABEL}: ${deadlineRaw}`);
-      due = undefined;
+      notes.push(`дедлайн из Todoist: ${deadlineRaw}`);
     }
 
     const priority = Number(cell(r, idx.priority));
-    if (durationMinutes(cell(r, idx.duration), cell(r, idx.unit)) !== undefined) durations += 1;
+    durationsMin.push(durationMinutes(cell(r, idx.duration), cell(r, idx.unit)));
+    const occurrence = (seen.get(content) ?? 0) + 1;
+    seen.set(content, occurrence);
 
     const task: ImportTask = {
       title: content,
-      externalId: todoistExternalId(projectName, content),
+      externalId: todoistExternalId(projectName, content, occurrence),
       projectName,
       row,
       ...(notes.length > 0 && { notes: notes.join('\n') }),
@@ -178,5 +205,14 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
     last = task;
   });
 
-  return { ok: true, preview: { project: { name: projectName }, tasks, durations, unrecognizedDates } };
+  return {
+    ok: true,
+    preview: {
+      project: { name: projectName },
+      tasks,
+      durationsMin,
+      durations: durationsMin.filter((m) => m !== undefined).length,
+      unrecognizedDates,
+    },
+  };
 }

@@ -44,18 +44,21 @@ describe('Todoist import card', () => {
   });
 
   it('Given a wrong format or non-UTF-8 file When I upload it Then a clear error is shown and data is unchanged', async () => {
+    await db.tasks.put({ id: 'mine', createdAt: 0, updatedAt: 0, title: 'Моя', priority: 4, tags: [] });
     render(<TodoistImportCard />);
     upload('a,b\n1,2');
     expect((await screen.findByRole('alert')).textContent).toContain('TYPE,CONTENT');
     upload(new Uint8Array([0xff, 0xfe, 0x41]));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('UTF-8'));
-    expect(await db.tasks.count()).toBe(0);
+    expect(await db.tasks.count()).toBe(1);
+    expect(await db.tasks.get('mine')).toBeDefined();
   });
 
   it('Given the preview When I press «Отмена» Then nothing is written', async () => {
     render(<TodoistImportCard />);
     upload(new Uint8Array(SAMPLE));
     fireEvent.click(await screen.findByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await db.tasks.count()).toBe(0);
     expect(await db.projects.count()).toBe(0);
   });

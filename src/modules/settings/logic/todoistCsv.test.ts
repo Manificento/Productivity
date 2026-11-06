@@ -18,6 +18,7 @@ describe('Todoist CSV: parser', () => {
     expect(p.project.name).toBe('Импорт Todoist');
     expect(p.tasks.map((t) => t.priority)).toEqual([1, 4, 4, 3]);
     expect(p.durations).toBe(2);
+    expect(p.durationsMin).toEqual([30, undefined, 120, undefined]);
   });
 
   it('Given note, section, INDENT>=2, meta and empty rows Then note joins the task above, section becomes a tag, nested is a separate task, meta and empty are skipped', () => {
@@ -46,6 +47,7 @@ describe('Todoist CSV: parser', () => {
     const first = p.tasks[0];
     expect(first?.dueDate).toBeUndefined();
     expect(first?.notes).toContain('срок из Todoist: today at 11:00');
+    expect(first?.notes).toContain('дедлайн из Todoist: 2025-03-31');
     expect(first?.notes).toContain('Only available on Tuesdays and Thursdays');
   });
 
@@ -66,5 +68,20 @@ describe('Todoist CSV: parser', () => {
   it('handles quoted cells with commas, quotes and line breaks', () => {
     const p = preview(`${HEADER}\ntask,"Купить, ""молоко""",\"a\nb\",4,1,,,,,,,,,\n`);
     expect(p.tasks[0]).toMatchObject({ title: 'Купить, "молоко"', notes: 'a\nb' });
+  });
+  it('Given an ISO DATE with an offset Then it becomes an instant, not a UTC day stored as local', () => {
+    const p = preview(`${HEADER}\ntask,A,,4,1,,,2025-03-31T23:30:00Z,en,,,,,\ntask,B,,4,1,,,2025-02-30,en,,,,,\n`);
+    expect(p.tasks[0]).toMatchObject({ dueAt: Date.parse('2025-03-31T23:30:00Z') });
+    expect(p.tasks[0]?.dueDate).toBeUndefined();
+    expect(p.tasks[1]?.dueDate).toBeUndefined();
+    expect(p.unrecognizedDates).toBe(1);
+  });
+
+  it('Given two tasks with the same text Then both are kept with different stable externalIds; project case is ignored', () => {
+    const csv = `${HEADER}\ntask,Позвонить,,4,1,,,,,,,,,\ntask,Позвонить,,4,1,,,,,,,,,\n`;
+    const ids = preview(csv).tasks.map((t) => t.externalId);
+    expect(new Set(ids).size).toBe(2);
+    expect(preview(csv).tasks.map((t) => t.externalId)).toEqual(ids);
+    expect(todoistExternalId('Дом', 'x')).toBe(todoistExternalId('дом', 'x'));
   });
 });

@@ -91,8 +91,9 @@ export function TodoistImportCard() {
             )}
             {preview.unrecognizedDates > 0 && (
               <p role="note" className="mb-2 text-sm text-amber-800 dark:text-amber-300">
-                {preview.unrecognizedDates} {plural(preview.unrecognizedDates, 'срок', 'срока', 'сроков')} не
-                распознаны, проверьте после импорта
+                {preview.unrecognizedDates} {plural(preview.unrecognizedDates, 'срок', 'срока', 'сроков')}{' '}
+                {plural(preview.unrecognizedDates, 'не распознан', 'не распознаны', 'не распознаны')}, проверьте после
+                импорта
               </p>
             )}
             {error && (
