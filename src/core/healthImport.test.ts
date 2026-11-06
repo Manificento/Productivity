@@ -33,6 +33,7 @@ describe('toSleepNights', () => {
         bedtime: ms(5, 23, 30),
         wakeTime: ms(6, 7),
         asleepMin: 420,
+        main: true,
       },
     ]);
   });
@@ -63,10 +64,51 @@ describe('toSleepNights', () => {
       seg('w', 5, 23, 30, 6, 7, 0, 'asleep', 'com.watch.app'), // the same night from another app
     ]);
     expect(nights).toEqual([
-      { externalId: 'a', sourceId: 'com.apple.health', bedtime: ms(5, 23), wakeTime: ms(6, 6, 50), asleepMin: 390 },
-      { externalId: 'w', sourceId: 'com.watch.app', bedtime: ms(5, 23, 30), wakeTime: ms(6, 7), asleepMin: 450 },
-      { externalId: 'd', sourceId: 'com.apple.health', bedtime: ms(6, 14), wakeTime: ms(6, 14, 40), asleepMin: 40 },
+      {
+        externalId: 'a',
+        sourceId: 'com.apple.health',
+        bedtime: ms(5, 23),
+        wakeTime: ms(6, 6, 50),
+        asleepMin: 390,
+        main: true,
+      },
+      {
+        externalId: 'w',
+        sourceId: 'com.watch.app',
+        bedtime: ms(5, 23, 30),
+        wakeTime: ms(6, 7),
+        asleepMin: 450,
+        main: true,
+      },
+      // The nap ends on the same day as the night: an extra entry, not the main sleep `saveSleep` should keep.
+      {
+        externalId: 'd',
+        sourceId: 'com.apple.health',
+        bedtime: ms(6, 14),
+        wakeTime: ms(6, 14, 40),
+        asleepMin: 40,
+        main: false,
+      },
     ]);
+  });
+
+  it('counts asleep minutes once: short segments are not rounded one by one, overlaps and re-syncs do not double', () => {
+    const at = (d: number, h: number, m: number, s = 0) => new Date(2026, 10, d, h, m, s).toISOString();
+    const halfMinutes = Array.from({ length: 60 }, (_, i) => ({
+      startDate: at(6, 1, Math.floor(i / 2), (i % 2) * 30),
+      endDate: at(6, 1, Math.floor((i + 1) / 2), ((i + 1) % 2) * 30),
+      sourceId: 'com.watch',
+      sleepState: 'light' as const,
+    }));
+    expect(toSleepNights(halfMinutes)[0]).toMatchObject({ asleepMin: 30 });
+
+    const twice = { startDate: iso(5, 23), endDate: iso(6, 7), sourceId: 'com.watch', sleepState: 'asleep' as const };
+    expect(toSleepNights([twice, { ...twice }])[0]).toMatchObject({ asleepMin: 480 });
+  });
+
+  it('an «in bed»-only night has unknown asleep minutes, not 0', () => {
+    const [night] = toSleepNights([{ startDate: iso(5, 23), endDate: iso(6, 7), sleepState: 'inBed' }]);
+    expect(night.asleepMin).toBeUndefined();
   });
 
   it('without stages or states leaves asleepMin out, and gives a stable id when the store has none', () => {
@@ -76,6 +118,7 @@ describe('toSleepNights', () => {
       sourceId: 'unknown',
       bedtime: ms(5, 23),
       wakeTime: ms(6, 7),
+      main: true,
     });
   });
 

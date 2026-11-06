@@ -117,12 +117,20 @@ type HealthKind = 'sleep' | 'workouts';
 type StoreSamples = Awaited<ReturnType<HealthStoreBridge['readSamples']>>['samples'];
 type StoreWorkouts = Awaited<ReturnType<HealthStoreBridge['queryWorkouts']>>['workouts'];
 
-/** A fake Health Connect / HealthKit plugin with stored samples and the user's answers to the access sheet. */
+/** A fake Health Connect / HealthKit plugin with stored records and the user's answers to the access sheet. */
 export interface FakeHealthStore {
   available: boolean;
-  /** Kinds already allowed; `answer` is what the access sheet adds for the asked kinds. */
+  /** `AvailabilityResult.reason` when not available. */
+  reason?: string;
+  /** Kinds the user allowed. */
   granted: HealthKind[];
-  answer: 'allow' | 'deny';
+  /** What the user answers in the access sheet, per kind (missing — deny). */
+  answer: Partial<Record<HealthKind, 'allow' | 'deny'>>;
+  /**
+   * HealthKit: once the sheet was shown, every asked kind reads as authorized whatever the user chose, and reading
+   * a refused kind simply returns nothing.
+   */
+  hidesDenial: boolean;
   sleep: StoreSamples;
   workouts: StoreWorkouts;
   /** Workouts per page (pages are chained with an anchor, as the plugin does). */
@@ -130,38 +138,53 @@ export interface FakeHealthStore {
   bridge: { [K in keyof HealthStoreBridge]: ReturnType<typeof vi.fn<HealthStoreBridge[K]>> };
 }
 
-export function mockHealthStore(granted: HealthKind[] = ['sleep', 'workouts'], answer: 'allow' | 'deny' = 'allow') {
+export function mockHealthStore(
+  granted: HealthKind[] = ['sleep', 'workouts'],
+  answer: FakeHealthStore['answer'] = { sleep: 'allow', workouts: 'allow' },
+): FakeHealthStore {
   const fake = {
     available: true,
     granted: [...granted],
     answer,
+    hidesDenial: false,
     sleep: [],
     workouts: [],
     pageSize: 100,
   } as unknown as FakeHealthStore;
-  const status = (asked: HealthKind[]) => ({
-    readAuthorized: asked.filter((k) => fake.granted.includes(k)),
-    readDenied: asked.filter((k) => !fake.granted.includes(k)),
-    writeAuthorized: [],
-    writeDenied: [],
-  });
+  const shown = new Set<HealthKind>();
+  const status = (asked: HealthKind[]) => {
+    const ok = (k: HealthKind) => fake.granted.includes(k) || (fake.hidesDenial && shown.has(k));
+    return {
+      readAuthorized: asked.filter(ok),
+      readDenied: asked.filter((k) => !ok(k)),
+      writeAuthorized: [],
+      writeDenied: [],
+    };
+  };
   const asked = (options: { read?: string[] }) => (options.read ?? []) as HealthKind[];
+  const readable = (kind: HealthKind) => fake.granted.includes(kind);
+  const overlaps = (r: { startDate: string; endDate: string }, from = '', to = '9') =>
+    r.endDate > from && r.startDate < to;
   fake.bridge = {
-    isAvailable: vi.fn(async () => ({ available: fake.available })),
+    isAvailable: vi.fn(async () => ({ available: fake.available, ...(fake.reason && { reason: fake.reason }) })),
     checkAuthorization: vi.fn(async (options) => status(asked(options))),
     requestAuthorization: vi.fn(async (options) => {
-      if (fake.answer === 'allow') fake.granted.push(...asked(options));
+      for (const k of asked(options)) {
+        shown.add(k);
+        if (fake.answer[k] === 'allow' && !fake.granted.includes(k)) fake.granted.push(k);
+      }
       return status(asked(options));
     }),
-    readSamples: vi.fn(async ({ startDate, endDate }) => ({
-      samples: fake.sleep.filter((s) => s.endDate > (startDate ?? '') && s.startDate < (endDate ?? '9')),
+    readSamples: vi.fn(async ({ startDate, endDate, limit = 100 }) => ({
+      samples: readable('sleep') ? fake.sleep.filter((s) => overlaps(s, startDate, endDate)).slice(0, limit) : [],
     })),
     queryWorkouts: vi.fn(async ({ startDate, endDate, anchor }) => {
-      const inRange = fake.workouts.filter((w) => w.startDate >= (startDate ?? '') && w.startDate < (endDate ?? '9'));
+      const inRange = readable('workouts') ? fake.workouts.filter((w) => overlaps(w, startDate, endDate)) : [];
       const from = anchor ? Number(anchor) : 0;
       const next = from + fake.pageSize;
       return { workouts: inRange.slice(from, next), ...(next < inRange.length && { anchor: String(next) }) };
     }),
+    openHealthConnectSettings: vi.fn(async () => {}),
   };
   setHealthStoreBridge(fake.bridge);
   return fake;

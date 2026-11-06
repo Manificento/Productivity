@@ -160,8 +160,13 @@ export interface HealthImportSource {
 export interface ImportedSleep extends HealthImportSource {
   bedtime: Millis;
   wakeTime: Millis;
-  /** Minutes actually asleep (stages «asleep», «light», «deep», «REM»), when the store reports stages. */
+  /** Minutes actually asleep (stages «asleep», «light», «deep», «REM»); absent when the store reports no stages. */
   asleepMin?: number;
+  /**
+   * The longest sleep of this app ending on that day. Naps are separate entries with `main: false`; `saveSleep`
+   * keeps one record per day, so save the main one.
+   */
+  main: boolean;
 }
 
 /** One workout from the health store, ready for `saveWorkout` (the module adds `rpe`). */
@@ -172,7 +177,9 @@ export interface ImportedWorkout extends HealthImportSource {
   /** The app's workout type name: Силовая, Бег, Велосипед, Плавание, Йога, Ходьба or Другое. */
   type: string;
   durationMin: number;
+  /** Energy, kcal. Absent on Android (reading it needs extra Health Connect permissions, not requested). */
   kcal?: number;
+  /** Distance, metres. Absent on Android, as `kcal`. */
   distanceM?: number;
 }
 

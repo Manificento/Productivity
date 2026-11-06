@@ -54,31 +54,53 @@ interface Segment {
   sourceName?: string;
   from: Millis;
   to: Millis;
-  /** Minutes asleep in this segment; undefined when the store says nothing about states. */
-  asleepMin?: number;
+  /** Asleep intervals (ms); merged and counted once per night, so overlaps and re-syncs never double. */
+  asleep: [Millis, Millis][];
+  /** Whether the store said anything about asleep / awake (an «in bed»-only night is «unknown», not 0). */
+  statesKnown: boolean;
 }
 
 function toSegment(s: StoreSleepSample): Segment | undefined {
   const from = time(s.startDate);
   const to = time(s.endDate);
   if (from === undefined || to === undefined || to <= from) return undefined;
-  let asleepMin: number | undefined;
-  if (s.stages?.length) {
-    asleepMin = s.stages.reduce((sum, stage) => {
-      const a = time(stage.startDate);
-      const b = time(stage.endDate);
-      return ASLEEP.has(stage.stage) && a !== undefined && b !== undefined && b > a ? sum + minutes(a, b) : sum;
-    }, 0);
-  } else if (s.sleepState) {
-    asleepMin = ASLEEP.has(s.sleepState) ? minutes(from, to) : 0;
+  const asleep: [Millis, Millis][] = [];
+  let statesKnown = false;
+  const stages = s.stages?.length ? s.stages : s.sleepState ? [{ ...s, stage: s.sleepState }] : [];
+  for (const stage of stages) {
+    if (stage.stage !== 'inBed') statesKnown = true;
+    const a = time(stage.startDate);
+    const b = time(stage.endDate);
+    if (ASLEEP.has(stage.stage) && a !== undefined && b !== undefined && b > a) asleep.push([a, b]);
   }
-  return { id: s.platformId, sourceId: s.sourceId || UNKNOWN_SOURCE, sourceName: s.sourceName, from, to, asleepMin };
+  return {
+    id: s.platformId,
+    sourceId: s.sourceId || UNKNOWN_SOURCE,
+    sourceName: s.sourceName,
+    from,
+    to,
+    asleep,
+    statesKnown,
+  };
+}
+
+/** Total length of possibly overlapping intervals, minutes (rounded once). */
+function unionMinutes(intervals: [Millis, Millis][]): number {
+  const sorted = [...intervals].sort((x, y) => x[0] - y[0]);
+  let total = 0;
+  let end = -Infinity;
+  for (const [a, b] of sorted) {
+    const start = Math.max(a, end);
+    if (b > start) total += b - start;
+    end = Math.max(end, b);
+  }
+  return Math.round(total / 60_000);
 }
 
 /**
  * Nights from sleep samples. An Android session is a night already; HealthKit gives segments («in bed», «deep»…),
  * which are merged per app while the gap is under an hour. Nights of different apps stay apart (two sources).
- * Sorted by bedtime.
+ * Of several sleeps of one app ending on the same day (a night and a nap), the longest is `main`. Sorted by bedtime.
  */
 export function toSleepNights(samples: readonly StoreSleepSample[]): ImportedSleep[] {
   const segments = samples
@@ -90,11 +112,19 @@ export function toSleepNights(samples: readonly StoreSleepSample[]): ImportedSle
     const last = nights.at(-1);
     if (last && last.sourceId === seg.sourceId && seg.from - last.to < NIGHT_GAP_MS) {
       last.to = Math.max(last.to, seg.to);
-      if (seg.asleepMin !== undefined) last.asleepMin = (last.asleepMin ?? 0) + seg.asleepMin;
+      last.asleep.push(...seg.asleep);
+      last.statesKnown ||= seg.statesKnown;
     } else {
-      nights.push({ ...seg });
+      nights.push({ ...seg, asleep: [...seg.asleep] });
     }
   }
+  const longest = new Map<string, Segment>();
+  for (const n of nights) {
+    const key = `${n.sourceId}|${toDateKey(n.to)}`;
+    const best = longest.get(key);
+    if (!best || n.to - n.from > best.to - best.from) longest.set(key, n);
+  }
+  const main = new Set(longest.values());
   return nights
     .sort((a, b) => a.from - b.from)
     .map((n) => ({
@@ -103,7 +133,8 @@ export function toSleepNights(samples: readonly StoreSleepSample[]): ImportedSle
       ...(n.sourceName !== undefined && { sourceName: n.sourceName }),
       bedtime: n.from,
       wakeTime: n.to,
-      ...(n.asleepMin !== undefined && { asleepMin: n.asleepMin }),
+      ...(n.statesKnown && { asleepMin: Math.min(unionMinutes(n.asleep), minutes(n.from, n.to)) }),
+      main: main.has(n),
     }));
 }
 
@@ -114,7 +145,7 @@ const TYPE_NAMES: [RegExp, string][] = [
   ],
   [/running|trackAndField/i, 'Бег'],
   [/cycling|biking|handCycling/i, 'Велосипед'],
-  [/swimming|waterFitness|waterPolo/i, 'Плавание'],
+  [/swimming/i, 'Плавание'],
   [/yoga/i, 'Йога'],
   [/walking|hiking/i, 'Ходьба'],
 ];

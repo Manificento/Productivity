@@ -40,6 +40,14 @@ jobs:
       - run: npx cap sync android
       - run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
         working-directory: android
+      # Google Play asks to justify every health permission: only sleep and workouts may be read (#141).
+      - name: Health permissions are only READ_SLEEP and READ_EXERCISE
+        run: |
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt
+          ACTUAL=$("$AAPT" dump permissions android/app/build/outputs/apk/debug/app-debug.apk | grep -o "android.permission.health.[A-Z0-9_]*" | sort | tr '\n' ' ')
+          EXPECTED="android.permission.health.READ_EXERCISE android.permission.health.READ_SLEEP "
+          echo "health permissions: $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
       - uses: actions/upload-artifact@v4
         with:
           name: lifeos-debug-apk
