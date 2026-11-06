@@ -109,7 +109,7 @@ test('экзамен перестраивает режим во всех бло�
     await other.clock.setFixedTime(NOW);
     await other.goto('/#/settings');
     other.on('dialog', (d) => void d.accept());
-    await other.locator('input[type="file"]').setInputFiles(file);
+    await other.locator('input[type="file"][accept="application/json"]').setInputFiles(file);
     await expect(other.getByText('Данные восстановлены')).toBeVisible();
 
     await expectPrepOnToday(other);
