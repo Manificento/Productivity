@@ -59,3 +59,19 @@ describe('formatHoursDiff', () => {
     expect(formatHoursDiff(0.02)).toBe('0 ч');
   });
 });
+
+describe('stageSummary (#130)', () => {
+  it('sums the minutes per stage in order deep, light, awake; empty without stages', async () => {
+    const { stageSummary } = await import('./sleep');
+    const M = 60_000;
+    expect(
+      stageSummary([
+        { start: 0, end: 130 * M, stage: 'deep' },
+        { start: 130 * M, end: 375 * M, stage: 'light' },
+        { start: 375 * M, end: 390 * M, stage: 'awake' },
+        { start: 390 * M, end: 400 * M, stage: 'deep' },
+      ]),
+    ).toBe('Глубокий сон 2 ч 20 мин · лёгкий 4 ч 5 мин · без сна 15 мин');
+    expect(stageSummary([])).toBe('');
+  });
+});

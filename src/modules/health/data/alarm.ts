@@ -13,7 +13,12 @@ const STATE_KEY = 'health.alarm';
 const DISMISSAL_KEY = 'health.alarm.dismissal';
 
 /** `error`: the last attempt to set the next alarm failed — why (shown on the card; nothing will ring). */
-const State = z.object({ enabled: z.boolean(), at: z.number().optional(), error: z.string().optional() });
+const State = z.object({
+  enabled: z.boolean(),
+  at: z.number().optional(),
+  windowMin: z.number().optional(),
+  error: z.string().optional(),
+});
 export type AlarmState = z.infer<typeof State>;
 const Dismissal = z.object({ dismissedAt: z.number(), alarmAt: z.number() });
 
@@ -26,15 +31,22 @@ export function useAlarmState(): AlarmState | undefined {
   return useLiveQuery(loadAlarmState, []);
 }
 
+/** The alarm for one wake window: `at` — the wake time (its end), `windowMin` — its length (#130). */
+export interface AlarmWindow {
+  at: Millis;
+  windowMin: number;
+}
+
 /**
- * Turns the alarm on for `at` (the start of the next wake window). The native alarm repeats daily at that time (#241);
- * `keepArmed` moves it onto each day's wake window. Until the smart moment exists (NV4) it rings at `at` itself (`windowMin: 0`). Off and why, if refused.
+ * Turns the alarm on for a wake window. The native alarm repeats daily (#241) and, with night sensing on («Спать»),
+ * rings in light sleep inside the window, at its start without data (#250); `keepArmed` moves it onto each day's
+ * window. Off and why, if refused.
  */
-export async function enableAlarm(at: Millis): Promise<AlarmResult> {
-  const result = await setAlarm({ at, windowMin: 0 });
+export async function enableAlarm(w: AlarmWindow): Promise<AlarmResult> {
+  const result = await setAlarm({ at: w.at, windowMin: w.windowMin });
   await db.settings.put({
     key: STATE_KEY,
-    value: result.status === 'set' ? { enabled: true, at } : { enabled: false },
+    value: result.status === 'set' ? { enabled: true, at: w.at, windowMin: w.windowMin } : { enabled: false },
   });
   return result;
 }
@@ -50,11 +62,12 @@ export async function disableAlarm(): Promise<void> {
  * alarm). A failure is stored with its hint for the card. Switched off meanwhile — the alarm is cancelled again.
  * Never rejects.
  */
-export async function keepArmed(next: Millis | undefined, { force = false } = {}): Promise<void> {
+export async function keepArmed(next: AlarmWindow | undefined, { force = false } = {}): Promise<void> {
   const state = await loadAlarmState();
   if (!state.enabled || next === undefined) return;
-  if (!force && !state.error && state.at !== undefined && state.at > Date.now() && state.at === next) return;
-  const result = await setAlarm({ at: next, windowMin: 0 });
+  const same = state.at === next.at && state.windowMin === next.windowMin;
+  if (!force && !state.error && state.at !== undefined && state.at > Date.now() && same) return;
+  const result = await setAlarm({ at: next.at, windowMin: next.windowMin });
   if (!(await loadAlarmState()).enabled) {
     // The user switched it off while it was being set: keep it off.
     await cancelAlarm();
@@ -62,7 +75,10 @@ export async function keepArmed(next: Millis | undefined, { force = false } = {}
   }
   await db.settings.put({
     key: STATE_KEY,
-    value: result.status === 'set' ? { enabled: true, at: next } : { enabled: true, error: result.hint },
+    value:
+      result.status === 'set'
+        ? { enabled: true, at: next.at, windowMin: next.windowMin }
+        : { enabled: true, error: result.hint },
   });
 }
 

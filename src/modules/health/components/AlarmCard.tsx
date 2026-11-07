@@ -7,9 +7,12 @@ import { ALARM_TEXTS, getCapabilities, isNativePlatform } from '../../../core/pl
 import type { DateKey, SleepLog } from '../../../core/types';
 import { Button, Card, Empty, Field, Input, Rating } from '../../../ui';
 import { clearDismissal, disableAlarm, enableAlarm, useAlarmState, useDismissal } from '../data/alarm';
-import { logSleep } from '../data/sleep';
+import { loadNightSamples, logSleep } from '../data/sleep';
+import { sleepStages } from '../../../core/sleepPhases';
+import { sleepWindow } from '../../../core/logging/sleepTime';
+import type { NightSample } from '../../../core/types';
 import { nextAlarm, sleepOffer, windowLabel } from '../logic/alarm';
-import { DEFAULT_QUALITY } from '../logic/sleep';
+import { DEFAULT_QUALITY, stageSummary } from '../logic/sleep';
 
 /** The criterion's wording («доступно в приложении для телефона»), softer than core's `ALARM_TEXTS.web` error hint. */
 export const ALARM_WEB_TEXT =
@@ -32,10 +35,34 @@ function GotUp({
   const [quality, setQuality] = useState(DEFAULT_QUALITY);
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [samples, setSamples] = useState<NightSample[]>([]);
+
+  // The night recorded by «Спать» (#249): saved with stages (#130).
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void loadNightSamples().then((s) => {
+      if (alive) setSamples(s);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  let summary = '';
+  try {
+    const span = sleepWindow(offer.wakeDay, bed, wake);
+    summary = stageSummary(sleepStages(samples, span.bedtime, span.wakeTime));
+  } catch {
+    // An unfinished time in the form: no summary yet.
+  }
 
   async function save() {
     setSaving(true);
-    const result = await logSleep({ wakeDay: offer.wakeDay, bedtime: bed, wake, quality }, today);
+    const result = await logSleep(
+      { wakeDay: offer.wakeDay, bedtime: bed, wake, quality, ...(samples.length > 0 && { samples }) },
+      today,
+    );
     if (result.ok) await clearDismissal();
     else setError(result.error);
     setSaving(false);
@@ -69,6 +96,7 @@ function GotUp({
           {(id) => <Input id={id} type="time" value={wake} onChange={(e) => setWake(e.target.value)} />}
         </Field>
       </div>
+      {summary && <p className="mb-2 text-sm">{summary}</p>}
       <p className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Качество сна</p>
       <Rating label="Качество сна" value={quality} onChange={setQuality} />
       {error && (
@@ -135,7 +163,7 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
         // The screen may have stayed open past a window start: take the next window as of now.
         const upcoming = nextAlarm(Date.now(), targetsOf);
         if (!upcoming) return;
-        const result = await enableAlarm(upcoming.at);
+        const result = await enableAlarm(upcoming);
         if (result.status !== 'set') setHint(result.hint);
       }
     } finally {
@@ -150,8 +178,8 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
           <p className="text-sm text-zinc-500">Окно подъёма</p>
           <p className="text-2xl font-semibold tabular-nums">{label ?? '—'}</p>
           <p className="text-xs text-zinc-500">
-            Звонит в начале окна каждый день, даже если приложение закрыто. Окно обновляется по целям дня, когда вы
-            открываете LifeOS.
+            Каждый день, даже если приложение закрыто. Если перед сном нажать «Спать», будит в лёгкой фазе внутри окна,
+            иначе — в его начале.
           </p>
           {state.enabled && state.at !== undefined && !state.error && (
             <p className="mt-1 text-sm">Поставлен на {format(state.at, 'd MMMM, H:mm', { locale: ru })}</p>

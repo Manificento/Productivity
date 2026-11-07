@@ -13,7 +13,8 @@ import {
 } from './alarm';
 
 const NOW = new Date(2026, 10, 7, 22, 0).getTime();
-const AT = new Date(2026, 10, 8, 6, 30).getTime();
+const AT = new Date(2026, 10, 8, 7, 0).getTime(); // wake time; window 6:30–7:00
+const w = (at: number) => ({ at, windowMin: 30 });
 
 beforeEach(async () => {
   await db.settings.clear();
@@ -22,12 +23,12 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('alarm data', () => {
-  it('enable sets the native alarm at the start of the window and remembers it; disable cancels', async () => {
+  it('enable sets the native alarm for the wake window (wake time + window) and remembers it; disable cancels', async () => {
     mockNativePlatform('android', ['alarms']);
     const alarm = mockAlarm();
-    expect(await enableAlarm(AT)).toEqual({ status: 'set' });
-    expect(alarm.scheduled).toEqual({ at: AT, windowMin: 0 });
-    expect(await loadAlarmState()).toEqual({ enabled: true, at: AT });
+    expect(await enableAlarm(w(AT))).toEqual({ status: 'set' });
+    expect(alarm.scheduled).toEqual({ at: AT, windowMin: 30 });
+    expect(await loadAlarmState()).toEqual({ enabled: true, at: AT, windowMin: 30 });
 
     await disableAlarm();
     expect(alarm.scheduled).toBeUndefined();
@@ -37,25 +38,25 @@ describe('alarm data', () => {
   it('a refused alarm stays off and says why', async () => {
     mockNativePlatform('android', ['alarms']);
     mockAlarm('denied');
-    expect(await enableAlarm(AT)).toEqual({ status: 'denied', hint: ALARM_TEXTS.denied });
+    expect(await enableAlarm(w(AT))).toEqual({ status: 'denied', hint: ALARM_TEXTS.denied });
     expect(await loadAlarmState()).toEqual({ enabled: false });
   });
 
   it('keepArmed sets the next alarm once the last one has rung, and only when on', async () => {
     mockNativePlatform('android', ['alarms']);
     const alarm = mockAlarm();
-    await keepArmed(AT);
+    await keepArmed(w(AT));
     expect(alarm.bridge.set).not.toHaveBeenCalled(); // off
 
-    await enableAlarm(AT);
-    await keepArmed(AT);
+    await enableAlarm(w(AT));
+    await keepArmed(w(AT));
     expect(alarm.bridge.set).toHaveBeenCalledTimes(1); // already set for this window
 
     const tomorrow = AT + 24 * 3_600_000;
     vi.spyOn(Date, 'now').mockReturnValue(AT + 60_000); // it rang
-    await keepArmed(tomorrow);
-    expect(alarm.scheduled).toEqual({ at: tomorrow, windowMin: 0 });
-    expect(await loadAlarmState()).toEqual({ enabled: true, at: tomorrow });
+    await keepArmed(w(tomorrow));
+    expect(alarm.scheduled).toEqual({ at: tomorrow, windowMin: 30 });
+    expect(await loadAlarmState()).toEqual({ enabled: true, at: tomorrow, windowMin: 30 });
   });
 
   it('a dismissal is kept until handled', async () => {
@@ -76,22 +77,22 @@ describe('alarm data', () => {
   it('a failed re-arm is stored with its hint; switching off while it is set keeps it off; force re-sets', async () => {
     mockNativePlatform('android', ['alarms']);
     const alarm = mockAlarm();
-    await enableAlarm(AT);
+    await enableAlarm(w(AT));
     alarm.exactAlarm = 'denied';
-    await keepArmed(AT + 86_400_000);
+    await keepArmed(w(AT + 86_400_000));
     expect(await loadAlarmState()).toEqual({ enabled: true, error: ALARM_TEXTS.exactDenied });
 
     alarm.exactAlarm = 'granted';
-    await keepArmed(AT); // an error is retried
-    expect(await loadAlarmState()).toEqual({ enabled: true, at: AT });
-    await keepArmed(AT, { force: true });
+    await keepArmed(w(AT)); // an error is retried
+    expect(await loadAlarmState()).toEqual({ enabled: true, at: AT, windowMin: 30 });
+    await keepArmed(w(AT), { force: true });
     expect(alarm.bridge.set).toHaveBeenCalledTimes(4);
 
     alarm.bridge.set.mockImplementationOnce(async ({ at, windowMin }) => {
       await disableAlarm(); // the user taps «Выключен» meanwhile
       alarm.scheduled = { at, windowMin };
     });
-    await keepArmed(AT, { force: true });
+    await keepArmed(w(AT), { force: true });
     expect(await loadAlarmState()).toEqual({ enabled: false });
     expect(alarm.scheduled).toBeUndefined();
   });
