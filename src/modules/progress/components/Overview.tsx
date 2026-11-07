@@ -1,7 +1,31 @@
+import { useState } from 'react';
 import { Card, Empty } from '../../../ui';
 import { XP_HINTS, type ProgressSummary } from '../logic/xp';
 
+const ACK_KEY = 'progress.importAck';
+
+/** One-time notice per device: remembered in localStorage, which may be unavailable. */
+function useOnce(show: boolean): boolean {
+  const [seen] = useState(() => {
+    try {
+      return localStorage.getItem(ACK_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [visible] = useState(show && !seen);
+  if (show && !seen) {
+    try {
+      localStorage.setItem(ACK_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  }
+  return visible;
+}
+
 export function Overview({ s }: { s: ProgressSummary }) {
+  const notice = useOnce(s.imported > 0);
   const pct = Math.round((s.into / s.needed) * 100);
   return (
     <>
@@ -46,6 +70,18 @@ export function Overview({ s }: { s: ProgressSummary }) {
           </div>
         </dl>
       </Card>
+      {s.imported > 0 && (
+        <Card>
+          <p className="text-sm" data-testid="xp-imported">
+            Перенесено из истории: {s.imported} очков
+          </p>
+          {notice && (
+            <p role="status" className="mt-1 text-sm text-indigo-600 dark:text-indigo-400">
+              Твоя история учтена: уровень {s.level}
+            </p>
+          )}
+        </Card>
+      )}
       {s.total === 0 && (
         <Card>
           <Empty>Пока нет опыта. Он начисляется за:</Empty>
