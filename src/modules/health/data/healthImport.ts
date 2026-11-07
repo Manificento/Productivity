@@ -11,13 +11,17 @@ import { importRange, sleepInputs, workoutInputs } from '../logic/healthImport';
  * Import of sleep and workouts from Health Connect / HealthKit (#131) through `platform.ts`; nights go through
  * `saveSleep`, workouts through `saveWorkout`, both with `sourceId` + `externalId` (no duplicates on re-import, a
  * night already logged for the day is kept). Settings keys of this module: `health.import` — on/off, last run and
- * the last error; `health.import.dismissed` — imported nights the user deleted (`sourceId|externalId`): never again.
+ * the last error; `health.import.dismissed` — imported nights the user deleted (`sourceId|externalId`): never again;
+ * `health.import.workouts` — workouts this import wrote (`{ key, date }`, within the window): one missing from the
+ * journal was deleted by the user in «Тренировки» and is not written again (#217).
  */
 const KEY = 'health.import';
 const DISMISSED_KEY = 'health.import.dismissed';
 /** `lastError`: the last run could read nothing (e.g. access withdrawn) — shown on the card. */
 const State = z.object({ enabled: z.boolean(), lastRunAt: z.number().optional(), lastError: z.string().optional() });
 const Dismissed = z.array(z.string());
+const WORKOUTS_KEY = 'health.import.workouts';
+const Imported = z.array(z.object({ key: z.string(), date: z.string() }));
 const nightKey = (n: { sourceId?: string; externalId?: string }) => `${n.sourceId}|${n.externalId}`;
 export type HealthImportState = z.infer<typeof State>;
 
@@ -44,7 +48,7 @@ async function loadDismissed(): Promise<string[]> {
 
 /**
  * «Удалить запись»: deletes the night; an imported one is also remembered, so the next import does not bring it
- * back. (Workouts deleted in «Тренировки» need the same in the core write path — #244.)
+ * back. (A workout deleted in «Тренировки» is noticed through `health.import.workouts`, #217.)
  */
 export async function removeSleep(log: SleepLog): Promise<void> {
   if (log.sourceId !== undefined && log.externalId !== undefined) {
@@ -89,14 +93,35 @@ async function importOnce(today: DateKey, now: Millis): Promise<HealthImportOutc
   }
   let saved = 0;
   if (workouts.status === 'ok') {
+    const parsed = Imported.safeParse((await db.settings.get(WORKOUTS_KEY))?.value);
+    // Forget what fell out of the window: the store is not read that far back any more.
+    const known = new Map(
+      (parsed.success ? parsed.data : []).filter((w) => w.date >= from).map((w) => [w.key, w.date]),
+    );
     for (const input of workoutInputs(workouts.items)) {
+      const key = `${input.sourceId}|${input.externalId}`;
       try {
-        await saveWorkout(input, now);
-        saved++;
+        // The check and the write in one transaction: a delete in «Тренировки» in between is not undone.
+        const written = await db.transaction('rw', db.workoutLogs, async () => {
+          if (known.has(key)) {
+            const inJournal = await db.workoutLogs
+              .where('[sourceId+externalId]')
+              .equals([input.sourceId!, input.externalId!])
+              .count();
+            // Imported before and gone from the journal: the user deleted it.
+            if (inJournal === 0) return false;
+          }
+          await saveWorkout(input, now);
+          return true;
+        });
+        // Still in the store: keep remembering it with its current date (also when skipped).
+        known.set(key, input.date);
+        if (written) saved++;
       } catch (e) {
         console.error('import: workout skipped', e);
       }
     }
+    await db.settings.put({ key: WORKOUTS_KEY, value: [...known].map(([key, date]) => ({ key, date })) });
   }
   const { lastError: _previous, ...rest } = state;
   await db.settings.put({ key: KEY, value: { ...rest, lastRunAt: now } });

@@ -11,6 +11,7 @@ import {
   runHealthImport,
 } from './healthImport';
 import { saveSleep } from '../../../core/logging/sleep';
+import { saveWorkout } from '../../../core/logging/workout';
 
 const TODAY = '2026-11-07';
 const NOW = new Date(2026, 10, 7, 8, 0).getTime();
@@ -176,5 +177,50 @@ describe('health import data (#131)', () => {
     const store = mockHealthStore();
     store.sleep = [{ ...night('long', 5), startDate: iso(3, 20) }, night('n-6', 6)];
     expect(await connectHealthImport(TODAY, NOW)).toMatchObject({ status: 'ok', nights: 1 });
+  });
+
+  it('Given импортированная тренировка (sourceId + externalId) удалена из журнала When импорт снова читает тот же период Then она не записывается заново', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    store.workouts = [run('w-5', 5), run('w-6', 6)];
+    await connectHealthImport(TODAY, NOW);
+    expect(await db.workoutLogs.count()).toBe(2);
+
+    // Deleted in «Тренировки» (training deletes the journal row directly).
+    const gone = await db.workoutLogs.where('[sourceId+externalId]').equals(['com.strava', 'w-5']).first();
+    await db.workoutLogs.delete(gone!.id);
+    expect(await runHealthImport(TODAY, NOW + 1)).toMatchObject({ workouts: 1 });
+    expect((await db.workoutLogs.toArray()).map((w) => w.externalId)).toEqual(['w-6']);
+
+    // A new workout in the store still comes in.
+    store.workouts = [run('w-5', 5), run('w-6', 6), run('w-7', 7)];
+    await runHealthImport(TODAY, NOW + 2);
+    expect((await db.workoutLogs.toArray()).map((w) => w.externalId).sort()).toEqual(['w-6', 'w-7']);
+  });
+
+  it('Given тренировка введена вручную и удалена When она удалена Then поведение как сейчас', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    await connectHealthImport(TODAY, NOW);
+    const manual = await saveWorkout({ date: TODAY, type: 'Бег', durationMin: 20, rpe: 6 });
+    await db.workoutLogs.delete(manual.id);
+    store.workouts = [run('w-7', 7)];
+    await runHealthImport(TODAY, NOW + 1);
+    expect((await db.workoutLogs.toArray()).map((w) => w.externalId)).toEqual(['w-7']);
+    // The manual delete leaves no trace in the import's memory.
+    expect((await db.settings.get('health.import.workouts'))?.value).toEqual([
+      { key: 'com.strava|w-7', date: '2026-11-07' },
+    ]);
+  });
+
+  it('remembers only workouts within the import window', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    store.workouts = [run('w-5', 5)];
+    await connectHealthImport(TODAY, NOW);
+    // A month later w-5 is out of the window: it is forgotten (the store is not read that far back either).
+    store.workouts = [];
+    await runHealthImport('2026-12-20', NOW + 1);
+    expect((await db.settings.get('health.import.workouts'))?.value).toEqual([]);
   });
 });
