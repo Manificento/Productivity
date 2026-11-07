@@ -51,17 +51,6 @@ export function FoodTab({
 
   return (
     <>
-      {targets && (
-        <Card title="Цели дня">
-          <p className="text-sm">
-            Кофеин — до <strong>{targets.caffeineCutoff}</strong>
-          </p>
-          {targets.noNewFoods && (
-            <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">Сегодня лучше без новых продуктов</p>
-          )}
-        </Card>
-      )}
-
       <DayTargets targets={targets} eaten={totals.day} />
 
       <section aria-label="Итого за день">

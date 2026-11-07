@@ -22,7 +22,24 @@ function Gauge({ label, eaten, target, unit }: { label: string; eaten: number; t
   );
 }
 
-/** Eaten vs. the day's targets, and a banner on no-deficit days. Hidden without targets (a link to the goal instead). */
+/** Caffeine cutoff and the «no new foods» hint of the day. */
+function DayHints({ targets }: { targets: DailyTargets }) {
+  return (
+    <div className="mb-3 border-b border-zinc-100 pb-3 dark:border-zinc-800">
+      <p className="text-sm">
+        Кофеин — до <strong>{targets.caffeineCutoff}</strong>
+      </p>
+      {targets.noNewFoods && (
+        <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">Сегодня лучше без новых продуктов</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The single «Цель на день» card: caffeine cutoff, eaten vs. the day's targets, and a banner on no-deficit days.
+ * Without kcal targets the gauges give way to a link to the goal. Hidden when the day has no targets at all.
+ */
 export function DayTargets({ targets, eaten }: { targets: DailyTargets | undefined; eaten: Macros }) {
   if (!targets) return null;
   const { kcal, proteinG, fatG, carbsG } = targets;
@@ -33,16 +50,19 @@ export function DayTargets({ targets, eaten }: { targets: DailyTargets | undefin
 
   if (kcal === undefined || proteinG === undefined || fatG === undefined || carbsG === undefined) {
     return (
-      <Card title="Цель на день">
-        <p className="mb-2 text-sm text-zinc-500">Цели по калориям и БЖУ появятся, когда будут вес, рост и цель.</p>
-        <button
-          type="button"
-          onClick={() => document.getElementById('nutrition-goal')?.scrollIntoView?.({ block: 'start' })}
-          className="min-h-11 text-sm text-indigo-600 dark:text-indigo-400"
-        >
-          Задать цель
-        </button>
-      </Card>
+      <section aria-label="Цель на день">
+        <Card title="Цель на день">
+          <DayHints targets={targets} />
+          <p className="mb-2 text-sm text-zinc-500">Цели по калориям и БЖУ появятся, когда будут вес, рост и цель.</p>
+          <button
+            type="button"
+            onClick={() => document.getElementById('nutrition-goal')?.scrollIntoView?.({ block: 'start' })}
+            className="min-h-11 text-sm text-indigo-600 dark:text-indigo-400"
+          >
+            Задать цель
+          </button>
+        </Card>
+      </section>
     );
   }
   return (
@@ -60,6 +80,7 @@ export function DayTargets({ targets, eaten }: { targets: DailyTargets | undefin
         </div>
       )}
       <Card title="Цель на день">
+        <DayHints targets={targets} />
         <Gauge label="Калории" eaten={eaten.kcal} target={kcal} unit="ккал" />
         <Gauge label="Белки" eaten={eaten.protein} target={proteinG} unit="г" />
         <Gauge label="Жиры" eaten={eaten.fat} target={fatG} unit="г" />

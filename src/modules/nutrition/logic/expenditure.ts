@@ -6,7 +6,8 @@ import type { WeightPoint } from './trend';
 /** The estimate looks at this many days up to and including today. */
 export const WINDOW_DAYS = 28;
 export const MIN_WEIGHT_DAYS = 14;
-export const MIN_FOOD_DAYS = 10;
+/** The diary must cover at least half of the window, otherwise the average intake is not representative. */
+export const MIN_FOOD_DAYS = WINDOW_DAYS / 2;
 /** Light everyday activity multiplier for the starter estimate. */
 const ACTIVITY_FACTOR = 1.4;
 const REFRESH_MS = 7 * 24 * 3600 * 1000;
@@ -28,7 +29,14 @@ export interface EstimateInput {
 
 export type Estimate =
   | { kind: 'measured'; kcal: number }
-  | { kind: 'starter'; kcal: number; /** Days of logging still needed for a measured estimate. */ daysLeft: number };
+  | { kind: 'starter'; kcal: number; /** Days of logging still needed for a measured estimate. */ daysLeft: number }
+  /** Enough weigh-ins, but the food diary covers less than half of the window: no number is shown. */
+  | {
+      kind: 'incomplete';
+      loggedDays: number;
+      windowDays: number;
+      /** Starter value to keep the day targets alive. */ starterKcal?: number;
+    };
 
 const round10 = (n: number) => Math.round(n / 10) * 10;
 
@@ -52,8 +60,9 @@ function weightSlope(weights: WeightPoint[]): number {
 
 /**
  * Expenditure = average intake over the diary days + energy equivalent of the weight trend
- * (losing weight means you ate less than you spent). Needs ≥ 14 weigh-ins and ≥ 10 diary days
- * in the last 28 days; otherwise falls back to the starter estimate, if the profile and a weight are known.
+ * (losing weight means you ate less than you spent). Needs ≥ 14 weigh-ins and ≥ 14 diary days (half of the window)
+ * in the last 28 days. With enough weigh-ins but a thin diary the estimate is «incomplete» (no number);
+ * with too few weigh-ins it falls back to the starter estimate, if the profile and a weight are known.
  */
 export function estimateExpenditure(
   input: EstimateInput,
@@ -65,14 +74,18 @@ export function estimateExpenditure(
     .sort((a, b) => a.date.localeCompare(b.date));
   const intakes = [...input.intakeByDay].filter(([d, kcal]) => d >= from && d <= input.today && kcal > 0);
 
-  if (weights.length >= MIN_WEIGHT_DAYS && intakes.length >= MIN_FOOD_DAYS) {
+  const starterKcal = fallback && starterExpenditure(fallback.profile, fallback.weightKg, fallback.year);
+  if (weights.length >= MIN_WEIGHT_DAYS && intakes.length < MIN_FOOD_DAYS) {
+    return { kind: 'incomplete', loggedDays: intakes.length, windowDays: WINDOW_DAYS, starterKcal };
+  }
+  if (weights.length >= MIN_WEIGHT_DAYS) {
     const avg = intakes.reduce((a, [, kcal]) => a + kcal, 0) / intakes.length;
     const kcal = round10(avg - weightSlope(weights) * KCAL_PER_KG);
     if (kcal >= SANE_KCAL.min && kcal <= SANE_KCAL.max) return { kind: 'measured', kcal };
   }
-  if (!fallback) return undefined;
+  if (starterKcal === undefined) return undefined;
   const daysLeft = Math.max(1, MIN_WEIGHT_DAYS - weights.length, MIN_FOOD_DAYS - intakes.length);
-  return { kind: 'starter', kcal: starterExpenditure(fallback.profile, fallback.weightKg, fallback.year), daysLeft };
+  return { kind: 'starter', kcal: starterKcal, daysLeft };
 }
 
 /** Stored `nutrition.expenditure`. */

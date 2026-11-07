@@ -60,4 +60,33 @@ describe('weight card', () => {
     }
     expect(await db.weightLogs.count()).toBe(0);
   });
+
+  it('Given записи с пропусками When я смотрю график Then ось X — календарные дни, линия тренда разорвана на пропуске', async () => {
+    const offsets = [...Array.from({ length: 14 }, (_, i) => -30 + i), -5, -4]; // −30…−17, gap, −5, −4
+    for (const offset of offsets) await logWeight(shiftDateKey(TODAY, offset), 80);
+    render(<WeightCard today={TODAY} />);
+    const points = await screen.findAllByTestId('weight-point');
+    expect(screen.getAllByTestId('weight-trend')).toHaveLength(2);
+    const xs = points.map((p) => Number(p.getAttribute('cx')));
+    const step = xs[1]! - xs[0]!;
+    expect(xs[14]! - xs[13]!).toBeCloseTo(step * 12, 5); // −17 → −5
+    expect(xs[15]! - xs[14]!).toBeCloseTo(step, 5);
+  });
+
+  it('Given больше 90 дней записей When я смотрю график Then последние 90 дней и переключатель «Вся история»', async () => {
+    for (const offset of [-120, -100, -91, -89, -30, 0]) await logWeight(shiftDateKey(TODAY, offset), 80);
+    render(<WeightCard today={TODAY} />);
+    expect(await screen.findAllByTestId('weight-point')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Вся история' }));
+    expect(await screen.findAllByTestId('weight-point')).toHaveLength(6);
+    fireEvent.click(screen.getByRole('button', { name: 'Вся история', pressed: true }));
+    expect(await screen.findAllByTestId('weight-point')).toHaveLength(3);
+  });
+
+  it('Given записи только за последние 90 дней When я смотрю график Then переключателя нет', async () => {
+    await logWeight(shiftDateKey(TODAY, -89), 80);
+    render(<WeightCard today={TODAY} />);
+    await screen.findAllByTestId('weight-point');
+    expect(screen.queryByRole('button', { name: 'Вся история' })).not.toBeInTheDocument();
+  });
 });

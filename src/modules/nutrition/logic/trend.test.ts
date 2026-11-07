@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { DateKey } from '../../../core/types';
-import { TREND_MIN_ENTRIES, formatKg, parseKg, trendSeries, validateKg, weeklyChange } from './trend';
+import {
+  TREND_MIN_ENTRIES,
+  formatKg,
+  lastDays,
+  parseKg,
+  trendSegments,
+  trendSeries,
+  validateKg,
+  weeklyChange,
+} from './trend';
 
 const day = (n: number): DateKey => `2026-10-${String(n).padStart(2, '0')}`;
 const entries = (kgs: number[]) => kgs.map((kg, i) => ({ date: day(i + 1), kg }));
@@ -78,5 +87,40 @@ describe('weekly change', () => {
   });
   it('shows the trend from 14 entries', () => {
     expect(TREND_MIN_ENTRIES).toBe(14);
+  });
+});
+
+describe('calendar-day trend', () => {
+  it('Given пропуск в 10 дней When считаю тренд Then старый тренд затухает по календарным дням, а не по номеру записи', () => {
+    const daily = trendSeries([
+      { date: '2026-10-01', kg: 80 },
+      { date: '2026-10-02', kg: 70 },
+    ]);
+    const gap = trendSeries([
+      { date: '2026-10-01', kg: 80 },
+      { date: '2026-10-11', kg: 70 },
+    ]);
+    expect(daily[1]!.trend).toBeCloseTo(79, 5); // 80 + 0,1·(70 − 80)
+    expect(gap[1]!.trend).toBeCloseTo(80 - 10 * (1 - 0.9 ** 10), 5); // 10 days: 1 − 0,9^10 ≈ 65 % of the step
+    expect(gap[1]!.trend).toBeLessThan(75);
+  });
+});
+
+describe('chart window and segments', () => {
+  const at = (date: string) => ({ date: date as DateKey, kg: 70, trend: 70 });
+
+  it('Given записи старше 90 дней When беру последние 90 дней Then остаются только дни от today−89', () => {
+    const series = [at('2026-08-06'), at('2026-08-07'), at('2026-11-04')];
+    expect(lastDays(series, '2026-11-04').map((p) => p.date)).toEqual(['2026-08-07', '2026-11-04']);
+  });
+
+  it('Given пропуск больше 3 дней When режу линию Then два отрезка; пропуск в 3 дня — один', () => {
+    const broken = trendSegments([at('2026-10-01'), at('2026-10-02'), at('2026-10-09'), at('2026-10-10')]);
+    expect(broken.map((s) => s.map((p) => p.date))).toEqual([
+      ['2026-10-01', '2026-10-02'],
+      ['2026-10-09', '2026-10-10'],
+    ]);
+    expect(trendSegments([at('2026-10-01'), at('2026-10-04')])).toHaveLength(1);
+    expect(trendSegments([])).toEqual([]);
   });
 });

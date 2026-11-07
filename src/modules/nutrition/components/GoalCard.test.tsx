@@ -42,7 +42,7 @@ describe('goal card', () => {
     await saveProfile(profile);
     await logWeight(TODAY, 80);
     render(<GoalCard today={TODAY} />);
-    expect(await screen.findByText(/уточним через 13 дней/)).toBeInTheDocument();
+    expect(await screen.findByText(/уточним через 14 дней/)).toBeInTheDocument();
     expect(screen.getByText('2490 ккал')).toBeInTheDocument();
   });
 
@@ -110,7 +110,7 @@ describe('goal card', () => {
     expect(targets).toHaveTextContent('Б 144 · Ж 64');
   });
 
-  it('Given ≥ 14 дней веса и ≥ 10 дней дневника When открываю цели Then оценка измерена и пометки «уточним» нет', async () => {
+  it('Given ≥ 14 дней веса и ≥ 14 дней дневника (половина окна) When открываю цели Then оценка измерена и пометки «уточним» нет', async () => {
     await saveGoal({ kind: 'maintain', ratePct: 0 });
     const food = await createFood({ name: 'Рис', kcal: 100, protein: 0, fat: 0, carbs: 0 });
     for (let i = 0; i < 14; i++) {
@@ -142,5 +142,31 @@ describe('goal card', () => {
     const targets = await screen.findByRole('group', { name: 'Цели дня по питанию' });
     await waitFor(() => expect(targets).toHaveTextContent('2490 ккал'));
     expect(within(targets).getByRole('list', { name: 'Почему такие цели' })).toHaveTextContent('без дефицита калорий');
+  });
+
+  it('Given цель не выбрана When я открываю «Цель» Then ничего не предвыбрано, «Сохранить цель» неактивна до выбора', async () => {
+    render(<GoalCard today={TODAY} />);
+    const group = await screen.findByRole('radiogroup', { name: 'Цель по весу' });
+    for (const radio of within(group).getAllByRole('radio')) expect(radio).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByLabelText('Темп')).not.toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'Сохранить цель' });
+    expect(save).toBeDisabled();
+    fireEvent.click(within(group).getByRole('radio', { name: 'Удержать' }));
+    expect(save).toBeEnabled();
+    expect(await db.settings.get('nutrition.goal')).toBeUndefined();
+  });
+
+  it('Given дневник заполнен меньше чем в половине дней окна When считается расход Then «Оценка неточна: дневник заполнен N из M дней», цели не меняются', async () => {
+    await saveGoal({ kind: 'maintain', ratePct: 0 });
+    await saveProfile(profile);
+    const food = await createFood({ name: 'Рис', kcal: 100, protein: 0, fat: 0, carbs: 0 });
+    for (let i = 0; i < 20; i++) await logWeight(shiftDateKey(TODAY, -i), 80);
+    for (let i = 0; i < 5; i++) await addMealItem(shiftDateKey(TODAY, -i), 'lunch', { foodId: food.id, grams: 100 });
+    render(<GoalCard today={TODAY} />);
+    expect(await screen.findByText('Оценка неточна: дневник заполнен 5 из 28 дней')).toBeInTheDocument();
+    const targets = await screen.findByRole('group', { name: 'Цели дня по питанию' });
+    await waitFor(() => expect(targets).toHaveTextContent('2490 ккал'));
+    expect(screen.queryByText(/уточним через/)).not.toBeInTheDocument();
+    expect((await db.settings.get('nutrition.expenditure'))?.value).toMatchObject({ kcal: 2490, source: 'starter' });
   });
 });

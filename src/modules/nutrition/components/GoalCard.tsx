@@ -94,13 +94,15 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
 
   if (!settings) return <Empty>Загрузка…</Empty>;
 
-  const currentKind = kind ?? settings.goal?.kind ?? 'lose';
+  // Nothing is preselected until a goal is saved or picked.
+  const currentKind: Kind | undefined = kind ?? settings.goal?.kind;
   const savedRate = settings.goal?.ratePct;
   // A saved rate outside the options (0 for «удержать», or from an imported backup) would not match what the select shows.
   const currentRate = rate ?? (RATE_OPTIONS.some((r) => r === savedRate) ? (savedRate as number) : 0.5);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!currentKind) return;
     setSaved(false);
     try {
       await saveGoal({ kind: currentKind, ratePct: currentKind === 'maintain' ? 0 : currentRate });
@@ -111,6 +113,11 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
     }
   }
 
+  // With a stored measured value the starter inputs are not needed, even while the diary is thin.
+  const showProfile =
+    !estimate ||
+    estimate.kind === 'starter' ||
+    (estimate.kind === 'incomplete' && settings.expenditure?.source !== 'measured');
   const hasTargets = targets?.kcal !== undefined;
   // The label follows what the engine uses (the stored value), the countdown follows the fresh estimate.
   const starter = estimate?.kind === 'starter' && settings.expenditure?.source === 'starter' ? estimate : undefined;
@@ -121,14 +128,15 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
         <form onSubmit={onSubmit} noValidate>
           <Segmented
             label="Цель по весу"
-            value={currentKind}
+            // Segmented only compares values: undefined (nothing chosen) simply checks no radio.
+            value={currentKind as Kind}
             options={KINDS}
             onChange={(k) => {
               setKind(k);
               setSaved(false);
             }}
           />
-          {currentKind !== 'maintain' && (
+          {currentKind && currentKind !== 'maintain' && (
             <Field label="Темп">
               {(id) => (
                 <Select
@@ -158,7 +166,7 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
               Цель сохранена
             </p>
           )}
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full" disabled={!currentKind}>
             Сохранить цель
           </Button>
         </form>
@@ -193,7 +201,13 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
           </p>
         )}
 
-        {estimate?.kind !== 'measured' && (
+        {estimate?.kind === 'incomplete' && (
+          <p role="note" className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+            Оценка неточна: дневник заполнен {estimate.loggedDays} из {estimate.windowDays} дней
+          </p>
+        )}
+
+        {showProfile && (
           <ProfileForm
             key={settings.profile ? 'saved' : 'new'}
             profile={settings.profile}
