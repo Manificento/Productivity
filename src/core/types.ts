@@ -310,6 +310,8 @@ export interface ProgramExercise {
   weightKg?: number;
   /** Target rate of perceived exertion, 1–10. */
   rpeTarget?: number;
+  /** Day of the missed session this exercise was carried over from («перенесено с <дата>», #238); absent otherwise. */
+  carriedFrom?: DateKey;
 }
 
 /** A day of a program: which weekday and what to do. */
@@ -341,6 +343,12 @@ export interface PlannedSession extends BaseRecord {
   status: PlannedSessionStatus;
   /** The `workoutLogs` record written (through `saveWorkout`) when the session was done. */
   workoutLogId?: Id;
+  /**
+   * A missed session: names of its exercises already carried over to later sessions (or dropped by the user) — the
+   * automatic carry-over never takes them again (#238). Names are compared with `normalizeExerciseName`
+   * (`src/core/exercises.ts`). Absent: nothing carried yet.
+   */
+  carriedOut?: string[];
 }
 
 // ---------- meditation (SPEC 0.3, 5.6) ----------

@@ -132,3 +132,44 @@ describe('src/core/exercises.ts — словарь стартовых упраж
     expect(muscleGroupsOf('Планка')).toEqual(['core']);
   });
 });
+
+describe('src/core/types.ts — пометки переноса (#238)', () => {
+  beforeEach(async () => {
+    await db.plannedSessions.clear();
+  });
+
+  it('Given src/core/types.ts When читаю ProgramExercise Then есть необязательное carriedFrom?: DateKey — день пропущенной сессии; существующие записи читаются без миграции', async () => {
+    const version = db.verno;
+    const legacy: PlannedSession = {
+      id: 'ps-old',
+      createdAt: 1,
+      updatedAt: 1,
+      programId: 'p1',
+      date: '2026-11-09',
+      exercises: [{ name: 'Приседания', sets: 3 }],
+      status: 'planned',
+    };
+    await db.plannedSessions.add(legacy);
+    const carried: ProgramExercise = { name: 'Тяга в наклоне', sets: 2, carriedFrom: '2026-11-07' };
+    await db.plannedSessions.update('ps-old', { exercises: [...legacy.exercises, carried] });
+    const stored = await db.plannedSessions.get('ps-old');
+    expect(stored?.exercises.map((e) => e.carriedFrom)).toEqual([undefined, '2026-11-07']);
+    expect(db.verno).toBe(version);
+  });
+
+  it('Given PlannedSession When читаю Then есть необязательное carriedOut?: string[] — названия упражнений этой пропущенной сессии, уже перенесённых (или отклонённых): автоматический перенос их больше не трогает', async () => {
+    const skipped: PlannedSession = {
+      id: 'ps-skipped',
+      createdAt: 1,
+      updatedAt: 1,
+      programId: 'p1',
+      date: '2026-11-07',
+      exercises: [{ name: 'Тяга в наклоне', sets: 3 }],
+      status: 'skipped',
+    };
+    await db.plannedSessions.add(skipped);
+    expect((await db.plannedSessions.get('ps-skipped'))?.carriedOut).toBeUndefined();
+    await db.plannedSessions.update('ps-skipped', { carriedOut: ['Тяга в наклоне'] });
+    expect((await db.plannedSessions.get('ps-skipped'))?.carriedOut).toEqual(['Тяга в наклоне']);
+  });
+});
