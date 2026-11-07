@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
 import { shiftDateKey } from '../../../core/dates';
 import { logWeight } from '../data/weight';
@@ -88,5 +88,23 @@ describe('weight card', () => {
     render(<WeightCard today={TODAY} />);
     await screen.findAllByTestId('weight-point');
     expect(screen.queryByRole('button', { name: 'Вся история' })).not.toBeInTheDocument();
+  });
+
+  it('Given экран питания открыт через полночь When наступает новый день Then WeightCard пишет вес в новый день без перезагрузки', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    try {
+      vi.setSystemTime(new Date(2026, 10, 4, 23, 59, 0));
+      render(<WeightCard />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      enter('72,4');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(async () => expect(await db.weightLogs.toArray()).toMatchObject([{ date: '2026-11-05', kg: 72.4 }]));
   });
 });
