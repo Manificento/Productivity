@@ -181,6 +181,17 @@ Android Chrome через service worker), пока открыта вкладк�
 Расчёт по минуте и политика буфера — чистые Java-классы `NightMinute` / `NightBuffer` с JUnit-тестами
 (`android/app/src/test`, CI `android.yml`). Алгоритм фаз сна — в модуле `health`. В тестах — `mockNightSensors()` из
 `src/test/platform.ts`.
+Будильник (#139) — `setAlarm({ at, windowMin })`, `cancelAlarm()` и `onAlarmDismissed(listener)` (событие
+`alarm:dismissed` с `dismissedAt` и `alarmAt`, возвращает отписку) из `platform.ts`. Будильник один: новый заменяет
+прежний. На Android — свой плагин `Alarm` (`android/…/AlarmPlugin.java`): `AlarmManager.setAlarmClock` звонит при
+закрытом приложении, после перезагрузки или обновления ставится снова; звонит служба `AlarmRingingService` (звук
+будильника, вибрация, полноэкранное уведомление с «Выключить», через 10 минут затихает без события). Выключение
+сохраняется в приложении и доходит до первого подписчика один раз, даже если приложение было закрыто. `windowMin`
+(0–120, окно умного пробуждения из целей дня) хранится с будильником; пока выбора лёгкой фазы нет, будильник звонит
+ровно в `at`, не раньше. Результат — статус с `hint`: прошедшее время или неверное окно — `failed`, без уведомлений
+(Android 13+) или с выключенными «Будильники и напоминания» — `denied`, на вебе и без плагина (iOS сейчас) —
+`unsupported`. Правила (хранение выключений, восстановление, окно) — чистый `AlarmPolicy` с JUnit-тестами. В тестах
+— `mockAlarm()` из `src/test/platform.ts` (`dismiss()` — пользователь выключил звонок).
 Импорт из хранилища здоровья (#141) — `requestHealthAccess()` (одно окно доступа к сну и тренировкам, по действию
 пользователя), затем `readSleep(from, to)` / `readWorkouts(from, to)` из `platform.ts` (плагин `@capgo/capacitor-health`:
 Health Connect на Android, HealthKit на iOS). Чтение само окно доступа не открывает: без доступа — `denied` с `hint`, на

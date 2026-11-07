@@ -1,3 +1,5 @@
+import { cruise, type ICruiseResult } from 'dependency-cruiser';
+import extractDepcruiseConfig from 'dependency-cruiser/config-utl/extract-depcruise-config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockAlarm, mockNativePlatform, resetPlatform } from '../test/platform';
 import {
@@ -192,15 +194,17 @@ describe('alarm — tests and boundaries', () => {
     for (const method of Object.values(alarm.bridge)) expect(vi.isMockFunction(method)).toBe(true);
     expect(alarm.bridge.set).toHaveBeenCalledTimes(1);
 
-    const { readdirSync, readFileSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const files = (readdirSync('src/modules', { recursive: true }) as string[])
-      .filter((f) => /\.tsx?$/.test(f))
-      .map((f) => join('src/modules', f));
-    expect(files.length).toBeGreaterThan(0);
-    const offenders = files.filter((f) =>
-      /from ['"]@capacitor(-[\w-]+)?\/|from ['"]@capgo\//.test(readFileSync(f, 'utf8')),
+    // No module reaches the native side past platform.ts (the project's own rule, as `npm run deps` runs it).
+    const config = await extractDepcruiseConfig('./.dependency-cruiser.cjs');
+    const { output } = await cruise(['src/modules'], {
+      ...config.options,
+      validate: true,
+      ruleSet: { forbidden: config.forbidden },
+    });
+    const native = (output as ICruiseResult).summary.violations.filter(
+      (v) => v.rule.name === 'native-only-through-platform',
     );
-    expect(offenders).toEqual([]);
-  });
+    expect(native).toEqual([]);
+    expect((output as ICruiseResult).summary.totalCruised).toBeGreaterThan(50);
+  }, 30_000);
 });
