@@ -214,7 +214,7 @@ export interface WorkoutLog extends BaseRecord {
   durationMin: number;
   /** Rate of perceived exertion, 1–10. */
   rpe: number;
-  exercises?: { name: string; sets: { reps?: number; weightKg?: number }[] }[];
+  exercises?: { name: string; sets: { reps?: number; weightKg?: number }[]; muscleGroups?: MuscleGroup[] }[];
   note?: string;
   /** App that recorded an imported workout (`ImportedWorkout.sourceId`); absent for workouts entered in the app. */
   sourceId?: string;
@@ -285,9 +285,14 @@ export interface WeightLog extends BaseRecord {
 
 // ---------- training (SPEC 0.3, 5.6) ----------
 
+/** What an exercise loads (#225). Values: `MUSCLE_GROUPS` in `exercises.ts`. */
+export type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'arms' | 'legs' | 'glutes' | 'core' | 'cardio' | 'mobility';
+
 /** One exercise of a program day or of a planned session. */
 export interface ProgramExercise {
   name: string;
+  /** Optional: records saved before #225 have none; `muscleGroupsOf(name)` knows the starter exercises. */
+  muscleGroups?: MuscleGroup[];
   /** Number of sets. */
   sets: number;
   /** Repetitions per set; omitted for time- or distance-based work. */

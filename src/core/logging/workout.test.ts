@@ -148,3 +148,47 @@ describe('saveWorkout — the one write path for workoutLogs (ADR-0007)', () => 
     });
   });
 });
+
+describe('saveWorkout — muscle groups of exercises (#225)', () => {
+  it('Given WorkoutLog.exercises When тренировка записана через saveWorkout() Then группы мышц сохраняются вместе с упражнением (поле необязательное)', async () => {
+    const saved = await saveWorkout({
+      date: TODAY,
+      type: 'Силовая',
+      durationMin: 40,
+      rpe: 7,
+      exercises: [
+        { name: 'Становая тяга', sets: [{ reps: 5, weightKg: 100 }], muscleGroups: ['back', 'legs', 'glutes'] },
+        { name: 'Свой комплекс', sets: [{ reps: 10 }] },
+      ],
+    });
+    const stored = await db.workoutLogs.get(saved.id);
+    expect(stored?.exercises).toEqual([
+      { name: 'Становая тяга', sets: [{ reps: 5, weightKg: 100 }], muscleGroups: ['back', 'legs', 'glutes'] },
+      { name: 'Свой комплекс', sets: [{ reps: 10 }] },
+    ]);
+  });
+
+  it('does not guess groups, keeps an explicit empty list and rejects an unknown group', async () => {
+    const saved = await saveWorkout({
+      date: TODAY,
+      type: 'Силовая',
+      durationMin: 40,
+      rpe: 7,
+      exercises: [
+        { name: 'Жим лёжа', sets: [], muscleGroups: [] },
+        { name: 'Жим лёжа', sets: [] },
+      ],
+    });
+    expect((await db.workoutLogs.get(saved.id))?.exercises?.map((e) => e.muscleGroups)).toEqual([[], undefined]);
+    await expect(
+      saveWorkout({
+        date: TODAY,
+        type: 'Силовая',
+        durationMin: 40,
+        rpe: 7,
+        // @ts-expect-error — 'neck' is not a MuscleGroup
+        exercises: [{ name: 'Шраги', sets: [], muscleGroups: ['neck'] }],
+      }),
+    ).rejects.toThrow();
+  });
+});

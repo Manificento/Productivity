@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { db } from '../db';
+import { MUSCLE_GROUPS } from '../exercises';
 import { newRecord } from '../ids';
 import type { WorkoutLog } from '../types';
 import { DateKeyField } from './fields';
@@ -15,9 +16,11 @@ const WorkoutSet = z.object({
   weightKg: z.number().min(0).optional(),
 });
 
+/** `muscleGroups` is optional (#225): records saved without it are read as `muscleGroups ?? muscleGroupsOf(name)`. */
 const Exercise = z.object({
   name: z.string().trim().min(1, 'Укажите название упражнения'),
   sets: z.array(WorkoutSet),
+  muscleGroups: z.array(z.enum(MUSCLE_GROUPS)).optional(),
 });
 
 const ImportKey = z.string().trim().min(1);
