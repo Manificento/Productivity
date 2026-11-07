@@ -6,6 +6,11 @@ import {
   archiveProgram,
   completeSession,
   createProgram,
+  extendEndedPrograms,
+  extendProgram,
+  loadMissedSessions,
+  loadPlanEnds,
+  rescheduleSession,
   loadActivePrograms,
   loadTodaySession,
   loadUpcomingSessions,
@@ -168,5 +173,54 @@ describe('loadUpcomingSessions', () => {
     const list = await loadUpcomingSessions(TODAY, '2026-11-09');
     expect(list.map((s) => s.date)).toEqual(['2026-11-09']); // 11-04 is done; 11-09 is the inclusive edge
     expect(list.every((s) => s.programId === a.id)).toBe(true);
+  });
+});
+
+describe('missed sessions, reschedule and extension', () => {
+  it('Given сессия вчера не выполнена Then она в списке пропущенных; выполненные и чужие архивные — нет', async () => {
+    const p = await createProgram(input, '2026-11-02', 1); // Mon 11-02, Wed 11-04, …
+    await skipMissedSessions('2026-11-03', 2);
+    const missed = await loadMissedSessions('2026-11-03');
+    expect(missed.map((s) => s.date)).toEqual(['2026-11-02']);
+    await archiveProgram(p.id, '2026-11-03', 3);
+    expect(await loadMissedSessions('2026-11-03')).toEqual([]);
+  });
+
+  it('Given я переношу сессию When выбираю другой день Then дата меняется, статус снова planned', async () => {
+    const p = await createProgram(input, '2026-11-02', 1);
+    await skipMissedSessions('2026-11-03', 2);
+    const [missed] = await loadMissedSessions('2026-11-03');
+    await rescheduleSession(missed!.id, '2026-11-05', '2026-11-03', 5);
+    const moved = await db.plannedSessions.get(missed!.id);
+    expect(moved).toMatchObject({ date: '2026-11-05', status: 'planned', programId: p.id, updatedAt: 5 });
+    expect(await loadMissedSessions('2026-11-03')).toEqual([]);
+  });
+
+  it('Given в день уже есть сессия той же программы When переношу Then отказ и данные не меняются', async () => {
+    await createProgram(input, '2026-11-02', 1);
+    await skipMissedSessions('2026-11-03', 2);
+    const [missed] = await loadMissedSessions('2026-11-03');
+    await expect(rescheduleSession(missed!.id, '2026-11-04', '2026-11-03')).rejects.toThrow(/уже есть/);
+    expect((await db.plannedSessions.get(missed!.id))?.date).toBe('2026-11-02');
+  });
+
+  it('Given до конца плана меньше 7 дней When продлеваю Then 4 недели по тому же расписанию без дублей', async () => {
+    const p = await createProgram(input, TODAY, 1); // ends 2026-11-30
+    expect(await loadPlanEnds()).toEqual(new Map([[p.id, '2026-11-30']]));
+    expect(await extendProgram(p.id, '2026-11-27', 9)).toBe(8);
+    expect(await extendProgram(p.id, '2026-11-27', 10)).toBe(0); // a double tap adds nothing
+    const dates = (await db.plannedSessions.toArray()).map((s) => s.date);
+    expect(new Set(dates).size).toBe(dates.length);
+    expect(dates).toHaveLength(16);
+    expect(dates).toContain('2026-12-02');
+  });
+
+  it('Given план закончился When продлеваю все закончившиеся Then новый план стартует с сегодня', async () => {
+    const p = await createProgram(input, TODAY, 1);
+    const other = await createProgram({ ...input, name: 'Бег' }, '2026-12-01', 1);
+    expect(await extendEndedPrograms('2026-12-05', 3)).toBe(1);
+    const mine = (await db.plannedSessions.where('programId').equals(p.id).toArray()).map((s) => s.date).sort();
+    expect(mine.at(-1)).toBe('2026-12-30');
+    expect(await db.plannedSessions.where('programId').equals(other.id).count()).toBe(8); // still running
   });
 });
