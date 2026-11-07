@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
 import { saveWorkout } from '../../../core/logging/workout';
 import { applyCarryOver, loadMuscleBalance, removeExercise } from './carry';
-import { createProgram, rescheduleSession, skipMissedSessions } from './programs';
+import { createProgram, replaceExercise, rescheduleSession, skipMissedSessions } from './programs';
 
 // Program from Monday 2 Nov 2026: Mon rows + squats, Wed bench, Fri bench. Today: Tuesday 3 Nov.
 const START = '2026-11-02';
@@ -120,5 +120,18 @@ describe('carry-over data (#226)', () => {
     expect(current.rows.find((r) => r.group === 'chest')).toMatchObject({ plan: 6, fact: 2 });
     expect(current.rows.find((r) => r.group === 'back')).toMatchObject({ plan: 3, fact: 0, under: true });
     expect(previous.rows).toEqual([]);
+  });
+
+  it("replacing an exercise drops muscle groups set for the old name; the journal gets the new name's groups", async () => {
+    const { byDate } = await setUp();
+    const wed = await byDate('2026-11-04');
+    await db.plannedSessions.update(wed.id, {
+      exercises: [{ name: 'Свой жим', sets: 3, muscleGroups: ['chest'] }],
+    });
+    await replaceExercise(wed.id, 0, 'Приседания', 2_000);
+    const replaced = (await byDate('2026-11-04')).exercises[0]!;
+    expect(replaced).toEqual({ name: 'Приседания', sets: 3 });
+    const balanceAfter = await loadMuscleBalance(TODAY);
+    expect(balanceAfter[0].rows.some((r) => r.group === 'legs')).toBe(true);
   });
 });

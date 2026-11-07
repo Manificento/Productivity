@@ -66,7 +66,12 @@ export async function replaceExercise(sessionId: string, index: number, name: st
   await db.transaction('rw', db.plannedSessions, async () => {
     const session = await db.plannedSessions.get(sessionId);
     if (!session?.exercises[index]) throw new Error('Упражнение не найдено');
-    const exercises = session.exercises.map((e, i) => (i === index ? { ...e, name } : e));
+    // Groups set for the old name do not fit the new one: it falls back to `muscleGroupsOf(name)`.
+    const exercises = session.exercises.map((e, i) => {
+      if (i !== index) return e;
+      const { muscleGroups: _old, ...rest } = e;
+      return e.name === name ? e : { ...rest, name };
+    });
     await db.plannedSessions.update(sessionId, touch({ exercises }, now));
   });
 }
@@ -74,7 +79,8 @@ export async function replaceExercise(sessionId: string, index: number, name: st
 /**
  * Moves a session to another day: the date changes and the status is `planned` again; at most one session per program
  * per day. A missed session brought back whole takes back what was carried from it: its carried copies leave the
- * planned sessions and `carriedOut` is cleared (#226).
+ * planned sessions and `carriedOut` is cleared (#226). A copy already done stays done — the session comes back whole
+ * all the same (the user moved it on purpose).
  */
 export async function rescheduleSession(
   sessionId: string,

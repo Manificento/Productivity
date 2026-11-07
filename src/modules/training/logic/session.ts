@@ -1,5 +1,6 @@
 import type { WorkoutInput } from '../../../core/logging/workout';
 import { WORKOUT_TYPES } from './workouts';
+import { normalizeExerciseName } from '../../../core/exercises';
 import type { DateKey, ProgramExercise } from '../../../core/types';
 
 /** One exercise of the session being performed: which of its planned sets are checked off. */
@@ -47,4 +48,21 @@ export function buildWorkout(
   if (fields.rpe.trim() === '' || !Number.isInteger(rpe) || rpe < 1 || rpe > 10)
     return { ok: false, error: 'RPE — от 1 до 10' };
   return { ok: true, value: { date: fields.date, type: fields.type ?? 'Силовая', durationMin, rpe, exercises } };
+}
+
+/**
+ * A stable id per exercise of a session while it is being performed: the program's own exercises by position (they
+ * are never removed), carried ones by origin day and name. Checked sets follow the exercise when a carried one is
+ * removed or added (#226).
+ */
+export function exerciseIds(exercises: ProgramExercise[]): string[] {
+  const seen = new Map<string, number>();
+  let own = 0;
+  return exercises.map((e) => {
+    if (e.carriedFrom === undefined) return `own:${own++}`;
+    const base = `carried:${e.carriedFrom}:${normalizeExerciseName(e.name)}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base}#${n}`;
+  });
 }

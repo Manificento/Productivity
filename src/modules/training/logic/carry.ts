@@ -1,12 +1,16 @@
 import type { DailyTargets } from '../../../core/adaptation/types';
-import { daysBetween, fromDateKey, shiftDateKey } from '../../../core/dates';
+import { daysBetween, shiftDateKey } from '../../../core/dates';
 import { muscleGroupsOf, normalizeExerciseName } from '../../../core/exercises';
+import { weekStart } from '../../../core/habitSchedule';
 import type { DateKey, Id, MuscleGroup, PlannedSession, ProgramExercise } from '../../../core/types';
 
 // Adaptive plan (#226, owner's decision 2026-11-07): exercises of a missed session come back in the next sessions.
 // The constants below are that decision; revisit them together with personalization (#44).
 
-/** A carried exercise keeps 70 % of its sets (−30 %): catching up, not doubling up. */
+/**
+ * A carried exercise keeps 70 % of its sets (−30 %): catching up, not doubling up. At least one set stays, so a
+ * one-set exercise (a run, stretching) comes back whole — its duration is not shortened.
+ */
 export const CARRY_VOLUME_FACTOR = 0.7;
 /** A muscle group needs 48 hours between trainings — whole days here, as sessions are planned by day. */
 export const RECOVERY_DAYS = 2;
@@ -41,11 +45,8 @@ export function groupsOf(e: { name: string; muscleGroups?: MuscleGroup[] }): Mus
   return e.muscleGroups ?? muscleGroupsOf(e.name);
 }
 
-/** Monday of the date's week. */
-export function weekStart(date: DateKey): DateKey {
-  const weekday = fromDateKey(date).getDay(); // 0 = Sunday
-  return shiftDateKey(date, -((weekday + 6) % 7));
-}
+/** Monday of the date's week (the same weeks as habits). */
+export { weekStart };
 
 const skipsTraining = (t: CarryTargets | undefined) => !!t && (t.deload || t.maxWorkoutIntensity === 'rest');
 
@@ -66,7 +67,9 @@ function addSets(
  * - hold no other carried exercise of that main group, and not the same exercise;
  * - keep the week's sets of each of its groups within 120 % of the week's original plan (carried copies are not plan).
  * What does not fit a session goes on to the next one, so the overflow lands in next week instead of piling up.
- * A missed deload or rest day is not carried. An exercise is handled once any of it is placed; the rest is dropped.
+ * A missed deload or rest day is not carried. An exercise is handled once any of it is placed; sets that fit nowhere
+ * within two weeks are dropped on purpose (the cap is the limit), so a later run never adds more of it.
+ * Carried copies do not freeze muscle groups: they follow the name (`muscleGroupsOf`), also after «Заменить».
  */
 export function planCarryOver(input: {
   sessions: PlannedSession[];
@@ -106,7 +109,12 @@ export function planCarryOver(input: {
       const see = (date: DateKey) => {
         if (date < before && (last === undefined || date > last)) last = date;
       };
-      for (const log of logs) if (log.exercises?.some((e) => groupsOf(e).includes(group))) see(log.date);
+      for (const log of logs) {
+        if (!log.exercises?.some((e) => groupsOf(e).includes(group))) continue;
+        // A workout logged today counts against a carry into today's session too.
+        if (before === today && log.date === today) last = today;
+        else see(log.date);
+      }
       for (const s of own) {
         if (s.status === 'skipped') continue;
         const all = [...s.exercises, ...(added.get(s.id) ?? [])];
@@ -146,12 +154,7 @@ export function planCarryOver(input: {
           for (const g of groups)
             room = Math.min(room, Math.floor((planned.get(g) ?? 0) * WEEKLY_VOLUME_CAP - (live.get(g) ?? 0)));
           if (room < 1) continue;
-          const copy: ProgramExercise = {
-            ...exercise,
-            sets: room,
-            carriedFrom: source.date,
-            ...(groups.length > 0 && { muscleGroups: groups }),
-          };
+          const copy: ProgramExercise = { ...exercise, sets: room, carriedFrom: source.date };
           plan.additions.push({ sessionId: target.id, exercise: copy });
           added.set(target.id, [...(added.get(target.id) ?? []), copy]);
           left -= room;

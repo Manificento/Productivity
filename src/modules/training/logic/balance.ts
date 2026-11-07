@@ -21,7 +21,7 @@ export interface BalanceRow {
   plan: number;
   /** Sets done that week (journal). */
   fact: number;
-  /** Fewer sets done than planned for the days already past (today included). */
+  /** Fewer sets done than planned for the days already past (today's session once done). */
   under: boolean;
 }
 
@@ -53,7 +53,8 @@ function week(start: DateKey, sessions: PlannedSession[], logs: CarryLog[], toda
       if (e.carriedFrom) continue;
       for (const g of groupsOf(e)) {
         add(plan, g, e.sets);
-        if (s.date <= today) add(due, g, e.sets);
+        // Due: past days, and today once its session is done (a session still ahead today is not «недобор»).
+        if (s.date < today || (s.date === today && s.status === 'done')) add(due, g, e.sets);
       }
     }
   }

@@ -58,9 +58,24 @@ describe('adaptive plan on the training screen (#226)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Баланс групп мышц' }));
     const dialog = await screen.findByRole('dialog', { name: 'Баланс групп мышц' });
     const current = await within(dialog).findByRole('region', { name: 'Эта неделя' });
-    // Back: 3 sets planned on Monday (missed), none done → under-trained. Chest: 3 planned today, 1 done.
+    // Back: 3 sets planned on Monday (missed), none done → under-trained. Chest: today's session is still ahead,
+    // so 1 done of 3 planned is not «недобор» yet.
     expect(await within(current).findByLabelText('Спина: план 3, факт 0, недобор')).toBeInTheDocument();
-    expect(within(current).getByLabelText('Грудь: план 3, факт 1, недобор')).toBeInTheDocument();
+    expect(within(current).getByLabelText('Грудь: план 3, факт 1')).toBeInTheDocument();
     expect(within(dialog).getByRole('region', { name: 'Прошлая неделя' })).toHaveTextContent('Нет плана и тренировок');
+  });
+
+  it('ticked sets stay when a carried exercise is removed from the running session', async () => {
+    render(<ProgramsSection today={TODAY} />);
+    const set = await screen.findByRole('button', { name: 'Подход 1: Жим лёжа' });
+    await screen.findByRole('button', { name: 'Убрать перенесённое: Тяга в наклоне' });
+    fireEvent.click(screen.getByRole('button', { name: 'Подход 1: Жим лёжа' }));
+    expect(screen.getByRole('button', { name: 'Подход 1: Жим лёжа' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.change(screen.getByLabelText('RPE (1–10)'), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать перенесённое: Тяга в наклоне' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Тяга в наклоне/ })).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Подход 1: Жим лёжа' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('RPE (1–10)')).toHaveValue('7');
+    expect(set).toBeDefined();
   });
 });

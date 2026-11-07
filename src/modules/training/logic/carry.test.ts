@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DateKey, PlannedSession, ProgramExercise } from '../../../core/types';
 import { CARRY_VOLUME_FACTOR, groupsOf, planCarryOver, RECOVERY_DAYS, WEEKLY_VOLUME_CAP, type CarryLog } from './carry';
+import { adjustForTargets } from './periodization';
 import { PROGRAM_TEMPLATES } from './programs';
 
 // November 2026: Mon 2, Wed 4, Fri 6, Mon 9, Wed 11, Fri 13, Mon 16.
@@ -35,10 +36,10 @@ describe('planCarryOver — adaptive plan (#226)', () => {
     const after = session('2026-11-06', [press]);
     const plan = planCarryOver({ sessions: [missed, next, after], logs: [], targetsOn: normal, today: TODAY });
     expect(plan.additions).toEqual([
-      { sessionId: next.id, exercise: { ...back, sets: 2, carriedFrom: '2026-11-02', muscleGroups: ['back', 'arms'] } },
+      { sessionId: next.id, exercise: { ...back, sets: 2, carriedFrom: '2026-11-02' } },
       {
         sessionId: next.id,
-        exercise: { ...legs, sets: 2, carriedFrom: '2026-11-02', muscleGroups: ['legs', 'glutes', 'core'] },
+        exercise: { ...legs, sets: 2, carriedFrom: '2026-11-02' },
       },
     ]);
     expect(plan.handled).toEqual([{ sessionId: missed.id, names: ['Тяга в наклоне', 'Приседания'] }]);
@@ -103,7 +104,7 @@ describe('planCarryOver — adaptive plan (#226)', () => {
     expect(plan.handled).toEqual([{ sessionId: missed.id, names: ['Тяга в наклоне'] }]);
   });
 
-  it('Given цели дня When идёт перенос Then учитываются deload и maxWorkoutIntensity: в разгрузочный день и день отдыха перенос не делается', () => {
+  it('Given цели дня When идёт перенос Then учитываются deload и maxWorkoutIntensity: в разгрузочный день и день отдыха перенос не делается, объём ограничен правилами адаптации', () => {
     const missed = session('2026-11-02', [back], 'skipped');
     const deloadDay = session('2026-11-04', [press]);
     const restDay = session('2026-11-05', [press]);
@@ -120,6 +121,49 @@ describe('planCarryOver — adaptive plan (#226)', () => {
       today: TODAY,
     });
     expect(plan.additions.map((a) => a.sessionId)).toEqual([normalDay.id]);
+    // If that day later turns into a deload day, the session opens with the same −40 % for the carried copy too.
+    const carried = plan.additions[0]!.exercise;
+    expect(
+      adjustForTargets([carried], { deload: true, maxWorkoutIntensity: 'moderate', reasons: [] }).exercises,
+    ).toEqual([{ ...carried, sets: 1 }]);
+  });
+
+  it('no suitable session left this week (deload, rest, 48 h): the carry lands in next Monday', () => {
+    const missed = session('2026-11-02', [back], 'skipped');
+    const wed = session('2026-11-04', [{ ...back, name: 'Подтягивания' }]); // < 48 h after Tuesday's back workout
+    const thu = session('2026-11-05', [press]); // < 48 h after Wednesday's pull-ups
+    const fri = session('2026-11-06', [press]); // deload
+    const nextMon = session('2026-11-09', [{ ...back, name: 'Шраги', sets: 6, muscleGroups: ['back', 'arms'] }]);
+    const logs: CarryLog[] = [
+      { date: '2026-11-03', exercises: [{ name: 'Тяга гантели', sets: [{}], muscleGroups: ['back'] }] },
+    ];
+    const plan = planCarryOver({
+      sessions: [missed, wed, thu, fri, nextMon],
+      logs,
+      targetsOn: (date) => (date === '2026-11-06' ? { deload: true, maxWorkoutIntensity: 'moderate' } : normal()),
+      today: '2026-11-04',
+    });
+    // Next week plans 6 back sets (cap 7.2) and holds 6: one set of the rows fits there.
+    expect(plan.additions).toEqual([
+      { sessionId: nextMon.id, exercise: { ...back, sets: 1, carriedFrom: '2026-11-02' } },
+    ]);
+  });
+
+  it('a workout of the group logged today blocks a carry into today', () => {
+    const missed = session('2026-11-02', [back], 'skipped');
+    const today = session('2026-11-04', [press]);
+    const fri = session('2026-11-06', [press]);
+    const logs: CarryLog[] = [{ date: '2026-11-04', exercises: [{ name: 'Подтягивания', sets: [{}] }] }];
+    const plan = planCarryOver({ sessions: [missed, today, fri], logs, targetsOn: normal, today: '2026-11-04' });
+    expect(plan.additions.map((a) => a.sessionId)).toEqual([fri.id]);
+  });
+
+  it('a one-set exercise (a run) comes back whole: at least one set stays', () => {
+    const run = { name: 'Лёгкий бег 30 минут', sets: 1, rpeTarget: 5 };
+    const missed = session('2026-11-02', [run], 'skipped');
+    const next = session('2026-11-04', [{ name: 'Интервалы по 2 минуты', sets: 6, rpeTarget: 8 }]);
+    const plan = planCarryOver({ sessions: [missed, next], logs: [], targetsOn: normal, today: TODAY });
+    expect(plan.additions).toEqual([{ sessionId: next.id, exercise: { ...run, carriedFrom: '2026-11-02' } }]);
   });
 
   it('no suitable session within the horizon: nothing is added and the missed exercise stays open', () => {

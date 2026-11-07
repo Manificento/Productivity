@@ -26,14 +26,13 @@ import { ProgramForm } from './ProgramForm';
 import { PlanOutlook } from './PlanOutlook';
 import { SessionRunner } from './SessionRunner';
 
+const INTENSITIES: CarryTargets['maxWorkoutIntensity'][] = ['rest', 'light', 'moderate', 'hard'];
+
 /** «Программы»: today's session, active programs, templates and the create form. */
 export function ProgramsSection({ today }: { today: DateKey }) {
   const programs = useActivePrograms();
-  // A session of an earlier day that was not done becomes «пропущена»; the plan is not shifted.
-  useEffect(() => {
-    skipMissedSessions(today).catch((e: unknown) => console.error('skipMissedSessions failed', e));
-  }, [today]);
-  // Exercises of missed sessions come back in the next ones (#226), by the targets of the days around today.
+  // A session of an earlier day that was not done becomes «пропущена» (the plan is not shifted); then its exercises
+  // come back in the next sessions (#226), by the targets of the days around today.
   const range = useDailyTargetsRange(
     shiftDateKey(today, -CARRY_LOOKBACK_DAYS),
     shiftDateKey(today, CARRY_HORIZON_DAYS),
@@ -46,11 +45,9 @@ export function ProgramsSection({ today }: { today: DateKey }) {
     if (!carryKey) return;
     const targets = new Map<string, CarryTargets>(
       carryKey.split('|').map((part) => {
-        const [date, deload, intensity] = part.split(':');
-        return [
-          date!,
-          { deload: deload === '1', maxWorkoutIntensity: intensity as CarryTargets['maxWorkoutIntensity'] },
-        ];
+        const [date = '', deload, intensity] = part.split(':');
+        const max = INTENSITIES.find((x) => x === intensity) ?? 'hard';
+        return [date, { deload: deload === '1', maxWorkoutIntensity: max }];
       }),
     );
     skipMissedSessions(today)
@@ -128,7 +125,7 @@ export function ProgramsSection({ today }: { today: DateKey }) {
             </>
           ) : (
             <SessionRunner
-              key={`${todaySession.session.id}:${todaySession.session.exercises.length}`}
+              key={todaySession.session.id}
               program={todaySession.program}
               session={todaySession.session}
               targets={targets}

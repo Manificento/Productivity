@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkout, draftFromExercises, toggleSet, workoutTypeFor } from './session';
+import { buildWorkout, draftFromExercises, exerciseIds, toggleSet, workoutTypeFor } from './session';
 
 const exercises = [
   { name: 'Присед', sets: 3, reps: 5, weightKg: 80 },
@@ -81,5 +81,23 @@ describe('workoutTypeFor', () => {
     );
     const built = buildWorkout(draft, { date: '2026-11-04', durationMin: '30', rpe: '6' });
     expect(built.ok && built.value.exercises).toEqual([{ name: 'Свой комплекс', muscleGroups: ['back'], sets: [{}] }]);
+  });
+
+  it('exerciseIds: own exercises by position, carried ones by origin and name — removing a carried one keeps the rest', () => {
+    const own = [
+      { name: 'Жим', sets: 3 },
+      { name: 'Присед', sets: 3 },
+    ];
+    const a = { name: 'Тяга', sets: 2, carriedFrom: '2026-11-02' };
+    const b = { name: 'Подтягивания', sets: 2, carriedFrom: '2026-11-02' };
+    expect(exerciseIds([...own, a, b])).toEqual([
+      'own:0',
+      'own:1',
+      'carried:2026-11-02:тяга',
+      'carried:2026-11-02:подтягивания',
+    ]);
+    expect(exerciseIds([...own, b])).toEqual(['own:0', 'own:1', 'carried:2026-11-02:подтягивания']);
+    // The same exercise carried twice from one day stays distinct.
+    expect(exerciseIds([a, a])).toEqual(['carried:2026-11-02:тяга', 'carried:2026-11-02:тяга#2']);
   });
 });
