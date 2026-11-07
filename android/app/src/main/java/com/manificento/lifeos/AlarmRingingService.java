@@ -37,7 +37,7 @@ public class AlarmRingingService extends Service {
     static final String ACTION_STOPPED = "com.manificento.lifeos.ALARM_STOPPED";
 
     /** Whether an alarm rings right now (AlarmActivity closes when it does not). */
-    static volatile boolean ringingNow;
+    static volatile boolean ringing;
 
     private static final String TAG = "AlarmRingingService";
     private static final String CHANNEL_ID = "alarm";
@@ -49,7 +49,6 @@ public class AlarmRingingService extends Service {
     private MediaPlayer player;
     private Vibrator vibrator;
     private PowerManager.WakeLock wakeLock;
-    private boolean ringing;
     private long alarmAt;
 
     @Override
@@ -69,6 +68,8 @@ public class AlarmRingingService extends Service {
             // A newer alarm came while this one rings (set less than 10 minutes ahead): keep ringing for it.
             alarmAt = at;
             AlarmStore.clearAlarm(this);
+            // The notification and an open alarm screen show the new time.
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, buildNotification());
             handler.removeCallbacks(timeout);
             handler.postDelayed(timeout, AlarmPolicy.RING_TIMEOUT_MS);
             return START_NOT_STICKY;
@@ -82,7 +83,6 @@ public class AlarmRingingService extends Service {
             return START_NOT_STICKY;
         }
         ringing = true;
-        ringingNow = true;
         // The alarm has rung: it is no longer pending (a reboot must not set it again).
         AlarmStore.clearAlarm(this);
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
@@ -96,6 +96,8 @@ public class AlarmRingingService extends Service {
 
     private void dismiss() {
         if (ringing) {
+            // A second «Выключить» before onDestroy (double tap) must not store a second dismissal.
+            ringing = false;
             AlarmStore.addDismissal(this, System.currentTimeMillis(), alarmAt);
             AlarmPlugin.notifyDismissed();
         }
@@ -105,7 +107,6 @@ public class AlarmRingingService extends Service {
     @Override
     public void onDestroy() {
         ringing = false;
-        ringingNow = false;
         sendBroadcast(new Intent(ACTION_STOPPED).setPackage(getPackageName()));
         handler.removeCallbacks(timeout);
         if (player != null) {
@@ -175,7 +176,10 @@ public class AlarmRingingService extends Service {
             dismiss,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        PendingIntent open = AlarmScheduler.showIntent(this);
+        // Over the lock screen: AlarmActivity with a large «Выключить». Android 14+ may withhold full-screen intents;
+        // then the alarm rings as this notification (sound, vibration, «Выключить»).
+        boolean fullScreen = AlarmPolicy.useFullScreen(Build.VERSION.SDK_INT, fullScreenGranted(manager));
+        PendingIntent open = fullScreen ? alarmScreenIntent() : AlarmScheduler.showIntent(this);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Будильник")
@@ -187,26 +191,22 @@ public class AlarmRingingService extends Service {
             .setDeleteIntent(dismissIntent)
             // The «Выключить» action stays on a lock screen that hides sensitive content.
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            // Tapping the notification brings the alarm screen back (no unlock needed).
             .setContentIntent(open)
             .addAction(0, "Выключить", dismissIntent);
-        // Over the lock screen: AlarmActivity with a large «Выключить». Android 14+ may withhold full-screen intents;
-        // then the alarm rings as this notification (sound, vibration, «Выключить»).
-        if (AlarmPolicy.useFullScreen(Build.VERSION.SDK_INT, canUseFullScreenIntent(manager))) {
-            Intent screen = new Intent(this, AlarmActivity.class)
-                .putExtra(AlarmActivity.EXTRA_ALARM_AT, alarmAt)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
-            PendingIntent full = PendingIntent.getActivity(
-                this,
-                2,
-                screen,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
-            );
-            builder.setFullScreenIntent(full, true);
-        }
+        if (fullScreen) builder.setFullScreenIntent(open, true);
         return builder.build();
     }
 
-    private static boolean canUseFullScreenIntent(NotificationManager manager) {
-        return Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent();
+    private PendingIntent alarmScreenIntent() {
+        Intent screen = new Intent(this, AlarmActivity.class)
+            .putExtra(EXTRA_ALARM_AT, alarmAt)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
+        return PendingIntent.getActivity(this, 2, screen, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** The raw grant only; AlarmPolicy.useFullScreen decides (before Android 14 there is nothing to grant). */
+    private static boolean fullScreenGranted(NotificationManager manager) {
+        return Build.VERSION.SDK_INT >= 34 && manager.canUseFullScreenIntent();
     }
 }

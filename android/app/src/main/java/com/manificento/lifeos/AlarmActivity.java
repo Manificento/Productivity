@@ -21,8 +21,6 @@ import java.util.Calendar;
  */
 public class AlarmActivity extends AppCompatActivity {
 
-    static final String EXTRA_ALARM_AT = "alarmAt";
-
     private final BroadcastReceiver stopped = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -44,14 +42,10 @@ public class AlarmActivity extends AppCompatActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_alarm);
 
-        long at = getIntent().getLongExtra(EXTRA_ALARM_AT, System.currentTimeMillis());
-        Calendar time = Calendar.getInstance();
-        time.setTimeInMillis(at);
-        ((TextView) findViewById(R.id.alarm_time)).setText(
-            AlarmPolicy.clockLabel(time.get(Calendar.HOUR_OF_DAY), time.get(Calendar.MINUTE))
-        );
+        showTime(getIntent());
         Button dismiss = findViewById(R.id.alarm_dismiss);
         dismiss.setOnClickListener(v -> {
+            v.setEnabled(false);
             startService(new Intent(this, AlarmRingingService.class).setAction(AlarmRingingService.ACTION_DISMISS));
             finish();
         });
@@ -71,10 +65,27 @@ public class AlarmActivity extends AppCompatActivity {
         );
     }
 
+    /** A newer alarm while this one rings: the screen shows its time. */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        showTime(intent);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
-        if (!AlarmRingingService.ringingNow) finish();
+        if (!AlarmRingingService.ringing) finish();
+    }
+
+    private void showTime(Intent intent) {
+        long at = intent.getLongExtra(AlarmRingingService.EXTRA_ALARM_AT, System.currentTimeMillis());
+        Calendar time = Calendar.getInstance();
+        time.setTimeInMillis(at);
+        ((TextView) findViewById(R.id.alarm_time)).setText(
+            AlarmPolicy.clockLabel(time.get(Calendar.HOUR_OF_DAY), time.get(Calendar.MINUTE))
+        );
     }
 
     @Override

@@ -46,6 +46,7 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+        <!-- Alarm screen over the lock screen (#233): time and a large «Выключить». -->
         <activity
             android:name=".AlarmActivity"
             android:directBootAware="true"

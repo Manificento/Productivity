@@ -4,4 +4,8 @@
     <string name="title_activity_main">LifeOS</string>
     <string name="package_name">com.manificento.lifeos</string>
     <string name="custom_url_scheme">com.manificento.lifeos</string>
+    <!-- Alarm screen over the lock screen (#233). -->
+    <string name="alarm_title">Будильник</string>
+    <string name="alarm_text">Пора вставать</string>
+    <string name="alarm_dismiss">Выключить</string>
 </resources>
