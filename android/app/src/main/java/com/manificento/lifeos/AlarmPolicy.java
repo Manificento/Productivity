@@ -1,7 +1,9 @@
 package com.manificento.lifeos;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
+import java.util.TimeZone;
 
 /** Pure rules of the alarm (#139), unit-tested: stored dismissals, restoring after a reboot, the window bounds. */
 final class AlarmPolicy {
@@ -46,9 +48,26 @@ final class AlarmPolicy {
         return out;
     }
 
-    /** A reboot clears AlarmManager: set the stored alarm again only if it is still ahead. */
-    static boolean shouldRestore(long at, long now) {
-        return at != NONE && at > now;
+    /** A reboot clears AlarmManager: set the stored alarm again (rolled to its next daily ring) if there is one. */
+    static boolean shouldRestore(long at) {
+        return at != NONE;
+    }
+
+    /**
+     * The alarm repeats daily (#241): its next ring after `now` at the same local time — `at` itself if still ahead,
+     * else the same clock time one or more days later (a 23- or 25-hour day keeps the clock time).
+     */
+    static long nextDaily(long at, long now, TimeZone tz) {
+        Calendar c = Calendar.getInstance(tz);
+        c.setTimeInMillis(at);
+        int hour = c.get(Calendar.HOUR_OF_DAY);
+        int minute = c.get(Calendar.MINUTE);
+        while (c.getTimeInMillis() <= now) {
+            c.add(Calendar.DAY_OF_MONTH, 1);
+            c.set(Calendar.HOUR_OF_DAY, hour);
+            c.set(Calendar.MINUTE, minute);
+        }
+        return c.getTimeInMillis();
     }
 
     static boolean isValidWindow(int windowMin) {

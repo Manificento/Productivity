@@ -5,7 +5,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Calendar;
 import java.util.List;
+import java.util.TimeZone;
 import org.junit.Test;
 
 public class AlarmPolicyTest {
@@ -37,11 +39,36 @@ public class AlarmPolicyTest {
         assertTrue(AlarmPolicy.parseDismissals(null).isEmpty());
     }
 
+    private static long berlin(int year, int month, int day, int hour, int minute) {
+        Calendar c = Calendar.getInstance(TimeZone.getTimeZone("Europe/Berlin"));
+        c.clear();
+        c.set(year, month - 1, day, hour, minute, 0);
+        return c.getTimeInMillis();
+    }
+
     @Test
-    public void afterARebootOnlyAnAlarmStillAheadIsRestored() {
-        assertTrue(AlarmPolicy.shouldRestore(2_000L, 1_000L));
-        assertFalse(AlarmPolicy.shouldRestore(1_000L, 1_000L));
-        assertFalse(AlarmPolicy.shouldRestore(AlarmPolicy.NONE, 1_000L));
+    public void givenTheAlarmRangWhenItIsSwitchedOffThenTheNextRingIsTheSameTimeTomorrow() {
+        TimeZone tz = TimeZone.getTimeZone("Europe/Berlin");
+        long at = berlin(2026, 11, 8, 6, 30);
+        assertEquals(berlin(2026, 11, 9, 6, 30), AlarmPolicy.nextDaily(at, at + 60_000L, tz));
+        // Still ahead: unchanged.
+        assertEquals(at, AlarmPolicy.nextDaily(at, at - 1L, tz));
+        // The phone was off for days: the first ring still ahead, at the same local time.
+        assertEquals(berlin(2026, 11, 12, 6, 30), AlarmPolicy.nextDaily(at, berlin(2026, 11, 11, 7, 0), tz));
+    }
+
+    @Test
+    public void aDailyAlarmKeepsItsLocalTimeAcrossTheClockChange() {
+        TimeZone tz = TimeZone.getTimeZone("Europe/Berlin");
+        // 25 Oct 2026: clocks go back an hour; the day is 25 hours long.
+        long at = berlin(2026, 10, 24, 7, 0);
+        assertEquals(berlin(2026, 10, 25, 7, 0), AlarmPolicy.nextDaily(at, at + 1L, tz));
+    }
+
+    @Test
+    public void afterARebootTheStoredAlarmIsRestoredUnlessThereIsNone() {
+        assertTrue(AlarmPolicy.shouldRestore(2_000L));
+        assertFalse(AlarmPolicy.shouldRestore(AlarmPolicy.NONE));
     }
 
     @Test

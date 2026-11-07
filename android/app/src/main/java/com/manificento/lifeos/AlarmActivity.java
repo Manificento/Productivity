@@ -16,7 +16,8 @@ import java.util.Calendar;
 
 /**
  * The ringing alarm over the lock screen (#233): the alarm time and a large «Выключить». Switching off goes through
- * AlarmRingingService exactly as the notification action, so the dismissal reaches JS (alarm:dismissed). Closes
+ * AlarmRingingService exactly as the notification action, so the dismissal reaches JS (alarm:dismissed), then opens
+ * LifeOS, where «Сон» offers to log the night (#241). Closes
  * itself when the ringing stops some other way (notification, timeout). The phone stays locked.
  */
 public class AlarmActivity extends AppCompatActivity {
@@ -47,6 +48,8 @@ public class AlarmActivity extends AppCompatActivity {
         dismiss.setOnClickListener(v -> {
             v.setEnabled(false);
             startService(new Intent(this, AlarmRingingService.class).setAction(AlarmRingingService.ACTION_DISMISS));
+            // Straight to LifeOS (after unlocking): «Сон» offers to log the night (#241).
+            startActivity(AlarmScheduler.openAppIntent(this).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             finish();
         });
         // Back does not silence the alarm by accident: only «Выключить» does.

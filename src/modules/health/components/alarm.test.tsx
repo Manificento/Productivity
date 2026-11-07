@@ -67,6 +67,8 @@ describe('alarm card on «Сон» (#129)', () => {
     // It rings with the app closed; the user switches it off on the alarm screen.
     await act(async () => alarm.dismiss(WINDOW_START + 120_000));
     await waitFor(async () => expect((await db.settings.get('health.alarm.dismissal'))?.value).toBeDefined());
+    // Switched off: LifeOS opens «Сон» with «Я встал» (#241).
+    await waitFor(() => expect(window.location.hash).toBe('#/health'));
   });
 
   it('a mounted background sets the next window after the alarm rings and is switched off', async () => {

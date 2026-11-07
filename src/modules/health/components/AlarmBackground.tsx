@@ -10,10 +10,10 @@ import { nextAlarm, type WakeTargets } from '../logic/alarm';
 const AFTER_RING_MS = 60_000;
 
 /**
- * Mounted by the shell on every page (#129). The native alarm rings once, so while it is on this sets the next wake
- * window's alarm: when the app starts (always — the stored state may outlive the native alarm), when the alarm is
- * switched off, when the app comes back to the screen, and a minute after the set time. A day without opening
- * LifeOS leaves the last alarm as it was (a repeating native alarm — #241). Stores a switch-off for «Я встал».
+ * Mounted by the shell on every page (#129). The native alarm repeats daily at the same time (#241); this keeps it on
+ * the wake window of the day's targets: when the app starts (always — the stored state may outlive the native alarm),
+ * when the alarm is switched off, when the app comes back to the screen, and a minute after the set time. A switch-off
+ * is stored for «Я встал» and opens «Сон» (the alarm screen brings LifeOS to the front).
  */
 export function AlarmBackground() {
   return getCapabilities().alarms ? <AlarmKeeper /> : null;
@@ -64,7 +64,11 @@ function AlarmKeeper() {
     () =>
       onAlarmDismissed((e) => {
         recordDismissal(e)
-          .then(arm)
+          .then(() => {
+            // Straight to «Сон», where «Я встал» offers to log the night (#241).
+            window.location.hash = '#/health';
+            arm();
+          })
           .catch((err: unknown) => console.error('recordDismissal failed', err));
       }),
     [arm],

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
+import android.app.AlarmManager;
 import android.app.Application;
 import android.app.Notification;
 import android.app.NotificationManager;
@@ -94,6 +95,11 @@ public class AlarmScreenTest {
         dismiss.performClick();
         assertTrue(screen.isFinishing());
         assertFalse("a double tap sends nothing more", dismiss.isEnabled());
+        // Straight on to LifeOS, where «Сон» offers to log the night (#241).
+        Intent opened = shadowOf(screen).getNextStartedActivity();
+        assertNotNull(opened);
+        assertEquals(app.getPackageName(), opened.getComponent().getPackageName());
+        assertFalse(AlarmActivity.class.getName().equals(opened.getComponent().getClassName()));
         Intent sent = shadowOf(app).getNextStartedService();
         assertEquals(AlarmRingingService.ACTION_DISMISS, sent.getAction());
 
@@ -110,5 +116,18 @@ public class AlarmScreenTest {
     public void theAlarmScreenClosesWhenNothingRings() {
         AlarmActivity screen = openScreen();
         assertTrue(screen.isFinishing());
+    }
+
+    @Test
+    public void givenTheAlarmIsOnWhenItRingsThenTheSameTimeTomorrowIsSetWithoutOpeningLifeOS() {
+        long past = System.currentTimeMillis() - 60_000L; // it is ringing now
+        AlarmStore.saveAlarm(app, past, 30);
+        ring();
+        long tomorrow = AlarmPolicy.nextDaily(past, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+        assertTrue(tomorrow > past);
+        assertEquals(tomorrow, AlarmStore.alarmAt(app));
+        assertEquals(30, AlarmStore.windowMin(app));
+        AlarmManager manager = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        assertEquals(tomorrow, manager.getNextAlarmClock().getTriggerTime());
     }
 }

@@ -34,6 +34,10 @@ final class AlarmStore {
         return prefs(context).getLong(AT, AlarmPolicy.NONE);
     }
 
+    static synchronized int windowMin(Context context) {
+        return prefs(context).getInt(WINDOW, 0);
+    }
+
     static synchronized void addDismissal(Context context, long dismissedAt, long alarmAt) {
         SharedPreferences p = prefs(context);
         p.edit().putString(DISMISSALS, AlarmPolicy.appendDismissal(p.getString(DISMISSALS, ""), dismissedAt, alarmAt)).commit();

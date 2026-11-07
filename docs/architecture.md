@@ -186,7 +186,8 @@ Android Chrome через service worker), пока открыта вкладк�
 `src/test/platform.ts`.
 Будильник (#139) — `setAlarm({ at, windowMin })`, `cancelAlarm()` и `onAlarmDismissed(listener)` (событие
 `alarm:dismissed` с `dismissedAt` и `alarmAt`, возвращает отписку) из `platform.ts`. Будильник один: новый заменяет
-прежний. На Android — свой плагин `Alarm` (`android/…/AlarmPlugin.java`): `AlarmManager.setAlarmClock` звонит при
+прежний. Он повторяется каждый день в то же время, пока его не отменят или не заменят (#241), даже если
+LifeOS не открывали; «Выключить» на экране будильника открывает LifeOS. На Android — свой плагин `Alarm` (`android/…/AlarmPlugin.java`): `AlarmManager.setAlarmClock` звонит при
 закрытом приложении, после перезагрузки (ещё до разблокировки: хранилище будильника — device-protected) или
 обновления ставится снова; звонит служба `AlarmRingingService` (звук
 будильника, вибрация, полноэкранное уведомление с «Выключить», через 10 минут затихает без события). Смахнуть
