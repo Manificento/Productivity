@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { useState } from 'react';
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
-import { todayKey } from '../../../core/dates';
+import { useTodayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty } from '../../../ui';
 import { useDayMeals, useFoods, useRecentMeals } from '../data/food';
@@ -29,13 +29,16 @@ function MacrosLine({ m }: { m: Macros }) {
 
 /** «Еда»: today's meals with totals, quick add from recent foods, custom foods. */
 export function FoodTab({
-  today = todayKey(),
+  today: todayProp,
   nowTime = format(new Date(), 'HH:mm'),
 }: {
   today?: DateKey;
   /** 'HH:mm' now; injectable for tests. */
   nowTime?: string;
 }) {
+  // Follows local midnight while the screen stays open; tests may pin the day.
+  const ownToday = useTodayKey();
+  const today = todayProp ?? ownToday;
   const foods = useFoods();
   const meals = useDayMeals(today);
   const recentMeals = useRecentMeals(today);

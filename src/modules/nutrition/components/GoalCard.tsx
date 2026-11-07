@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
-import { todayKey } from '../../../core/dates';
+import { useTodayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty, Field, Input, Segmented, Select } from '../../../ui';
 import { refreshExpenditure, saveGoal, saveProfile, useEstimateInputs, useGoal } from '../data/goal';
@@ -68,7 +68,10 @@ function ProfileForm({ profile, today, onSaved }: { profile?: Profile; today: Da
 }
 
 /** «Цель»: goal and rate, starter/measured expenditure, and the day's calorie and macro targets from the engine. */
-export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
+export function GoalCard({ today: todayProp }: { today?: DateKey }) {
+  // Follows local midnight while the screen stays open; tests may pin the day.
+  const ownToday = useTodayKey();
+  const today = todayProp ?? ownToday;
   const settings = useGoal();
   const targets = useDailyTargets(today);
   const [estimate, setEstimate] = useState<Estimate>();

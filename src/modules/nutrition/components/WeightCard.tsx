@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { todayKey } from '../../../core/dates';
+import { useTodayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty, Field, Input } from '../../../ui';
 import { logWeight, useWeightLogs } from '../data/weight';
@@ -16,7 +16,10 @@ import {
 import { WeightChart } from './WeightChart';
 
 /** «Вес»: quick input for today and the trend chart. */
-export function WeightCard({ today = todayKey() }: { today?: DateKey }) {
+export function WeightCard({ today: todayProp }: { today?: DateKey }) {
+  // Follows local midnight while the screen stays open; tests may pin the day.
+  const ownToday = useTodayKey();
+  const today = todayProp ?? ownToday;
   const logs = useWeightLogs();
   const [text, setText] = useState('');
   const [error, setError] = useState<string>();

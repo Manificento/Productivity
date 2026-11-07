@@ -5,7 +5,7 @@
 - **Пишет в таблицы:** `weightLogs`, `settings` (только ключи `nutrition.*`: `nutrition.goal`, `nutrition.expenditure`, `nutrition.profile`), `foods`, `mealLogs` (дневник еды, перенесён из `health` в #107). Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
 - **Читает:** `sleepLogs`, `workoutLogs`, цели дня.
 - **Суть модуля:** журнал веса и тренд → адаптивный расход энергии и цели КБЖУ → цели по фазам в дневнике еды (SPEC 0.3, раздел 3 и 5.6). Ядро расход энергии не считает — это делает этот модуль и кладёт результат в `settings` `nutrition.expenditure`.
-- **Цели дня:** `useDailyTargets(todayKey())` из `src/core/adaptation/useDailyTargets.ts` — только чтение. Своих правил адаптации в модуле нет.
+- **Цели дня:** `useDailyTargets(today)` из `src/core/adaptation/useDailyTargets.ts` — только чтение. Своих правил адаптации в модуле нет. День `today` берётся из `useTodayKey()` (`src/core/dates.ts`, меняется в полночь); своих `todayKey()` по умолчанию в компонентах нет.
 - **Вес:** одна запись на день (`weightLogs.date` — уникальный индекс): при повторном вводе обновляй запись дня, а не добавляй вторую.
 - **Дневник еды** (#107): `components/FoodTab` и формы, `data/food.ts`, поиск Open Food Facts — единственный разрешённый
   внешний API (`data/openFoodFacts.ts`, `logic/openFoodFacts.ts`).
