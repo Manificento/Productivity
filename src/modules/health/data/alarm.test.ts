@@ -72,4 +72,27 @@ describe('alarm data', () => {
     expect(await loadAlarmState()).toEqual({ enabled: false });
     expect(await loadDismissal()).toBeUndefined();
   });
+
+  it('a failed re-arm is stored with its hint; switching off while it is set keeps it off; force re-sets', async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    await enableAlarm(AT);
+    alarm.exactAlarm = 'denied';
+    await keepArmed(AT + 86_400_000);
+    expect(await loadAlarmState()).toEqual({ enabled: true, error: ALARM_TEXTS.exactDenied });
+
+    alarm.exactAlarm = 'granted';
+    await keepArmed(AT); // an error is retried
+    expect(await loadAlarmState()).toEqual({ enabled: true, at: AT });
+    await keepArmed(AT, { force: true });
+    expect(alarm.bridge.set).toHaveBeenCalledTimes(4);
+
+    alarm.bridge.set.mockImplementationOnce(async ({ at, windowMin }) => {
+      await disableAlarm(); // the user taps «Выключен» meanwhile
+      alarm.scheduled = { at, windowMin };
+    });
+    await keepArmed(AT, { force: true });
+    expect(await loadAlarmState()).toEqual({ enabled: false });
+    expect(alarm.scheduled).toBeUndefined();
+  });
 });

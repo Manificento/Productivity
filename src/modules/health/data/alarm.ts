@@ -12,7 +12,8 @@ import type { Millis } from '../../../core/types';
 const STATE_KEY = 'health.alarm';
 const DISMISSAL_KEY = 'health.alarm.dismissal';
 
-const State = z.object({ enabled: z.boolean(), at: z.number().optional() });
+/** `error`: the last attempt to set the next alarm failed — why (shown on the card; nothing will ring). */
+const State = z.object({ enabled: z.boolean(), at: z.number().optional(), error: z.string().optional() });
 export type AlarmState = z.infer<typeof State>;
 const Dismissal = z.object({ dismissedAt: z.number(), alarmAt: z.number() });
 
@@ -43,14 +44,26 @@ export async function disableAlarm(): Promise<void> {
   await db.settings.put({ key: STATE_KEY, value: { enabled: false } });
 }
 
-/** While on: once the set alarm is behind us (it rang), set the next window's. Never rejects. */
-export async function keepArmed(next: Millis | undefined): Promise<void> {
+/**
+ * While on: sets the next window's alarm (`setAlarm` replaces the native one). Skips when that very alarm is already
+ * set and ahead, unless `force` (app start: after a restore or reinstall the stored state may outlive the native
+ * alarm). A failure is stored with its hint for the card. Switched off meanwhile — the alarm is cancelled again.
+ * Never rejects.
+ */
+export async function keepArmed(next: Millis | undefined, { force = false } = {}): Promise<void> {
   const state = await loadAlarmState();
   if (!state.enabled || next === undefined) return;
-  if (state.at !== undefined && state.at > Date.now() && state.at === next) return;
+  if (!force && !state.error && state.at !== undefined && state.at > Date.now() && state.at === next) return;
   const result = await setAlarm({ at: next, windowMin: 0 });
-  if (result.status === 'set') await db.settings.put({ key: STATE_KEY, value: { enabled: true, at: next } });
-  else console.error('keepArmed: alarm not set', result);
+  if (!(await loadAlarmState()).enabled) {
+    // The user switched it off while it was being set: keep it off.
+    await cancelAlarm();
+    return;
+  }
+  await db.settings.put({
+    key: STATE_KEY,
+    value: result.status === 'set' ? { enabled: true, at: next } : { enabled: true, error: result.hint },
+  });
 }
 
 export async function recordDismissal(d: AlarmDismissal): Promise<void> {

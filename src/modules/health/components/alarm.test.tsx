@@ -9,21 +9,28 @@ import { ALARM_WEB_TEXT } from './AlarmCard';
 import { SleepTab } from './SleepTab';
 
 const TODAY = '2026-11-07';
-const NOW = new Date(2026, 10, 7, 22, 0).getTime(); // evening: tomorrow's window 7:00–7:30 (default targets)
-const WINDOW_START = new Date(2026, 10, 8, 7, 0).getTime();
+const NOW = new Date(2026, 10, 7, 22, 0).getTime(); // evening: tomorrow's window 6:30–7:00
+const WINDOW_START = new Date(2026, 10, 8, 6, 30).getTime();
 
 beforeEach(async () => {
   await Promise.all([db.settings.clear(), db.sleepLogs.clear()]);
-  vi.spyOn(Date, 'now').mockReturnValue(NOW);
+  // Wake-up target 07:00 with the default 30-minute window.
+  await db.settings.put({ key: 'adaptation.baseline', value: { wakeTime: '07:00' } });
+  // The whole clock is fixed (Date.now and new Date — `useTodayKey` reads the latter); timers stay real.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('alarm card on «Сон» (#129)', () => {
   it('Given wakeTime и wakeWindowMin When я открываю «Сон» на нативе Then карточка будильника: окно «6:30–7:00», включить / выключить', async () => {
     mockNativePlatform('android', ['alarms']);
     const alarm = mockAlarm();
     render(<SleepTab today={TODAY} />);
-    expect(await screen.findByText('7:00–7:30')).toBeInTheDocument();
+    expect(await screen.findByText('6:30–7:00')).toBeInTheDocument();
     const toggle = screen.getByRole('switch', { name: 'Будильник' });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 
@@ -62,10 +69,42 @@ describe('alarm card on «Сон» (#129)', () => {
     await waitFor(async () => expect((await db.settings.get('health.alarm.dismissal'))?.value).toBeDefined());
   });
 
+  it('a mounted background sets the next window after the alarm rings and is switched off', async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    await db.settings.put({ key: 'health.alarm', value: { enabled: true, at: WINDOW_START } });
+    render(<AlarmBackground />);
+    await waitFor(() => expect(alarm.bridge.set).toHaveBeenCalled()); // app start: set again (forced)
+
+    // Morning: the alarm rang at 6:30 and is switched off at 6:33 with the app still running.
+    vi.setSystemTime(WINDOW_START + 3 * 60_000);
+    await act(async () => alarm.dismiss(WINDOW_START + 3 * 60_000));
+    const nextDay = new Date(2026, 10, 9, 6, 30).getTime();
+    await waitFor(() => expect(alarm.scheduled).toEqual({ at: nextDay, windowMin: 0 }));
+    expect(await loadAlarmState()).toEqual({ enabled: true, at: nextDay });
+  });
+
+  it('a failed re-arm shows on the card: nothing will ring', async () => {
+    mockNativePlatform('android', ['alarms']);
+    mockAlarm();
+    await db.settings.put({ key: 'health.alarm', value: { enabled: true, error: ALARM_TEXTS.exactDenied } });
+    render(<SleepTab today={TODAY} />);
+    expect(await screen.findByRole('alert')).toHaveTextContent(ALARM_TEXTS.exactDenied);
+  });
+
+  it('a switch-off from an earlier day is dropped, not offered', async () => {
+    mockNativePlatform('android', ['alarms']);
+    mockAlarm();
+    await recordDismissal({ dismissedAt: new Date(2026, 10, 5, 7, 2).getTime(), alarmAt: WINDOW_START });
+    render(<SleepTab today={TODAY} />);
+    await waitFor(async () => expect(await db.settings.get('health.alarm.dismissal')).toBeUndefined());
+    expect(screen.queryByText(/Будильник выключен/)).not.toBeInTheDocument();
+  });
+
   it('Given звонок When я нажимаю «Я встал» Then предложение записать сон через saveSleep() с подставленным временем', async () => {
     mockNativePlatform('android', ['alarms']);
     mockAlarm();
-    vi.spyOn(Date, 'now').mockReturnValue(new Date(2026, 10, 8, 7, 5).getTime());
+    vi.setSystemTime(new Date(2026, 10, 8, 7, 5));
     await recordDismissal({
       dismissedAt: new Date(2026, 10, 8, 7, 2).getTime(),
       alarmAt: WINDOW_START,
@@ -74,7 +113,7 @@ describe('alarm card on «Сон» (#129)', () => {
     expect(await screen.findByText(/Будильник выключен в 07:02/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Я встал' }));
     const form = screen.getByRole('region', { name: 'Записать сон' });
-    expect(form.querySelector('input[type="time"]')).toHaveValue('23:30');
+    expect(form.querySelector('input[type="time"]')).toHaveValue('23:30'); // bedtime target
     expect(screen.getAllByLabelText('Подъём').some((el) => (el as HTMLInputElement).value === '07:02')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Записать сон' }));
     await waitFor(async () => expect(await db.sleepLogs.count()).toBe(1));

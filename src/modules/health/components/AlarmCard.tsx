@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
+import { useEffect, useState } from 'react';
 import { useDailyTargetsRange } from '../../../core/adaptation/useDailyTargets';
-import { shiftDateKey } from '../../../core/dates';
+import { shiftDateKey, toDateKey } from '../../../core/dates';
 import { ALARM_TEXTS, getCapabilities, isNativePlatform } from '../../../core/platform';
 import type { DateKey, SleepLog } from '../../../core/types';
 import { Button, Card, Empty, Field, Input, Rating } from '../../../ui';
@@ -9,6 +11,7 @@ import { logSleep } from '../data/sleep';
 import { nextAlarm, sleepOffer, windowLabel } from '../logic/alarm';
 import { DEFAULT_QUALITY } from '../logic/sleep';
 
+/** The criterion's wording («доступно в приложении для телефона»), softer than core's `ALARM_TEXTS.web` error hint. */
 export const ALARM_WEB_TEXT =
   'Будильник доступен в приложении для телефона: браузер не может разбудить, когда вкладка закрыта.';
 
@@ -93,6 +96,11 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
   const dismissal = useDismissal();
   const [now] = useState(() => Date.now());
   const [hint, setHint] = useState<string>();
+  const staleDismissal = !!dismissal && toDateKey(dismissal.dismissedAt) !== today;
+  // A switch-off from an earlier day is not «доброе утро» any more: drop it.
+  useEffect(() => {
+    if (staleDismissal) clearDismissal().catch((e: unknown) => console.error('clearDismissal failed', e));
+  }, [staleDismissal]);
   const [busy, setBusy] = useState(false);
 
   if (!available) {
@@ -114,8 +122,8 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
   const wakeTargets = next && targetsOf(next.wakeDay);
   const label = next && wakeTargets && windowLabel(next.wakeDay, wakeTargets.wakeTime, wakeTargets.wakeWindowMin);
   // The night before the switch-off: bedtime target of that evening.
-  const offerDay = dismissal && sleepOffer(dismissal, '23:30').wakeDay;
-  const showOffer = dismissal && offerDay && !recordFor(offerDay);
+  const offerDay = dismissal ? toDateKey(dismissal.dismissedAt) : undefined;
+  const showOffer = dismissal && offerDay === today && !recordFor(offerDay);
   const bedtime = (offerDay && targetsOf(shiftDateKey(offerDay, -1))?.bedtime) ?? targetsOf(today)?.bedtime ?? '23:30';
 
   async function toggle() {
@@ -123,8 +131,11 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
     setHint(undefined);
     try {
       if (state?.enabled) await disableAlarm();
-      else if (next) {
-        const result = await enableAlarm(next.at);
+      else {
+        // The screen may have stayed open past a window start: take the next window as of now.
+        const upcoming = nextAlarm(Date.now(), targetsOf);
+        if (!upcoming) return;
+        const result = await enableAlarm(upcoming.at);
         if (result.status !== 'set') setHint(result.hint);
       }
     } finally {
@@ -138,7 +149,13 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
         <div className="min-w-0">
           <p className="text-sm text-zinc-500">Окно подъёма</p>
           <p className="text-2xl font-semibold tabular-nums">{label ?? '—'}</p>
-          <p className="text-xs text-zinc-500">Звонит в начале окна, даже если приложение закрыто</p>
+          <p className="text-xs text-zinc-500">
+            Звонит в начале окна, даже если приложение закрыто. Следующий будильник ставится, когда вы открываете
+            LifeOS.
+          </p>
+          {state.enabled && state.at !== undefined && !state.error && (
+            <p className="mt-1 text-sm">Поставлен на {format(state.at, 'd MMMM, H:mm', { locale: ru })}</p>
+          )}
         </div>
         <Button
           role="switch"
@@ -151,9 +168,9 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
           {state.enabled ? 'Включён' : 'Выключен'}
         </Button>
       </div>
-      {hint && (
+      {(hint ?? (state.enabled ? state.error : undefined)) && (
         <p role="alert" className="mt-2 text-sm text-rose-600 dark:text-rose-400">
-          {hint}
+          {hint ?? state.error} Будильник не зазвонит, пока это не исправлено.
         </p>
       )}
       {showOffer && dismissal && <GotUp today={today} dismissal={dismissal} bedtime={bedtime} />}
