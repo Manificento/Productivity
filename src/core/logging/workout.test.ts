@@ -168,26 +168,18 @@ describe('saveWorkout — muscle groups of exercises (#225)', () => {
     ]);
   });
 
-  it('fills the groups of a known exercise from the dictionary when they are not given', async () => {
+  it('does not guess groups, keeps an explicit empty list and rejects an unknown group', async () => {
     const saved = await saveWorkout({
       date: TODAY,
       type: 'Силовая',
       durationMin: 40,
       rpe: 7,
-      exercises: [{ name: 'Жим лёжа', sets: [{ reps: 8 }] }],
+      exercises: [
+        { name: 'Жим лёжа', sets: [], muscleGroups: [] },
+        { name: 'Жим лёжа', sets: [] },
+      ],
     });
-    expect((await db.workoutLogs.get(saved.id))?.exercises?.[0]?.muscleGroups).toEqual(['chest', 'shoulders', 'arms']);
-  });
-
-  it('keeps an explicit empty list and rejects an unknown group', async () => {
-    const saved = await saveWorkout({
-      date: TODAY,
-      type: 'Силовая',
-      durationMin: 40,
-      rpe: 7,
-      exercises: [{ name: 'Жим лёжа', sets: [], muscleGroups: [] }],
-    });
-    expect((await db.workoutLogs.get(saved.id))?.exercises?.[0]?.muscleGroups).toEqual([]);
+    expect((await db.workoutLogs.get(saved.id))?.exercises?.map((e) => e.muscleGroups)).toEqual([[], undefined]);
     await expect(
       saveWorkout({
         date: TODAY,

@@ -13,6 +13,10 @@ export const MUSCLE_GROUPS = [
   'mobility',
 ] as const satisfies readonly MuscleGroup[];
 
+// Compile-time: every `MuscleGroup` is listed above (a new member missing here would be rejected by `saveWorkout`).
+type Unlisted = Exclude<MuscleGroup, (typeof MUSCLE_GROUPS)[number]>;
+export const MUSCLE_GROUPS_COMPLETE: [Unlisted] extends [never] ? true : never = true;
+
 export interface StarterExercise {
   /** Name as the training templates spell it. */
   name: string;
@@ -56,12 +60,12 @@ export const STARTER_EXERCISES: readonly StarterExercise[] = [
   { name: 'Растяжка всего тела', aliases: ['Растяжка', 'Stretching', 'Stretch'], muscleGroups: ['mobility'] },
 ];
 
-/** A duration at the end of a name: «Длинный бег 45 минут», «Easy run 20 min». */
-const TRAILING_DURATION = / \d+ ?(минут[аы]?|мин|min|mins|minutes?)$/;
+/** A duration or distance at the end of a name: «Длинный бег 45 минут», «Easy run 5 km», «Планка 60 сек». */
+const TRAILING_AMOUNT = / \d+ ?(минут[аыу]?|мин|min|mins|minutes?|секунд[аыу]?|сек|sec|secs|seconds?|с|s|км|km|м|m)$/;
 
 /**
  * The comparable form of an exercise name: lower case, «ё» → «е», punctuation and hyphens as spaces,
- * single spaces, no trailing duration.
+ * single spaces, no trailing duration or distance.
  */
 export function normalizeExerciseName(name: string): string {
   return name
@@ -69,7 +73,7 @@ export function normalizeExerciseName(name: string): string {
     .replaceAll('ё', 'е')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
-    .replace(TRAILING_DURATION, '');
+    .replace(TRAILING_AMOUNT, '');
 }
 
 const BY_NAME = new Map<string, readonly MuscleGroup[]>(

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { db } from '../db';
-import { MUSCLE_GROUPS, muscleGroupsOf } from '../exercises';
+import { MUSCLE_GROUPS } from '../exercises';
 import { newRecord } from '../ids';
 import type { WorkoutLog } from '../types';
 import { DateKeyField } from './fields';
@@ -16,17 +16,12 @@ const WorkoutSet = z.object({
   weightKg: z.number().min(0).optional(),
 });
 
-/** Groups given by the caller are kept (even `[]`); without them a starter exercise gets its groups from the dictionary. */
-const Exercise = z
-  .object({
-    name: z.string().trim().min(1, 'Укажите название упражнения'),
-    sets: z.array(WorkoutSet),
-    muscleGroups: z.array(z.enum(MUSCLE_GROUPS)).optional(),
-  })
-  .transform(({ muscleGroups, ...exercise }) => {
-    const groups = muscleGroups ?? muscleGroupsOf(exercise.name);
-    return muscleGroups === undefined && groups.length === 0 ? exercise : { ...exercise, muscleGroups: groups };
-  });
+/** `muscleGroups` is optional (#225): records saved without it are read as `muscleGroups ?? muscleGroupsOf(name)`. */
+const Exercise = z.object({
+  name: z.string().trim().min(1, 'Укажите название упражнения'),
+  sets: z.array(WorkoutSet),
+  muscleGroups: z.array(z.enum(MUSCLE_GROUPS)).optional(),
+});
 
 const ImportKey = z.string().trim().min(1);
 
