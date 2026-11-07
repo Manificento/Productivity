@@ -268,3 +268,15 @@ test.describe('privacy policy', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe('night sensing', () => {
+  test('Given веб When я открываю блок Then объяснение про трекинг сна по датчикам и ручной ввод как раньше', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.goto('/#/health');
+    await expect(page.getByText(/Трекинг сна по датчикам работает только в приложении для Android/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Спать' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Сохранить сон' })).toBeVisible();
+  });
+});
