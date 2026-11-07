@@ -101,3 +101,31 @@ test.describe('training programs', () => {
     await expect(page.getByText('План завершён')).toHaveCount(0);
   });
 });
+
+test.describe('adaptive plan', () => {
+  test('Given пропущена сессия When открываю следующую сессию той же программы Then перенесённые упражнения с пометкой, а «Баланс групп мышц» показывает недобор', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-02T08:00:00')); // Monday
+    await page.goto('/#/training');
+    await page.getByRole('button', { name: 'Шаблон: Сила 3 раза в неделю' }).click();
+    await page.getByRole('button', { name: 'Сохранить программу' }).click();
+    await expect(page.getByRole('list', { name: 'Сессия на сегодня' })).toContainText('Приседания');
+
+    // Monday is not done; on Wednesday its exercises come back with −30 % volume.
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.reload();
+    const list = page.getByRole('list', { name: 'Сессия на сегодня' });
+    await expect(list).toContainText('Тяга в наклоне: 2 × 10');
+    await expect(list.getByText('перенесено с 2 ноября').first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+    await page.getByRole('button', { name: 'Убрать перенесённое: Тяга в наклоне' }).click();
+    await expect(page.getByRole('list', { name: 'Сессия на сегодня' })).not.toContainText('Тяга в наклоне');
+
+    await page.getByRole('button', { name: 'Баланс групп мышц' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Баланс групп мышц' });
+    await expect(sheet.getByRole('region', { name: 'Эта неделя' })).toContainText('недобор');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+});

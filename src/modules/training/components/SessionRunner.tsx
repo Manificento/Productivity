@@ -1,11 +1,15 @@
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { useState } from 'react';
 import type { DailyTargets } from '../../../core/adaptation/types';
-import type { PlannedSession, Program } from '../../../core/types';
+import { fromDateKey } from '../../../core/dates';
+import type { PlannedSession, Program, ProgramExercise } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
+import { removeExercise } from '../data/carry';
 import { completeSession, replaceExercise } from '../data/programs';
 import { adjustForTargets } from '../logic/periodization';
 import { exerciseLine } from '../logic/programs';
-import { buildWorkout, draftFromExercises, toggleSet, workoutTypeFor } from '../logic/session';
+import { buildWorkout, exerciseIds, workoutTypeFor } from '../logic/session';
 
 /** Today's session: check off sets, swap an exercise for this day only, finish → journal entry. */
 export function SessionRunner({
@@ -20,8 +24,10 @@ export function SessionRunner({
 }) {
   // Frozen at the first render: a later change of the day's targets must not wipe the checked sets.
   const [adjusted] = useState(() => adjustForTargets(session.exercises, targets));
+  // Per exercise, adjusted when first seen (an exercise carried in later gets today's targets) and kept (#226).
+  const [frozen] = useState(() => new Map<string, { exercise: ProgramExercise; easier: boolean }>());
+  const [done, setDone] = useState<Record<string, boolean[]>>({});
   const [forced, setForced] = useState(false);
-  const [draft, setDraft] = useState(() => draftFromExercises(adjusted.exercises));
   const [duration, setDuration] = useState('');
   const [rpe, setRpe] = useState('');
   const [error, setError] = useState<string>();
@@ -29,13 +35,33 @@ export function SessionRunner({
   const [replacing, setReplacing] = useState<number>();
   const [newName, setNewName] = useState('');
   const [replaceError, setReplaceError] = useState<string>();
+  const [removeError, setRemoveError] = useState<string>();
 
-  // The plan itself (names) lives in the session record; the checked sets are local until «Завершить».
-  // Sets and weights come from the frozen adjustment, names from the live session (a replacement shows at once).
-  const shown = draft.map((d, i) => ({
-    ...d,
-    exercise: { ...(adjusted.exercises[i] ?? d.exercise), name: session.exercises[i]?.name ?? d.exercise.name },
-  }));
+  // The plan itself (names, which exercises) lives in the session record; the checked sets are local until
+  // «Завершить», kept per exercise id — removing or adding a carried exercise does not move them.
+  // Sets and weights come from the frozen adjustment; the name and muscle groups from the live session.
+  const ids = exerciseIds(session.exercises);
+  const shown = session.exercises.map((live, i) => {
+    const id = ids[i]!;
+    let kept = frozen.get(id);
+    if (!kept) {
+      const one = adjustForTargets([live], targets);
+      kept = { exercise: one.exercises[0]!, easier: one.easier[0]! };
+      frozen.set(id, kept);
+    }
+    const { muscleGroups: _frozenGroups, ...rest } = kept.exercise;
+    const exercise: ProgramExercise = {
+      ...rest,
+      name: live.name,
+      ...(live.muscleGroups && { muscleGroups: live.muscleGroups }),
+    };
+    return { id, exercise, easier: kept.easier, done: done[id] ?? Array.from({ length: exercise.sets }, () => false) };
+  });
+  const toggle = (id: string, sets: number, j: number) =>
+    setDone((cur) => ({
+      ...cur,
+      [id]: (cur[id] ?? Array.from({ length: sets }, () => false)).map((d, k) => (k === j ? !d : d)),
+    }));
 
   async function finish() {
     const built = buildWorkout(shown, {
@@ -65,6 +91,15 @@ export function SessionRunner({
       setReplacing(undefined);
     } catch {
       setReplaceError('Не удалось заменить упражнение — попробуйте ещё раз');
+    }
+  }
+
+  // A carried exercise the user does not want: it leaves this session and does not come back (#226).
+  async function remove(index: number) {
+    try {
+      await removeExercise(session.id, index);
+    } catch {
+      setRemoveError('Не удалось убрать упражнение — попробуйте ещё раз');
     }
   }
 
@@ -106,16 +141,30 @@ export function SessionRunner({
       )}
       <ul aria-label="Сессия на сегодня">
         {shown.map((d, i) => (
-          <li key={i} className="border-b border-zinc-200 py-2 last:border-0 dark:border-zinc-800">
+          <li key={d.id} className="border-b border-zinc-200 py-2 last:border-0 dark:border-zinc-800">
             <div className="flex items-center justify-between gap-2">
               <p className="min-w-0 text-sm">
                 {exerciseLine(d.exercise)}
-                {adjusted.easier[i] && (
+                {session.exercises[i]?.carriedFrom && (
+                  <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-900 dark:bg-sky-900 dark:text-sky-100">
+                    перенесено с {format(fromDateKey(session.exercises[i].carriedFrom), 'd MMMM', { locale: ru })}
+                  </span>
+                )}
+                {d.easier && (
                   <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                     сегодня легче
                   </span>
                 )}
               </p>
+              {session.exercises[i]?.carriedFrom && (
+                <Button
+                  variant="secondary"
+                  aria-label={`Убрать перенесённое: ${d.exercise.name}`}
+                  onClick={() => void remove(i)}
+                >
+                  Убрать
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 aria-label={`Заменить упражнение: ${d.exercise.name}`}
@@ -135,7 +184,7 @@ export function SessionRunner({
                   type="button"
                   aria-pressed={done}
                   aria-label={`Подход ${j + 1}: ${d.exercise.name}`}
-                  onClick={() => setDraft((cur) => toggleSet(cur, i, j))}
+                  onClick={() => toggle(d.id, d.done.length, j)}
                   className={`size-11 rounded-xl text-sm font-medium ${
                     done ? 'bg-emerald-600 text-white' : 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
                   }`}
@@ -148,6 +197,11 @@ export function SessionRunner({
         ))}
       </ul>
 
+      {removeError && (
+        <p role="alert" className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+          {removeError}
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="Длительность, мин">
           {(id) => <Input id={id} inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} />}
