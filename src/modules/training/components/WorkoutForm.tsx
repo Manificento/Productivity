@@ -34,6 +34,13 @@ export function WorkoutForm({
   onChange?: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
+  // A new day (midnight) moves the date of an untouched form; once the user typed anything, the draft stays as it is.
+  const [touched, setTouched] = useState(false);
+  const [seenToday, setSeenToday] = useState(today);
+  if (seenToday !== today) {
+    setSeenToday(today);
+    if (!touched) setDraft((d) => (d.date === seenToday ? { ...d, date: today } : d));
+  }
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
 
@@ -43,6 +50,7 @@ export function WorkoutForm({
     targets && draft.date === today ? intensityWarning(draft.rpe ? Number(draft.rpe) : undefined, targets) : undefined;
 
   const set = (patch: Partial<WorkoutDraft>) => {
+    setTouched(true);
     setDraft((d) => ({ ...d, ...patch }));
     onChange?.();
   };
