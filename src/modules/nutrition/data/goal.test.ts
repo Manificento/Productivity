@@ -29,7 +29,7 @@ describe('goal and expenditure settings', () => {
     expect(await stored()).toEqual({ kcal: 2490, updatedAt: NOW, source: 'starter' });
   });
 
-  it('Given ≥ 14 дней веса и ≥ 10 дней дневника When пересчитываю Then измеренный расход сохраняется, и раз в неделю обновляется', async () => {
+  it('Given ≥ 14 дней веса и ≥ 14 дней дневника (половина окна) When пересчитываю Then измеренный расход сохраняется, и раз в неделю обновляется', async () => {
     await saveProfile(profile);
     const food = await createFood({ name: 'Рис', kcal: 100, protein: 0, fat: 0, carbs: 0 });
     for (let i = 0; i < 14; i++) {
@@ -51,5 +51,14 @@ describe('goal and expenditure settings', () => {
     await logWeight(TODAY, 80);
     expect(await refreshExpenditure(TODAY, NOW)).toBeUndefined();
     expect(await stored()).toBeUndefined();
+  });
+
+  it('Given сохранён измеренный расход, а дневник поредел When пересчитываю даже через неделю Then значение не меняется (цели те же)', async () => {
+    await saveProfile(profile);
+    await db.settings.put({ key: 'nutrition.expenditure', value: { kcal: 2500, updatedAt: NOW, source: 'measured' } });
+    for (let i = 0; i < 14; i++) await logWeight(shiftDateKey(TODAY, -i), 80);
+    const e = await refreshExpenditure(TODAY, NOW + 30 * 24 * 3600 * 1000);
+    expect(e).toMatchObject({ kind: 'incomplete', loggedDays: 0, windowDays: 28 });
+    expect(await stored()).toEqual({ kcal: 2500, updatedAt: NOW, source: 'measured' });
   });
 });

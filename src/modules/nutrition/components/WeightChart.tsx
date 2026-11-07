@@ -25,7 +25,8 @@ export function WeightChart({
   const values = series.flatMap((p) => [p.kg, p.trend]);
   const lo = Math.min(...values) - 0.5;
   const hi = Math.max(...values) + 0.5;
-  const x = (date: DateKey) => PAD + (daysBetween(first, date) / span) * (W - 2 * PAD);
+  const x = (date: DateKey) =>
+    first === last && last >= today ? W / 2 : PAD + (daysBetween(first, date) / span) * (W - 2 * PAD);
   const y = (kg: number) => H - PAD - ((kg - lo) / (hi - lo)) * (H - 2 * PAD);
 
   return (

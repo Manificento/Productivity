@@ -234,8 +234,11 @@ describe('food tab', () => {
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
 
-    it('Given нет цели When я открываю дневник Then шкалы скрыты, ссылка «Задать цель»', async () => {
+    it('Given нет цели When я открываю дневник Then шкалы скрыты, ссылка «Задать цель» и кофеин — в той же карточке', async () => {
       renderTab();
+      const region = await screen.findByRole('region', { name: 'Цель на день' });
+      expect(within(region).getByText(/Кофеин — до/)).toBeInTheDocument();
+      expect(within(region).getByRole('button', { name: 'Задать цель' })).toBeInTheDocument();
       expect(await screen.findByRole('button', { name: 'Задать цель' })).toBeInTheDocument();
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });

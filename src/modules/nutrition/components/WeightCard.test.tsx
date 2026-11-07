@@ -62,14 +62,15 @@ describe('weight card', () => {
   });
 
   it('Given записи с пропусками When я смотрю график Then ось X — календарные дни, линия тренда разорвана на пропуске', async () => {
-    for (const offset of [-20, -19, -18, -5, -4]) await logWeight(shiftDateKey(TODAY, offset), 80);
+    const offsets = [...Array.from({ length: 14 }, (_, i) => -30 + i), -5, -4]; // −30…−17, gap, −5, −4
+    for (const offset of offsets) await logWeight(shiftDateKey(TODAY, offset), 80);
     render(<WeightCard today={TODAY} />);
     const points = await screen.findAllByTestId('weight-point');
+    expect(screen.getAllByTestId('weight-trend')).toHaveLength(2);
     const xs = points.map((p) => Number(p.getAttribute('cx')));
-    // equal steps for neighbouring days, a wide jump over the gap
-    expect(xs[1]! - xs[0]!).toBeCloseTo(xs[2]! - xs[1]!, 5);
-    expect(xs[3]! - xs[2]!).toBeCloseTo((xs[1]! - xs[0]!) * 13, 5);
-    expect(xs[4]! - xs[3]!).toBeCloseTo(xs[1]! - xs[0]!, 5);
+    const step = xs[1]! - xs[0]!;
+    expect(xs[14]! - xs[13]!).toBeCloseTo(step * 12, 5); // −17 → −5
+    expect(xs[15]! - xs[14]!).toBeCloseTo(step, 5);
   });
 
   it('Given больше 90 дней записей When я смотрю график Then последние 90 дней и переключатель «Вся история»', async () => {
@@ -78,7 +79,7 @@ describe('weight card', () => {
     expect(await screen.findAllByTestId('weight-point')).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: 'Вся история' }));
     expect(await screen.findAllByTestId('weight-point')).toHaveLength(6);
-    fireEvent.click(screen.getByRole('button', { name: 'Последние 90 дней' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Вся история', pressed: true }));
     expect(await screen.findAllByTestId('weight-point')).toHaveLength(3);
   });
 

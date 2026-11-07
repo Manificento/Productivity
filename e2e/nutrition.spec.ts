@@ -29,6 +29,7 @@ test.describe('nutrition weight', () => {
     await page.getByLabel('Рост, см').fill('180');
     await page.getByLabel('Год рождения').fill('1996');
     await page.getByRole('button', { name: 'Сохранить данные' }).click();
+    await expect(page.getByRole('button', { name: 'Сохранить цель' })).toBeDisabled();
     await page.getByRole('radio', { name: 'Снизить' }).click();
     await page.getByRole('button', { name: 'Сохранить цель' }).click();
     await expect(page.getByText('Цель сохранена')).toBeVisible();
@@ -58,6 +59,8 @@ test.describe('nutrition weight', () => {
     const day = page.getByRole('region', { name: 'Цель на день' });
     await expect(day).toContainText('0 / 2490 ккал');
     await expect(day).toContainText('Осталось 2490 ккал');
+    await expect(day).toContainText('Кофеин — до');
+    await expect(page.getByText('Цели дня', { exact: true })).toHaveCount(0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });

@@ -113,6 +113,11 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
     }
   }
 
+  // With a stored measured value the starter inputs are not needed, even while the diary is thin.
+  const showProfile =
+    !estimate ||
+    estimate.kind === 'starter' ||
+    (estimate.kind === 'incomplete' && settings.expenditure?.source !== 'measured');
   const hasTargets = targets?.kcal !== undefined;
   // The label follows what the engine uses (the stored value), the countdown follows the fresh estimate.
   const starter = estimate?.kind === 'starter' && settings.expenditure?.source === 'starter' ? estimate : undefined;
@@ -123,6 +128,7 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
         <form onSubmit={onSubmit} noValidate>
           <Segmented
             label="Цель по весу"
+            // Segmented only compares values: undefined (nothing chosen) simply checks no radio.
             value={currentKind as Kind}
             options={KINDS}
             onChange={(k) => {
@@ -201,7 +207,7 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
           </p>
         )}
 
-        {estimate?.kind !== 'measured' && (
+        {showProfile && (
           <ProfileForm
             key={settings.profile ? 'saved' : 'new'}
             profile={settings.profile}

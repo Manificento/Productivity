@@ -50,17 +50,19 @@ export function DayTargets({ targets, eaten }: { targets: DailyTargets | undefin
 
   if (kcal === undefined || proteinG === undefined || fatG === undefined || carbsG === undefined) {
     return (
-      <Card title="Цель на день">
-        <DayHints targets={targets} />
-        <p className="mb-2 text-sm text-zinc-500">Цели по калориям и БЖУ появятся, когда будут вес, рост и цель.</p>
-        <button
-          type="button"
-          onClick={() => document.getElementById('nutrition-goal')?.scrollIntoView?.({ block: 'start' })}
-          className="min-h-11 text-sm text-indigo-600 dark:text-indigo-400"
-        >
-          Задать цель
-        </button>
-      </Card>
+      <section aria-label="Цель на день">
+        <Card title="Цель на день">
+          <DayHints targets={targets} />
+          <p className="mb-2 text-sm text-zinc-500">Цели по калориям и БЖУ появятся, когда будут вес, рост и цель.</p>
+          <button
+            type="button"
+            onClick={() => document.getElementById('nutrition-goal')?.scrollIntoView?.({ block: 'start' })}
+            className="min-h-11 text-sm text-indigo-600 dark:text-indigo-400"
+          >
+            Задать цель
+          </button>
+        </Card>
+      </section>
     );
   }
   return (

@@ -90,8 +90,13 @@ export function WeightCard({ today = todayKey() }: { today?: DateKey }) {
               <p className="text-sm text-zinc-500">За последние {CHART_DAYS} дней записей нет.</p>
             )}
             {hasOlder && (
-              <Button variant="secondary" className="mt-2 w-full" onClick={() => setAllHistory((v) => !v)}>
-                {allHistory ? `Последние ${CHART_DAYS} дней` : 'Вся история'}
+              <Button
+                variant="secondary"
+                className="mt-2 w-full"
+                aria-pressed={allHistory}
+                onClick={() => setAllHistory((v) => !v)}
+              >
+                Вся история
               </Button>
             )}
             {showTrend ? (

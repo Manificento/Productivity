@@ -110,7 +110,7 @@ describe('goal card', () => {
     expect(targets).toHaveTextContent('Б 144 · Ж 64');
   });
 
-  it('Given ≥ 14 дней веса и ≥ 10 дней дневника When открываю цели Then оценка измерена и пометки «уточним» нет', async () => {
+  it('Given ≥ 14 дней веса и ≥ 14 дней дневника (половина окна) When открываю цели Then оценка измерена и пометки «уточним» нет', async () => {
     await saveGoal({ kind: 'maintain', ratePct: 0 });
     const food = await createFood({ name: 'Рис', kcal: 100, protein: 0, fat: 0, carbs: 0 });
     for (let i = 0; i < 14; i++) {
