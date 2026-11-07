@@ -41,4 +41,17 @@ final class NightBuffer {
         Matcher m = MINUTE_START.matcher(line);
         return m.matches() ? Long.valueOf(m.group(1)) : null;
     }
+
+    private static final Pattern MOVEMENT = Pattern.compile("\"movement\":(-?[0-9.]+(?:[eE]-?\\d+)?)");
+
+    /** The minute's mean movement, or null (no reading or a broken line). */
+    static Double movement(String line) {
+        Matcher m = MOVEMENT.matcher(line);
+        if (!m.find()) return null;
+        try {
+            return Double.valueOf(m.group(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
 }

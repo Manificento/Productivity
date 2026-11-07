@@ -25,6 +25,14 @@ final class AlarmScheduler {
         alarmManager(context).setAlarmClock(new AlarmManager.AlarmClockInfo(at, showIntent(context)), ringIntent(context));
     }
 
+    /**
+     * Sets the alarm for its wake window: the first fire at its start (`at` − `windowMin`); with a window the receiver
+     * then checks for light sleep every minute until `at` (#250). Throws SecurityException like schedule().
+     */
+    static void scheduleWindow(Context context, long at, int windowMin) {
+        schedule(context, at - windowMin * 60_000L);
+    }
+
     static void cancel(Context context) {
         alarmManager(context).cancel(ringIntent(context));
     }

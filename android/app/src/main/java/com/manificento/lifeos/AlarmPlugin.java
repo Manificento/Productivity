@@ -95,7 +95,7 @@ public class AlarmPlugin extends Plugin {
             return;
         }
         try {
-            AlarmScheduler.schedule(getContext(), at);
+            AlarmScheduler.scheduleWindow(getContext(), at, windowMin);
         } catch (SecurityException e) {
             call.reject("Exact alarms are off", "EXACT_DENIED", e);
             return;

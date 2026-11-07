@@ -62,6 +62,11 @@ final class NightSampleStore {
         return samples;
     }
 
+    /** The buffer's lines, oldest first (the smart alarm reads the last minutes, #250); empty when unreadable. */
+    static synchronized List<String> lines(Context context) {
+        return readLines(file(context));
+    }
+
     /** Removes the minutes up to and including `upTo`; minutes written after the morning read stay. */
     static synchronized void clearUpTo(Context context, long upTo) {
         File f = file(context);

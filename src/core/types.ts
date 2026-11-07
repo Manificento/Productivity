@@ -115,6 +115,13 @@ export interface TimeEntry extends BaseRecord {
 
 // ---------- health ----------
 
+/** A stretch of one sleep stage within a night (#250); REM is not told apart by movement alone. */
+export interface SleepStage {
+  start: Millis;
+  end: Millis;
+  stage: 'light' | 'deep' | 'rem' | 'awake';
+}
+
 export interface SleepLog extends BaseRecord {
   /** The morning you woke up — the day this sleep counts for. */
   date: DateKey;
@@ -132,6 +139,8 @@ export interface SleepLog extends BaseRecord {
    * the night is corrected by hand, so a re-import no longer overwrites it (`sourceId` stays).
    */
   externalId?: string;
+  /** Stages from night sensing, in order, within `bedtime..wakeTime` (#250); absent for a night entered by hand. */
+  stages?: SleepStage[];
 }
 
 /**

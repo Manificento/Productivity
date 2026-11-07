@@ -159,7 +159,8 @@ public class AlarmScreenTest {
         assertTrue("within a day", next - System.currentTimeMillis() <= 25 * 3_600_000L);
         assertEquals(30, AlarmStore.windowMin(app));
         AlarmManager manager = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
-        assertEquals(next, manager.getNextAlarmClock().getTriggerTime());
+        // With a 30-minute window the first fire is the start of the window (#250).
+        assertEquals(next - 30 * 60_000L, manager.getNextAlarmClock().getTriggerTime());
     }
 
     @Test
@@ -174,5 +175,59 @@ public class AlarmScreenTest {
         assertTrue(next > System.currentTimeMillis());
         AlarmManager manager = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
         assertEquals(next, manager.getNextAlarmClock().getTriggerTime());
+    }
+
+    // ---------- smart moment inside the window (#250) ----------
+
+    private static final long MINUTE = 60_000L;
+
+    /** Twenty-five minutes of night sensing ending with the last complete minute before now. */
+    private void sensed(double still, double stir) {
+        long now = System.currentTimeMillis();
+        long last = now - Math.floorMod(now, MINUTE) - MINUTE;
+        for (int i = 24; i >= 0; i--) {
+            double m = i < 5 ? stir : still;
+            NightSampleStore.append(app, "{\"minuteStart\":" + (last - i * MINUTE) + ",\"movement\":" + m
+                + ",\"movementPeak\":" + m + ",\"noiseDb\":-60.0,\"noisePeakDb\":-50.0}");
+        }
+    }
+
+    private Intent fire() {
+        new AlarmReceiver().onReceive(app, new Intent(app, AlarmReceiver.class).setAction(AlarmReceiver.ACTION_RING));
+        return shadowOf(app).getNextStartedService();
+    }
+
+    @Test
+    public void givenAWindowAndNightDataWhenTheWindowStartsInDeepSleepThenItWaitsAMinute() {
+        long now = System.currentTimeMillis();
+        AlarmStore.saveAlarm(app, now + 20 * MINUTE, 30);
+        sensed(0.01, 0.01);
+        assertEquals(null, fire());
+        AlarmManager manager = (AlarmManager) app.getSystemService(Context.ALARM_SERVICE);
+        long next = manager.getNextAlarmClock().getTriggerTime();
+        assertTrue(next > now && next <= now + MINUTE + 1_000L);
+    }
+
+    @Test
+    public void givenAWindowWhenTheSleeperComesOutOfStillnessThenItRingsNow() {
+        AlarmStore.saveAlarm(app, System.currentTimeMillis() + 20 * MINUTE, 30);
+        sensed(0.01, 0.1);
+        Intent ring = fire();
+        assertNotNull(ring);
+        assertEquals(AlarmRingingService.ACTION_RING, ring.getAction());
+    }
+
+    @Test
+    public void givenAWindowWithoutNightDataThenItRingsAtTheStartOfTheWindow() {
+        AlarmStore.saveAlarm(app, System.currentTimeMillis() + 20 * MINUTE, 30);
+        assertNotNull(fire());
+    }
+
+    @Test
+    public void ringingInsideTheWindowSetsTomorrowNotTodayAgain() {
+        long at = System.currentTimeMillis() + 20 * MINUTE;
+        AlarmStore.saveAlarm(app, at, 30);
+        ring();
+        assertTrue(AlarmStore.alarmAt(app) > at + 20 * 3_600_000L);
     }
 }
