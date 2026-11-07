@@ -234,16 +234,22 @@ test.describe('health', () => {
 });
 
 test.describe('alarm', () => {
-  test('Given веб When я открываю карточку будильника и настройки импорта Then «доступно в приложении для телефона», ручной ввод как раньше', async ({
-    page,
-  }) => {
+  test('Given веб When я открываю карточку будильника Then «доступно в приложении для телефона»', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
     await page.goto('/#/health');
     await expect(page.getByText(/Будильник доступен в приложении для телефона/)).toBeVisible();
     await expect(page.getByRole('switch', { name: 'Будильник' })).toHaveCount(0);
-    // Health store import (#131): the same on the web.
-    await expect(page.getByText('Импорт сна и тренировок доступен в приложении для телефона.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Сохранить сон' })).toBeVisible();
+
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe('health store import', () => {
+  test('Given веб When я открываю настройки импорта Then «доступно в приложении для телефона»', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.goto('/#/health');
+    await expect(page.getByText('Импорт сна и тренировок доступен в приложении для телефона.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Подключить' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Сохранить сон' })).toBeVisible();
   });
 });

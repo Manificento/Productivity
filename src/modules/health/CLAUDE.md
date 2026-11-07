@@ -2,7 +2,7 @@
 
 Метка дорожки: `area:health`. Задачи: `scripts/agent.sh next health`.
 
-- **Пишет в таблицы:** `sleepLogs` (через `saveSleep`); `settings` — только свои ключи `health.*` (будильник, импорт); `workoutLogs` — только через `saveWorkout` (импорт); позже — `workoutLogs` только через `saveWorkout` при импорте из Health Connect / HealthKit (M7). Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
+- **Пишет в таблицы:** `sleepLogs` (через `saveSleep`); `settings` — только свои ключи `health.*` (будильник, импорт); `workoutLogs` — только через `saveWorkout` (импорт). Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
 - **Суть модуля:** блок «Сон» — журнал сна, график и цель на ночь. Дневник еды переехал в `nutrition`, журнал тренировок — в `training` (#107).
 - **Сон пишется ТОЛЬКО через `saveSleep()` (перенос ночи на другой день — `deleteSleep()` старой + `saveSleep()` новой) из `src/core/logging/sleep.ts`** (валидация и «одна запись на ночь»),
   удаление записи за ночь — `deleteSleep(log.id)` (кнопка `components/DeleteSleep.tsx`),

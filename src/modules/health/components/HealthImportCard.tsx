@@ -27,7 +27,7 @@ function Outcome({ result }: { result: HealthImportOutcome }) {
     return (
       <div className="mt-2 text-sm">
         <p role="status">
-          Записано ночей: {result.nights}, тренировок: {result.workouts}
+          Из импорта в LifeOS за {IMPORT_DAYS} дней: ночей {result.nights}, тренировок {result.workouts}
         </p>
         {result.hint && <p className="text-zinc-500">{result.hint}</p>}
       </div>
@@ -53,7 +53,7 @@ export function HealthImportCard({ today }: { today: DateKey }) {
   const state = useHealthImport();
   const [result, setResult] = useState<HealthImportOutcome>();
   const [busy, setBusy] = useState(false);
-  const store = getPlatform() === 'ios' ? 'Apple Health' : 'Health Connect';
+  const store = getPlatform() === 'ios' ? '«Здоровья»' : 'Health Connect';
   const title = `Импорт из ${store}`;
 
   if (!getCapabilities().healthImport) {
@@ -90,6 +90,7 @@ export function HealthImportCard({ today }: { today: DateKey }) {
           <p className="text-sm">
             Импорт включён: сон и тренировки за {IMPORT_DAYS} дней приходят сами, когда вы открываете LifeOS.
           </p>
+          {state.lastError && !result && <Outcome result={{ status: 'denied', hint: state.lastError }} />}
           {state.lastRunAt !== undefined && (
             <p className="text-xs text-zinc-500">
               Последний раз: {format(state.lastRunAt, 'd MMMM, H:mm', { locale: ru })}

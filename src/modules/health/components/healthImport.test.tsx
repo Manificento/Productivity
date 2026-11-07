@@ -37,10 +37,10 @@ describe('health store import on «Сон» (#131)', () => {
     store.sleep = [night('n-6', 6), night('n-7', 7)];
     render(<SleepTab today={TODAY} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('Записано ночей: 2, тренировок: 0');
+    expect(await screen.findByRole('status')).toHaveTextContent('ночей 2, тренировок 0');
     expect(await db.sleepLogs.count()).toBe(2);
     fireEvent.click(await screen.findByRole('button', { name: 'Обновить' }));
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Записано ночей: 2'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('ночей 2'));
     expect(await db.sleepLogs.count()).toBe(2);
   });
 

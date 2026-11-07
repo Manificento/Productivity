@@ -7,8 +7,10 @@ import {
   disconnectHealthImport,
   importIfDue,
   loadHealthImport,
+  removeSleep,
   runHealthImport,
 } from './healthImport';
+import { saveSleep } from '../../../core/logging/sleep';
 
 const TODAY = '2026-11-07';
 const NOW = new Date(2026, 10, 7, 8, 0).getTime();
@@ -41,7 +43,17 @@ describe('health import data (#131)', () => {
   it('Given натив When я включаю импорт и даю разрешение Then сон за 30 дней записан через saveSleep(), тренировки — через saveWorkout(), без дублей при повторном импорте', async () => {
     mockNativePlatform('android', ['healthImport']);
     const store = mockHealthStore([], { sleep: 'allow', workouts: 'allow' });
-    store.sleep = [night('n-5', 5), night('n-6', 6), night('old', 1)]; // 1 Nov is inside 30 days too
+    // 1 Nov is inside the 30 days (from 9 Oct); 8 Oct is outside.
+    store.sleep = [
+      night('n-5', 5),
+      night('n-6', 6),
+      night('old', 1),
+      {
+        ...night('too-old', 8),
+        startDate: new Date(2026, 9, 7, 23).toISOString(),
+        endDate: new Date(2026, 9, 8, 7).toISOString(),
+      },
+    ];
     store.workouts = [run('w-6', 6)];
 
     expect(await connectHealthImport(TODAY, NOW)).toEqual({ status: 'ok', nights: 3, workouts: 1 });
@@ -55,10 +67,64 @@ describe('health import data (#131)', () => {
       { date: '2026-11-06', type: 'Бег', durationMin: 30, rpe: 5, sourceId: 'com.strava', externalId: 'w-6' },
     ]);
 
+    expect(await db.sleepLogs.where('date').equals('2026-10-08').count()).toBe(0);
+
     // Again: nothing doubles.
     await runHealthImport(TODAY, NOW + 1);
     expect(await db.sleepLogs.count()).toBe(3);
     expect(await db.workoutLogs.count()).toBe(1);
+  });
+
+  it('an imported night the user deleted is not imported again', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    store.sleep = [night('n-6', 6)];
+    await connectHealthImport(TODAY, NOW);
+    const [log] = await db.sleepLogs.toArray();
+    await removeSleep(log!);
+    expect(await runHealthImport(TODAY, NOW + 1)).toMatchObject({ nights: 0 });
+    expect(await db.sleepLogs.count()).toBe(0);
+  });
+
+  it('counts only nights the import holds: a day already logged by hand is kept and not counted', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    await saveSleep({
+      bedtime: new Date(2026, 10, 5, 23, 30).getTime(),
+      wakeTime: new Date(2026, 10, 6, 7, 0).getTime(),
+      quality: 4,
+    });
+    store.sleep = [night('n-6', 6), night('n-7', 7)];
+    expect(await connectHealthImport(TODAY, NOW)).toMatchObject({ nights: 1 });
+  });
+
+  it('access withdrawn later: the background run stores why; the next good run clears it', async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    await connectHealthImport(TODAY, NOW);
+    store.granted = [];
+    await importIfDue(TODAY, NOW + 2 * 3_600_000);
+    expect(await loadHealthImport()).toEqual({
+      enabled: true,
+      lastRunAt: NOW + 2 * 3_600_000,
+      lastError: HEALTH_TEXTS.deniedAndroid,
+    });
+    store.granted = ['sleep', 'workouts'];
+    await runHealthImport(TODAY, NOW + 3 * 3_600_000);
+    expect(await loadHealthImport()).toEqual({ enabled: true, lastRunAt: NOW + 3 * 3_600_000 });
+  });
+
+  it("while today's night is missing the hourly limit does not apply; two runs at once share one", async () => {
+    mockNativePlatform('android', ['healthImport']);
+    const store = mockHealthStore();
+    await connectHealthImport(TODAY, NOW);
+    store.sleep = [night('n-7', 7)]; // the watch synced later
+    await importIfDue(TODAY, NOW + 5 * 60_000);
+    expect(await db.sleepLogs.where('date').equals(TODAY).count()).toBe(1);
+
+    const reads = store.bridge.readSamples.mock.calls.length;
+    await Promise.all([runHealthImport(TODAY, NOW + 10), runHealthImport(TODAY, NOW + 11)]);
+    expect(store.bridge.readSamples.mock.calls.length - reads).toBe(reads / 2);
   });
 
   it('Given отказ в разрешении When я пробую импорт Then понятная ошибка и ручной ввод: import stays off, nothing is written', async () => {
@@ -89,16 +155,17 @@ describe('health import data (#131)', () => {
   it('importIfDue runs when on and the last run is over an hour ago; disconnect turns it off', async () => {
     mockNativePlatform('android', ['healthImport']);
     const store = mockHealthStore();
+    store.sleep = [night('n-7', 7)];
     await importIfDue(TODAY, NOW);
     expect(store.bridge.readSamples).not.toHaveBeenCalled(); // off
 
-    await connectHealthImport(TODAY, NOW);
+    await connectHealthImport(TODAY, NOW); // today's night is in
     const reads = store.bridge.readSamples.mock.calls.length;
     await importIfDue(TODAY, NOW + 30 * 60_000);
     expect(store.bridge.readSamples.mock.calls.length).toBe(reads); // ran half an hour ago
-    store.sleep = [night('n-7', 7)];
+    store.sleep = [night('n-7', 7), night('n-6', 6)];
     await importIfDue(TODAY, NOW + 2 * 3_600_000);
-    expect(await db.sleepLogs.where('date').equals(TODAY).count()).toBe(1);
+    expect(await db.sleepLogs.where('date').equals('2026-11-06').count()).toBe(1);
 
     await disconnectHealthImport();
     expect((await loadHealthImport()).enabled).toBe(false);
