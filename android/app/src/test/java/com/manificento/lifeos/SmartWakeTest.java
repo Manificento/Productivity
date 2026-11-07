@@ -54,15 +54,42 @@ public class SmartWakeTest {
     @Test
     public void inTheWindowItRingsInLightSleepOrWithoutDataAndWaitsInDeepSleepUntilTheEnd() {
         long at = T0 + 40 * MIN;
-        // Light sleep now: ring.
-        assertEquals(SmartWake.Decision.RING, SmartWake.decide(night(DEEP_THEN_STIR), T0 + 24 * MIN, at));
-        // Deep sleep: check again in a minute.
-        assertEquals(SmartWake.Decision.WAIT, SmartWake.decide(night(repeat(0.01, 25)), T0 + 24 * MIN, at));
-        // No readings in the last minutes (sensing off): ring at once — the start of the window, as before.
-        assertEquals(SmartWake.Decision.RING, SmartWake.decide(new ArrayList<>(), T0 + 24 * MIN, at));
-        assertEquals(SmartWake.Decision.RING, SmartWake.decide(night(repeat(0.01, 10)), T0 + 24 * MIN, at));
+        long now = T0 + 25 * MIN + 5_000L; // minutes 0–24 are complete and written
+        assertEquals(SmartWake.Decision.RING, SmartWake.decide(night(DEEP_THEN_STIR), now, at));
+        assertEquals(SmartWake.Decision.WAIT, SmartWake.decide(night(repeat(0.01, 25)), now, at));
+        // No readings (sensing off): ring at once — the start of the window, as before.
+        assertEquals(SmartWake.Decision.RING, SmartWake.decide(new ArrayList<>(), now, at));
         // The end of the window: ring whatever the phase.
         assertEquals(SmartWake.Decision.RING, SmartWake.decide(night(repeat(0.01, 25)), at, at));
+    }
+
+    @Test
+    public void theMinuteThatJustEndedMayNotBeWrittenYetTheNewestWrittenOneDecides() {
+        // The service has not flushed minute 24 yet: minute 23 already shows the stir.
+        List<String> notFlushed = night(DEEP_THEN_STIR).subList(0, 24);
+        assertEquals(SmartWake.Decision.RING, SmartWake.decide(notFlushed, T0 + 25 * MIN, T0 + 40 * MIN));
+    }
+
+    @Test
+    public void sensingThatStopsMidWindowRingsWithinFiveMinutes() {
+        List<String> stopped = night(repeat(0.01, 25)); // last minute 24, ends at 25
+        assertEquals(SmartWake.Decision.WAIT, SmartWake.decide(stopped, T0 + 30 * MIN, T0 + 60 * MIN));
+        assertEquals(SmartWake.Decision.RING, SmartWake.decide(stopped, T0 + 30 * MIN + 1, T0 + 60 * MIN));
+    }
+
+    @Test
+    public void checksRunJustAfterTheMinuteBoundaryAndNeverPastTheAlarm() {
+        assertEquals(T0 + 26 * MIN + 5_000L, SmartWake.nextCheck(T0 + 25 * MIN + 5_000L, T0 + 40 * MIN));
+        assertEquals(T0 + 40 * MIN, SmartWake.nextCheck(T0 + 39 * MIN + 30_000L, T0 + 40 * MIN));
+    }
+
+    @Test
+    public void aWindowThatHasAlreadyBegunRingsAtTheAlarmTimeNotAtOnce() {
+        long now = T0;
+        assertEquals(T0 + 10 * MIN, SmartWake.firstFire(T0 + 40 * MIN, 30, now));
+        // A nap alarm in 10 minutes with a 30-minute window: a plain alarm at its time.
+        assertEquals(T0 + 10 * MIN, SmartWake.firstFire(T0 + 10 * MIN, 30, now));
+        assertEquals(T0 + 10 * MIN, SmartWake.firstFire(T0 + 10 * MIN, 0, now));
     }
 
     @Test

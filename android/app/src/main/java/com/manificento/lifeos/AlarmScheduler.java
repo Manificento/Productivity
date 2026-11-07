@@ -26,11 +26,12 @@ final class AlarmScheduler {
     }
 
     /**
-     * Sets the alarm for its wake window: the first fire at its start (`at` − `windowMin`); with a window the receiver
-     * then checks for light sleep every minute until `at` (#250). Throws SecurityException like schedule().
+     * Sets the alarm for its wake window: the first fire at its start (`at` − `windowMin`, or `at` when the window has
+     * already begun); the receiver then checks for light sleep every minute until `at` (#250). Each check is an alarm
+     * clock too (exact in Doze), so the system's «next alarm» shows the next check, not `at`. Throws SecurityException.
      */
     static void scheduleWindow(Context context, long at, int windowMin) {
-        schedule(context, at - windowMin * 60_000L);
+        schedule(context, SmartWake.firstFire(at, windowMin, AlarmReceiver.now()));
     }
 
     static void cancel(Context context) {

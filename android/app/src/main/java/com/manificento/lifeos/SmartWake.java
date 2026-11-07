@@ -17,8 +17,12 @@ final class SmartWake {
     static final double RISE_FACTOR = 1.5;
     static final int RECENT_MIN = 5;
     static final int BEFORE_MIN = 15;
-    /** Re-check every minute inside the window. */
+    /** Re-check every minute inside the window… */
     static final long CHECK_EVERY_MS = 60_000L;
+    /** …a few seconds after the minute boundary, once the sensing service has written the minute that just ended. */
+    static final long AFTER_FLUSH_MS = 5_000L;
+    /** Sensing stopped: no new minute this long — ring (as without a smart alarm). */
+    static final long STALE_MS = RECENT_MIN * 60_000L;
     private static final long MINUTE = 60_000L;
 
     enum Decision { RING, WAIT }
@@ -53,17 +57,34 @@ final class SmartWake {
     }
 
     /**
-     * At `now` inside the window ending `at`: ring in light sleep, at the end of the window, or when the buffer has no
-     * readings for the last minutes (sensing off — ring at the start of the window, as without a smart alarm);
-     * otherwise wait a minute.
+     * At `now` inside the window ending `at`: ring at the end of the window, when sensing has stopped (the newest minute
+     * in the buffer is older than STALE_MS, or there is none — e.g. sensing off: ring at the start of the window), or in
+     * light sleep at the newest complete minute actually in the buffer (the minute that just ended may not be written
+     * yet); otherwise wait for the next check.
      */
     static Decision decide(List<String> lines, long now, long at) {
         if (now >= at) return Decision.RING;
-        long minute = now - Math.floorMod(now, MINUTE) - MINUTE; // the last complete minute
-        Map<Long, Double> m = byMinute(lines);
-        boolean recentData = false;
-        for (int i = 0; i < RECENT_MIN; i++) if (m.containsKey(minute - i * MINUTE)) recentData = true;
-        if (!recentData) return Decision.RING;
-        return isLightSleepAt(lines, minute) || isLightSleepAt(lines, minute + MINUTE) ? Decision.RING : Decision.WAIT;
+        Long newest = null;
+        for (Map.Entry<Long, Double> e : byMinute(lines).entrySet()) {
+            long start = e.getKey();
+            if (start + MINUTE <= now && (newest == null || start > newest)) newest = start;
+        }
+        if (newest == null || now - (newest + MINUTE) > STALE_MS) return Decision.RING;
+        return isLightSleepAt(lines, newest) ? Decision.RING : Decision.WAIT;
+    }
+
+    /** The next check: a few seconds after the next minute boundary, never past `at`. */
+    static long nextCheck(long now, long at) {
+        long next = now - Math.floorMod(now, MINUTE) + MINUTE + AFTER_FLUSH_MS;
+        return Math.min(next, at);
+    }
+
+    /**
+     * The first fire for an alarm at `at` with a window: its start; if the window has already begun (set late, or
+     * restored after a reboot), `at` itself — this time it is a plain alarm, so a short nap alarm does not ring at once.
+     */
+    static long firstFire(long at, int windowMin, long now) {
+        long start = at - windowMin * MINUTE;
+        return start > now ? start : at;
     }
 }

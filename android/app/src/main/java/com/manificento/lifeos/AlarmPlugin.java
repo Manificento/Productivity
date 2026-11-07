@@ -94,13 +94,15 @@ public class AlarmPlugin extends Plugin {
             call.reject("Exact alarms are off", "EXACT_DENIED");
             return;
         }
+        // Saved first: a fire at once (a window already begun) must read this alarm, not the previous one.
+        AlarmStore.saveAlarm(getContext(), at, windowMin);
         try {
             AlarmScheduler.scheduleWindow(getContext(), at, windowMin);
         } catch (SecurityException e) {
+            AlarmStore.clearAlarm(getContext());
             call.reject("Exact alarms are off", "EXACT_DENIED", e);
             return;
         }
-        AlarmStore.saveAlarm(getContext(), at, windowMin);
         call.resolve();
     }
 

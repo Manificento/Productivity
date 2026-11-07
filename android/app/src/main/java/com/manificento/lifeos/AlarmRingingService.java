@@ -96,7 +96,7 @@ public class AlarmRingingService extends Service {
 
     private void scheduleTomorrow() {
         // Rang inside the window, possibly before `at` (#250): tomorrow all the same, never today's window again.
-        long rangUpTo = Math.max(System.currentTimeMillis(), AlarmStore.alarmAt(this));
+        long rangUpTo = Math.max(AlarmReceiver.now(), AlarmStore.alarmAt(this));
         long next = AlarmStore.rollDaily(this, rangUpTo, java.util.TimeZone.getDefault());
         if (next == AlarmPolicy.NONE) return;
         try {

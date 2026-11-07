@@ -15,6 +15,12 @@ import androidx.core.content.ContextCompat;
 public class AlarmReceiver extends BroadcastReceiver {
 
     static final String ACTION_RING = "com.manificento.lifeos.ALARM_RING";
+    /** The clock; tests fix it (CLAUDE.md rule 7). */
+    static java.util.function.LongSupplier clock = System::currentTimeMillis;
+
+    static long now() {
+        return clock.getAsLong();
+    }
     private static final String TAG = "AlarmReceiver";
     /** Keeps the CPU awake between onReceive and the service taking its own lock. */
     private static final long HANDOFF_WAKE_MS = 30_000L;
@@ -25,7 +31,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         if (ACTION_RING.equals(action)) {
             long at = AlarmStore.alarmAt(context);
             int windowMin = AlarmStore.windowMin(context);
-            long now = System.currentTimeMillis();
+            long now = now();
             if (at != AlarmPolicy.NONE && windowMin > 0 && now < at && waitForLightSleep(context, now, at)) return;
             Intent ring = new Intent(context, AlarmRingingService.class)
                 .setAction(AlarmRingingService.ACTION_RING)
@@ -46,7 +52,7 @@ public class AlarmReceiver extends BroadcastReceiver {
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
         ) {
             // Daily: a ring missed while the phone was off moves to the next day at the same time.
-            long at = AlarmStore.rollDaily(context, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+            long at = AlarmStore.rollDaily(context, now(), java.util.TimeZone.getDefault());
             if (!AlarmPolicy.shouldRestore(at)) return;
             try {
                 AlarmScheduler.scheduleWindow(context, at, AlarmStore.windowMin(context));
@@ -69,7 +75,7 @@ public class AlarmReceiver extends BroadcastReceiver {
         }
         if (SmartWake.decide(lines, now, at) == SmartWake.Decision.RING) return false;
         try {
-            AlarmScheduler.schedule(context, Math.min(now + SmartWake.CHECK_EVERY_MS, at));
+            AlarmScheduler.schedule(context, SmartWake.nextCheck(now, at));
             return true;
         } catch (SecurityException e) {
             Log.e(TAG, "exact alarms are off: ringing now", e);
