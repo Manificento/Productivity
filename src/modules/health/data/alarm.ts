@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../../../core/db';
 import { cancelAlarm, setAlarm, type AlarmDismissal, type AlarmResult } from '../../../core/platform';
 import type { Millis } from '../../../core/types';
+import { stopNightSensing } from '../../../core/platform';
 
 /**
  * The alarm (#129) through `platform.ts` only. Settings keys of this module (`health.*`, architecture: «модуль пишет
@@ -18,6 +19,8 @@ const State = z.object({
   at: z.number().optional(),
   windowMin: z.number().optional(),
   error: z.string().optional(),
+  /** The last switch-off: today's window is done once it is switched off (`nextAlarm`). */
+  lastDismissedAt: z.number().optional(),
 });
 export type AlarmState = z.infer<typeof State>;
 const Dismissal = z.object({ dismissedAt: z.number(), alarmAt: z.number() });
@@ -44,16 +47,25 @@ export interface AlarmWindow {
  */
 export async function enableAlarm(w: AlarmWindow): Promise<AlarmResult> {
   const result = await setAlarm({ at: w.at, windowMin: w.windowMin });
+  const { lastDismissedAt } = await loadAlarmState();
+  const keep = lastDismissedAt !== undefined ? { lastDismissedAt } : {};
   await db.settings.put({
     key: STATE_KEY,
-    value: result.status === 'set' ? { enabled: true, at: w.at, windowMin: w.windowMin } : { enabled: false },
+    value:
+      result.status === 'set'
+        ? { enabled: true, at: w.at, windowMin: w.windowMin, ...keep }
+        : { enabled: false, ...keep },
   });
   return result;
 }
 
 export async function disableAlarm(): Promise<void> {
   await cancelAlarm();
-  await db.settings.put({ key: STATE_KEY, value: { enabled: false } });
+  const { lastDismissedAt } = await loadAlarmState();
+  await db.settings.put({
+    key: STATE_KEY,
+    value: { enabled: false, ...(lastDismissedAt !== undefined && { lastDismissedAt }) },
+  });
 }
 
 /**
@@ -62,28 +74,50 @@ export async function disableAlarm(): Promise<void> {
  * alarm). A failure is stored with its hint for the card. Switched off meanwhile — the alarm is cancelled again.
  * Never rejects.
  */
-export async function keepArmed(next: AlarmWindow | undefined, { force = false } = {}): Promise<void> {
+/**
+ * While on: sets the alarm for the window `pick` chooses from the last switch-off (`setAlarm` replaces the native one).
+ * The window it is already set for stays untouched while pending — also on `force`: inside the window it may ring any
+ * minute. `force` (app start) otherwise re-sets the same alarm: the stored state may outlive the native one. A failure
+ * is stored with its hint for the card. Switched off meanwhile — the alarm is cancelled again. Never rejects.
+ */
+export async function keepArmed(
+  pick: (lastDismissedAt?: Millis) => AlarmWindow | undefined,
+  { force = false } = {},
+): Promise<void> {
   const state = await loadAlarmState();
-  if (!state.enabled || next === undefined) return;
-  const same = state.at === next.at && state.windowMin === next.windowMin;
-  if (!force && !state.error && state.at !== undefined && state.at > Date.now() && same) return;
+  if (!state.enabled) return;
+  const next = pick(state.lastDismissedAt);
+  if (next === undefined) return;
+  const same = !state.error && state.at === next.at && state.windowMin === next.windowMin;
+  const now = Date.now();
+  const windowBegun = now >= next.at - next.windowMin * 60_000;
+  if (same && next.at > now && (!force || windowBegun)) return;
   const result = await setAlarm({ at: next.at, windowMin: next.windowMin });
-  if (!(await loadAlarmState()).enabled) {
+  const after = await loadAlarmState();
+  if (!after.enabled) {
     // The user switched it off while it was being set: keep it off.
     await cancelAlarm();
     return;
   }
+  const keep = after.lastDismissedAt !== undefined ? { lastDismissedAt: after.lastDismissedAt } : {};
   await db.settings.put({
     key: STATE_KEY,
     value:
       result.status === 'set'
-        ? { enabled: true, at: next.at, windowMin: next.windowMin }
-        : { enabled: true, error: result.hint },
+        ? { enabled: true, at: next.at, windowMin: next.windowMin, ...keep }
+        : { enabled: true, error: result.hint, ...keep },
   });
 }
 
+/**
+ * A switch-off: kept for «Я встал», remembered so today's window counts as done, and the night recording stops (its
+ * buffer stays for «Я встал»; the microphone service must not run all day).
+ */
 export async function recordDismissal(d: AlarmDismissal): Promise<void> {
   await db.settings.put({ key: DISMISSAL_KEY, value: { dismissedAt: d.dismissedAt, alarmAt: d.alarmAt } });
+  const state = await loadAlarmState();
+  await db.settings.put({ key: STATE_KEY, value: { ...state, lastDismissedAt: d.dismissedAt } });
+  await stopNightSensing();
 }
 
 export async function loadDismissal(): Promise<AlarmDismissal | undefined> {

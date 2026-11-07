@@ -104,7 +104,46 @@ describe('alarm card on «Сон» (#129)', () => {
     await act(async () => alarm.dismiss(WINDOW_START + 3 * 60_000));
     const nextDay = new Date(2026, 10, 9, 7, 0).getTime();
     await waitFor(() => expect(alarm.scheduled).toEqual({ at: nextDay, windowMin: 30 }));
-    expect(await loadAlarmState()).toEqual({ enabled: true, at: nextDay, windowMin: 30 });
+    expect(await loadAlarmState()).toMatchObject({ enabled: true, at: nextDay, windowMin: 30 });
+  });
+
+  it("the app opened inside the window before it rang keeps today's alarm", async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    await db.settings.put({ key: 'health.alarm', value: { enabled: true, at: WAKE, windowMin: 30 } });
+    vi.setSystemTime(WINDOW_START + 10 * 60_000); // 6:40, nothing rang yet
+    render(<AlarmBackground />);
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(alarm.bridge.set).not.toHaveBeenCalled();
+    expect(await loadAlarmState()).toMatchObject({ at: WAKE });
+  });
+
+  it('a switch-off stops the night recording (the buffer stays for «Я встал»)', async () => {
+    mockNativePlatform('android', ['alarms', 'backgroundSensors']);
+    const alarm = mockAlarm();
+    const sensors = mockNightSensors('granted');
+    sensors.running = true;
+    sensors.buffer.push({
+      minuteStart: WINDOW_START,
+      movement: 0.1,
+      movementPeak: 0.2,
+      noiseDb: -60,
+      noisePeakDb: -50,
+    });
+    render(<AlarmBackground />);
+    vi.setSystemTime(WINDOW_START + 60_000);
+    await act(async () => alarm.dismiss(WINDOW_START + 60_000));
+    await waitFor(() => expect(sensors.running).toBe(false));
+    expect(sensors.buffer).toHaveLength(1);
+  });
+
+  it('the card shows the window the alarm is set for', async () => {
+    mockNativePlatform('android', ['alarms']);
+    mockAlarm();
+    await db.settings.put({ key: 'health.alarm', value: { enabled: true, at: WAKE, windowMin: 30 } });
+    render(<SleepTab today={TODAY} />);
+    expect(await screen.findByText(/Поставлен на 8 ноября, 6:30–7:00/)).toBeInTheDocument();
   });
 
   it('a failed re-arm shows on the card: nothing will ring', async () => {
@@ -207,5 +246,46 @@ describe('alarm card on «Сон» (#129)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Записать сон' }));
     await waitFor(async () => expect(await db.sleepLogs.count()).toBe(1));
     expect((await db.sleepLogs.toArray())[0]?.stages).toBeUndefined();
+  });
+
+  it('«Записать сон» tapped at once still saves the stages: the save reads the buffer itself', async () => {
+    mockNativePlatform('android', ['alarms', 'backgroundSensors']);
+    mockAlarm();
+    const sensors = mockNightSensors('granted');
+    const bed = new Date(2026, 10, 7, 23, 30).getTime();
+    for (let t = bed; t < new Date(2026, 10, 8, 7, 2).getTime(); t += 60_000)
+      sensors.buffer.push({ minuteStart: t, movement: 0.01, movementPeak: 0.02, noiseDb: -60, noisePeakDb: -50 });
+    vi.setSystemTime(new Date(2026, 10, 8, 7, 5));
+    await recordDismissal({ dismissedAt: new Date(2026, 10, 8, 7, 2).getTime(), alarmAt: WAKE });
+    render(<SleepTab today="2026-11-08" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Я встал' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сон' })); // before the preview has loaded
+    await waitFor(async () => expect((await db.sleepLogs.toArray())[0]?.stages?.length).toBeGreaterThan(0));
+  });
+
+  it('a failing clear still stops the recording; the night stays saved', async () => {
+    mockNativePlatform('android', ['alarms', 'backgroundSensors']);
+    mockAlarm();
+    const sensors = mockNightSensors('granted');
+    sensors.running = true;
+    sensors.buffer.push({
+      minuteStart: new Date(2026, 10, 8, 3, 0).getTime(),
+      movement: 0.01,
+      movementPeak: 0.02,
+      noiseDb: -60,
+      noisePeakDb: -50,
+    });
+    sensors.bridge.clearSamples.mockRejectedValueOnce(new Error('disk'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.setSystemTime(new Date(2026, 10, 8, 7, 5));
+    await db.settings.put({
+      key: 'health.alarm.dismissal',
+      value: { dismissedAt: new Date(2026, 10, 8, 7, 2).getTime(), alarmAt: WAKE },
+    });
+    render(<SleepTab today="2026-11-08" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Я встал' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сон' }));
+    await waitFor(async () => expect(await db.sleepLogs.count()).toBe(1));
+    await waitFor(() => expect(sensors.running).toBe(false));
   });
 });

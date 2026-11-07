@@ -53,10 +53,9 @@ function AlarmKeeper() {
     if (!byDay) return;
     const force = !started.current;
     started.current = true;
-    keepArmed(
-      nextAlarm(Date.now(), (day) => byDay.get(day)),
-      { force },
-    ).catch((e: unknown) => console.error('keepArmed failed', e));
+    keepArmed((dismissedAt) => nextAlarm(Date.now(), (day) => byDay.get(day), dismissedAt), { force }).catch(
+      (e: unknown) => console.error('keepArmed failed', e),
+    );
   }).current;
 
   useEffect(() => {

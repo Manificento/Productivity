@@ -45,16 +45,16 @@ describe('alarm data', () => {
   it('keepArmed sets the next alarm once the last one has rung, and only when on', async () => {
     mockNativePlatform('android', ['alarms']);
     const alarm = mockAlarm();
-    await keepArmed(w(AT));
+    await keepArmed(() => w(AT));
     expect(alarm.bridge.set).not.toHaveBeenCalled(); // off
 
     await enableAlarm(w(AT));
-    await keepArmed(w(AT));
+    await keepArmed(() => w(AT));
     expect(alarm.bridge.set).toHaveBeenCalledTimes(1); // already set for this window
 
     const tomorrow = AT + 24 * 3_600_000;
     vi.spyOn(Date, 'now').mockReturnValue(AT + 60_000); // it rang
-    await keepArmed(w(tomorrow));
+    await keepArmed(() => w(tomorrow));
     expect(alarm.scheduled).toEqual({ at: tomorrow, windowMin: 30 });
     expect(await loadAlarmState()).toEqual({ enabled: true, at: tomorrow, windowMin: 30 });
   });
@@ -79,20 +79,20 @@ describe('alarm data', () => {
     const alarm = mockAlarm();
     await enableAlarm(w(AT));
     alarm.exactAlarm = 'denied';
-    await keepArmed(w(AT + 86_400_000));
+    await keepArmed(() => w(AT + 86_400_000));
     expect(await loadAlarmState()).toEqual({ enabled: true, error: ALARM_TEXTS.exactDenied });
 
     alarm.exactAlarm = 'granted';
-    await keepArmed(w(AT)); // an error is retried
+    await keepArmed(() => w(AT)); // an error is retried
     expect(await loadAlarmState()).toEqual({ enabled: true, at: AT, windowMin: 30 });
-    await keepArmed(w(AT), { force: true });
+    await keepArmed(() => w(AT), { force: true });
     expect(alarm.bridge.set).toHaveBeenCalledTimes(4);
 
     alarm.bridge.set.mockImplementationOnce(async ({ at, windowMin }) => {
       await disableAlarm(); // the user taps «Выключен» meanwhile
       alarm.scheduled = { at, windowMin };
     });
-    await keepArmed(w(AT), { force: true });
+    await keepArmed(() => w(AT), { force: true });
     expect(await loadAlarmState()).toEqual({ enabled: false });
     expect(alarm.scheduled).toBeUndefined();
   });

@@ -15,17 +15,28 @@ export interface SleepEntry {
   bedtime: string;
   wake: string;
   quality: number;
-  /** The night-sensing buffer (#130): the night is saved with its stages, then the buffer is cleared. */
-  samples?: NightSample[];
+  /** «Я встал» (#130): read the night-sensing buffer at save time, save the night with its stages, clear the buffer. */
+  fromNightSensing?: boolean;
 }
 
-/** The night is saved: clear what was read and stop recording. Never rejects (the record is already safe). */
+/** The night is saved: stop recording (never rejects), then clear what was read. Never rejects. */
 async function finishNight(samples: NightSample[]): Promise<void> {
+  await stopNightSensing();
+  if (samples.length === 0) return;
   try {
     await clearNightSamples(Math.max(...samples.map((s) => s.minuteStart)));
-    await stopNightSensing();
   } catch (e) {
-    console.error('finishNight failed', e);
+    console.error('clearNightSamples failed: the night is saved, the buffer stays', e);
+  }
+}
+
+/** Stages of the night in the form, for the preview on «Я встал» (the same as saved). */
+export function nightStages(entry: Pick<SleepEntry, 'wakeDay' | 'bedtime' | 'wake'>, samples: NightSample[]) {
+  try {
+    const span = sleepWindow(entry.wakeDay, entry.bedtime, entry.wake);
+    return sleepStages(samples, span.bedtime, span.wakeTime);
+  } catch {
+    return [];
   }
 }
 
@@ -52,9 +63,10 @@ export async function logSleep(
   if (!entry.bedtime || !entry.wake) return { ok: false, error: 'Укажите время отбоя и подъёма' };
   try {
     const span = sleepWindow(entry.wakeDay, entry.bedtime, entry.wake);
-    const stages = entry.samples ? sleepStages(entry.samples, span.bedtime, span.wakeTime) : [];
+    const samples = entry.fromNightSensing ? await loadNightSamples() : [];
+    const stages = sleepStages(samples, span.bedtime, span.wakeTime);
     const log = await saveSleep({ ...span, quality: entry.quality, ...(stages.length > 0 && { stages }) });
-    if (entry.samples && entry.samples.length > 0) await finishNight(entry.samples);
+    if (entry.fromNightSensing) await finishNight(samples);
     return { ok: true, log };
   } catch (e) {
     if (e instanceof z.ZodError) return { ok: false, error: e.issues[0]?.message ?? 'Проверьте время' };

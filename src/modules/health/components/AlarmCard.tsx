@@ -4,13 +4,10 @@ import { useEffect, useState } from 'react';
 import { useDailyTargetsRange } from '../../../core/adaptation/useDailyTargets';
 import { shiftDateKey, toDateKey } from '../../../core/dates';
 import { ALARM_TEXTS, getCapabilities, isNativePlatform } from '../../../core/platform';
-import type { DateKey, SleepLog } from '../../../core/types';
+import type { DateKey, NightSample, SleepLog } from '../../../core/types';
 import { Button, Card, Empty, Field, Input, Rating } from '../../../ui';
 import { clearDismissal, disableAlarm, enableAlarm, useAlarmState, useDismissal } from '../data/alarm';
-import { loadNightSamples, logSleep } from '../data/sleep';
-import { sleepStages } from '../../../core/sleepPhases';
-import { sleepWindow } from '../../../core/logging/sleepTime';
-import type { NightSample } from '../../../core/types';
+import { loadNightSamples, logSleep, nightStages } from '../data/sleep';
 import { nextAlarm, sleepOffer, windowLabel } from '../logic/alarm';
 import { DEFAULT_QUALITY, stageSummary } from '../logic/sleep';
 
@@ -49,18 +46,13 @@ function GotUp({
     };
   }, [open]);
 
-  let summary = '';
-  try {
-    const span = sleepWindow(offer.wakeDay, bed, wake);
-    summary = stageSummary(sleepStages(samples, span.bedtime, span.wakeTime));
-  } catch {
-    // An unfinished time in the form: no summary yet.
-  }
+  // Preview only: the save reads the buffer itself, so a quick tap does not lose the stages.
+  const summary = stageSummary(nightStages({ wakeDay: offer.wakeDay, bedtime: bed, wake }, samples));
 
   async function save() {
     setSaving(true);
     const result = await logSleep(
-      { wakeDay: offer.wakeDay, bedtime: bed, wake, quality, ...(samples.length > 0 && { samples }) },
+      { wakeDay: offer.wakeDay, bedtime: bed, wake, quality, fromNightSensing: true },
       today,
     );
     if (result.ok) await clearDismissal();
@@ -146,7 +138,7 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
     );
   }
   const targetsOf = (day: DateKey) => range.find((t) => t.date === day);
-  const next = nextAlarm(now, targetsOf);
+  const next = nextAlarm(now, targetsOf, state.lastDismissedAt);
   const wakeTargets = next && targetsOf(next.wakeDay);
   const label = next && wakeTargets && windowLabel(next.wakeDay, wakeTargets.wakeTime, wakeTargets.wakeWindowMin);
   // The night before the switch-off: bedtime target of that evening.
@@ -161,7 +153,7 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
       if (state?.enabled) await disableAlarm();
       else {
         // The screen may have stayed open past a window start: take the next window as of now.
-        const upcoming = nextAlarm(Date.now(), targetsOf);
+        const upcoming = nextAlarm(Date.now(), targetsOf, state?.lastDismissedAt);
         if (!upcoming) return;
         const result = await enableAlarm(upcoming);
         if (result.status !== 'set') setHint(result.hint);
@@ -182,7 +174,10 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
             иначе — в его начале.
           </p>
           {state.enabled && state.at !== undefined && !state.error && (
-            <p className="mt-1 text-sm">Поставлен на {format(state.at, 'd MMMM, H:mm', { locale: ru })}</p>
+            <p className="mt-1 text-sm">
+              Поставлен на {format(state.at, 'd MMMM', { locale: ru })},{' '}
+              {format(state.at - (state.windowMin ?? 0) * 60_000, 'H:mm')}–{format(state.at, 'H:mm')}
+            </p>
           )}
         </div>
         <Button

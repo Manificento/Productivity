@@ -8,6 +8,7 @@ import {
   formatHoursDiff,
   sleepChart,
   type SleepPoint,
+  stageSummary,
 } from './sleep';
 
 const HOUR = 3_600_000;
@@ -61,8 +62,7 @@ describe('formatHoursDiff', () => {
 });
 
 describe('stageSummary (#130)', () => {
-  it('sums the minutes per stage in order deep, light, awake; empty without stages', async () => {
-    const { stageSummary } = await import('./sleep');
+  it('sums the minutes per stage in order deep, light, awake; empty without stages', () => {
     const M = 60_000;
     expect(
       stageSummary([

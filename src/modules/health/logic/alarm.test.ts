@@ -18,8 +18,14 @@ describe('alarm logic', () => {
     expect(nextAlarm(at(2026, 11, 7, 22, 0), targets('07:00', 30))).toEqual(window8);
     // Early morning before the window: today's.
     expect(nextAlarm(at(2026, 11, 8, 5, 0), targets('07:00', 30))).toEqual(window8);
-    // Inside or after today's window start: tomorrow's.
-    expect(nextAlarm(at(2026, 11, 8, 6, 30), targets('07:00', 30))?.wakeDay).toBe('2026-11-09');
+    // Inside today's window before it rang: still today's (the smart alarm may ring up to 7:00).
+    expect(nextAlarm(at(2026, 11, 8, 6, 40), targets('07:00', 30))?.wakeDay).toBe('2026-11-08');
+    // Switched off inside the window: tomorrow's.
+    expect(nextAlarm(at(2026, 11, 8, 6, 40), targets('07:00', 30), at(2026, 11, 8, 6, 35))?.wakeDay).toBe('2026-11-09');
+    // A switch-off from yesterday does not count for today.
+    expect(nextAlarm(at(2026, 11, 8, 6, 40), targets('07:00', 30), at(2026, 11, 7, 6, 35))?.wakeDay).toBe('2026-11-08');
+    // After the wake time: tomorrow's.
+    expect(nextAlarm(at(2026, 11, 8, 7, 0), targets('07:00', 30))?.wakeDay).toBe('2026-11-09');
     // Each wake day has its own targets.
     expect(
       nextAlarm(at(2026, 11, 7, 22, 0), (day) =>
