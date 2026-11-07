@@ -33,6 +33,11 @@ public class AlarmRingingService extends Service {
     static final String ACTION_RING = "com.manificento.lifeos.ALARM_PLAY";
     static final String ACTION_DISMISS = "com.manificento.lifeos.ALARM_DISMISS";
     static final String EXTRA_ALARM_AT = "alarmAt";
+    /** Sent inside the app when the ringing stops (dismissed or timed out): AlarmActivity closes. */
+    static final String ACTION_STOPPED = "com.manificento.lifeos.ALARM_STOPPED";
+
+    /** Whether an alarm rings right now (AlarmActivity closes when it does not). */
+    static volatile boolean ringingNow;
 
     private static final String TAG = "AlarmRingingService";
     private static final String CHANNEL_ID = "alarm";
@@ -77,6 +82,7 @@ public class AlarmRingingService extends Service {
             return START_NOT_STICKY;
         }
         ringing = true;
+        ringingNow = true;
         // The alarm has rung: it is no longer pending (a reboot must not set it again).
         AlarmStore.clearAlarm(this);
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
@@ -99,6 +105,8 @@ public class AlarmRingingService extends Service {
     @Override
     public void onDestroy() {
         ringing = false;
+        ringingNow = false;
+        sendBroadcast(new Intent(ACTION_STOPPED).setPackage(getPackageName()));
         handler.removeCallbacks(timeout);
         if (player != null) {
             try {
@@ -167,9 +175,8 @@ public class AlarmRingingService extends Service {
             dismiss,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        // TODO(#233): a small lock-screen activity with «Выключить» (showWhenLocked / turnScreenOn).
         PendingIntent open = AlarmScheduler.showIntent(this);
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Будильник")
             .setContentText("Пора вставать")
@@ -181,8 +188,25 @@ public class AlarmRingingService extends Service {
             // The «Выключить» action stays on a lock screen that hides sensitive content.
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(open)
-            .setFullScreenIntent(open, true)
-            .addAction(0, "Выключить", dismissIntent)
-            .build();
+            .addAction(0, "Выключить", dismissIntent);
+        // Over the lock screen: AlarmActivity with a large «Выключить». Android 14+ may withhold full-screen intents;
+        // then the alarm rings as this notification (sound, vibration, «Выключить»).
+        if (AlarmPolicy.useFullScreen(Build.VERSION.SDK_INT, canUseFullScreenIntent(manager))) {
+            Intent screen = new Intent(this, AlarmActivity.class)
+                .putExtra(AlarmActivity.EXTRA_ALARM_AT, alarmAt)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
+            PendingIntent full = PendingIntent.getActivity(
+                this,
+                2,
+                screen,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+            );
+            builder.setFullScreenIntent(full, true);
+        }
+        return builder.build();
+    }
+
+    private static boolean canUseFullScreenIntent(NotificationManager manager) {
+        return Build.VERSION.SDK_INT < 34 || manager.canUseFullScreenIntent();
     }
 }

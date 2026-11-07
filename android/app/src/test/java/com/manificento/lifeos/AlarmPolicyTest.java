@@ -51,4 +51,19 @@ public class AlarmPolicyTest {
         assertFalse(AlarmPolicy.isValidWindow(-1));
         assertFalse(AlarmPolicy.isValidWindow(121));
     }
+
+    @Test
+    public void givenAndroid14WithoutFullScreenPermissionWhenTheAlarmRingsThenItRingsAsANotificationWithoutError() {
+        assertFalse(AlarmPolicy.useFullScreen(34, false));
+        assertTrue(AlarmPolicy.useFullScreen(34, true));
+        // Before Android 14 the permission is granted at install.
+        assertTrue(AlarmPolicy.useFullScreen(33, false));
+        assertTrue(AlarmPolicy.useFullScreen(26, false));
+    }
+
+    @Test
+    public void theAlarmScreenShowsTheTimeTheAlarmWasSetForAsHoursAndMinutes() {
+        assertEquals("07:05", AlarmPolicy.clockLabel(7, 5));
+        assertEquals("23:30", AlarmPolicy.clockLabel(23, 30));
+    }
 }

@@ -54,4 +54,17 @@ final class AlarmPolicy {
     static boolean isValidWindow(int windowMin) {
         return windowMin >= 0 && windowMin <= MAX_WINDOW_MIN;
     }
+
+    /**
+     * Whether the ringing notification opens AlarmActivity over the lock screen. Android 14+ may withhold
+     * USE_FULL_SCREEN_INTENT (canUseFullScreenIntent() false): then the alarm rings as a notification with «Выключить».
+     */
+    static boolean useFullScreen(int sdk, boolean canUseFullScreenIntent) {
+        return sdk < 34 || canUseFullScreenIntent;
+    }
+
+    /** "HH:mm" for the alarm screen. */
+    static String clockLabel(int hour, int minute) {
+        return String.format(java.util.Locale.ROOT, "%02d:%02d", hour, minute);
+    }
 }
