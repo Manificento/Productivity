@@ -50,11 +50,11 @@ public class AlarmPolicyTest {
     public void givenTheAlarmRangWhenItIsSwitchedOffThenTheNextRingIsTheSameTimeTomorrow() {
         TimeZone tz = TimeZone.getTimeZone("Europe/Berlin");
         long at = berlin(2026, 11, 8, 6, 30);
-        assertEquals(berlin(2026, 11, 9, 6, 30), AlarmPolicy.nextDaily(at, at + 60_000L, tz));
+        assertEquals(berlin(2026, 11, 9, 6, 30), AlarmPolicy.nextDaily(at, 6, 30, at + 60_000L, tz));
         // Still ahead: unchanged.
-        assertEquals(at, AlarmPolicy.nextDaily(at, at - 1L, tz));
+        assertEquals(at, AlarmPolicy.nextDaily(at, 6, 30, at - 1L, tz));
         // The phone was off for days: the first ring still ahead, at the same local time.
-        assertEquals(berlin(2026, 11, 12, 6, 30), AlarmPolicy.nextDaily(at, berlin(2026, 11, 11, 7, 0), tz));
+        assertEquals(berlin(2026, 11, 12, 6, 30), AlarmPolicy.nextDaily(at, 6, 30, berlin(2026, 11, 11, 7, 0), tz));
     }
 
     @Test
@@ -62,7 +62,15 @@ public class AlarmPolicyTest {
         TimeZone tz = TimeZone.getTimeZone("Europe/Berlin");
         // 25 Oct 2026: clocks go back an hour; the day is 25 hours long.
         long at = berlin(2026, 10, 24, 7, 0);
-        assertEquals(berlin(2026, 10, 25, 7, 0), AlarmPolicy.nextDaily(at, at + 1L, tz));
+        assertEquals(berlin(2026, 10, 25, 7, 0), AlarmPolicy.nextDaily(at, 7, 0, at + 1L, tz));
+    }
+
+    @Test
+    public void aRingMovedByTheSpringGapComesBackToItsClockTimeTheNextDay() {
+        TimeZone tz = TimeZone.getTimeZone("Europe/Berlin");
+        // 28 Mar 2027: 02:00–03:00 does not exist; a 02:30 ring that day happens at 03:30.
+        long shifted = berlin(2027, 3, 28, 3, 30);
+        assertEquals(berlin(2027, 3, 29, 2, 30), AlarmPolicy.nextDaily(shifted, 2, 30, shifted + 1L, tz));
     }
 
     @Test

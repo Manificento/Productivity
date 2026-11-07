@@ -42,11 +42,9 @@ public class AlarmReceiver extends BroadcastReceiver {
             Intent.ACTION_BOOT_COMPLETED.equals(action) ||
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
         ) {
-            long stored = AlarmStore.alarmAt(context);
-            if (!AlarmPolicy.shouldRestore(stored)) return;
             // Daily: a ring missed while the phone was off moves to the next day at the same time.
-            long at = AlarmPolicy.nextDaily(stored, System.currentTimeMillis(), java.util.TimeZone.getDefault());
-            AlarmStore.saveAlarm(context, at, AlarmStore.windowMin(context));
+            long at = AlarmStore.rollDaily(context, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+            if (!AlarmPolicy.shouldRestore(at)) return;
             try {
                 AlarmScheduler.schedule(context, at);
             } catch (SecurityException e) {

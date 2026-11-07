@@ -6,6 +6,8 @@ import type { DateKey } from '../../../core/types';
 import { keepArmed, recordDismissal, useAlarmState } from '../data/alarm';
 import { nextAlarm, type WakeTargets } from '../logic/alarm';
 
+/** A switch-off this recent is «just now»: LifeOS was opened from the alarm screen. */
+const FRESH_DISMISSAL_MS = 5 * 60_000;
 /** Shortly after the set alarm time: it has rung, set the next one even if nothing else happens. */
 const AFTER_RING_MS = 60_000;
 
@@ -65,8 +67,9 @@ function AlarmKeeper() {
       onAlarmDismissed((e) => {
         recordDismissal(e)
           .then(() => {
-            // Straight to «Сон», where «Я встал» offers to log the night (#241).
-            window.location.hash = '#/health';
+            // Just switched off (the alarm screen opened LifeOS): straight to «Сон», where «Я встал» offers to log the
+            // night (#241). An old switch-off picked up days later does not move the user anywhere.
+            if (Date.now() - e.dismissedAt < FRESH_DISMISSAL_MS) window.location.hash = '#/health';
             arm();
           })
           .catch((err: unknown) => console.error('recordDismissal failed', err));

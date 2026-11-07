@@ -14,6 +14,7 @@ const WINDOW_START = new Date(2026, 10, 8, 6, 30).getTime();
 
 beforeEach(async () => {
   await Promise.all([db.settings.clear(), db.sleepLogs.clear()]);
+  window.location.hash = '';
   // Wake-up target 07:00 with the default 30-minute window.
   await db.settings.put({ key: 'adaptation.baseline', value: { wakeTime: '07:00' } });
   // The whole clock is fixed (Date.now and new Date — `useTodayKey` reads the latter); timers stay real.
@@ -67,8 +68,27 @@ describe('alarm card on «Сон» (#129)', () => {
     // It rings with the app closed; the user switches it off on the alarm screen.
     await act(async () => alarm.dismiss(WINDOW_START + 120_000));
     await waitFor(async () => expect((await db.settings.get('health.alarm.dismissal'))?.value).toBeDefined());
-    // Switched off: LifeOS opens «Сон» with «Я встал» (#241).
+  });
+
+  it('Given звонит будильник When я нажимаю «Выключить» Then открывается LifeOS на «Сне» (#/health)', async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    await db.settings.put({ key: 'health.alarm', value: { enabled: true, at: WINDOW_START } });
+    window.location.hash = '#/tasks';
+    render(<AlarmBackground />);
+    vi.setSystemTime(WINDOW_START + 60_000);
+    await act(async () => alarm.dismiss(WINDOW_START + 60_000));
     await waitFor(() => expect(window.location.hash).toBe('#/health'));
+  });
+
+  it('an old switch-off picked up later does not move the user to «Сон»', async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    window.location.hash = '#/tasks';
+    render(<AlarmBackground />);
+    await act(async () => alarm.dismiss(NOW - 2 * 86_400_000));
+    await waitFor(async () => expect((await db.settings.get('health.alarm.dismissal'))?.value).toBeDefined());
+    expect(window.location.hash).toBe('#/tasks');
   });
 
   it('a mounted background sets the next window after the alarm rings and is switched off', async () => {

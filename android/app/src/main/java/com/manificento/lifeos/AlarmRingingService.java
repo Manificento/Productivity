@@ -95,10 +95,8 @@ public class AlarmRingingService extends Service {
     }
 
     private void scheduleTomorrow() {
-        long stored = AlarmStore.alarmAt(this);
-        if (stored == AlarmPolicy.NONE) return;
-        long next = AlarmPolicy.nextDaily(stored, System.currentTimeMillis(), java.util.TimeZone.getDefault());
-        AlarmStore.saveAlarm(this, next, AlarmStore.windowMin(this));
+        long next = AlarmStore.rollDaily(this, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+        if (next == AlarmPolicy.NONE) return;
         try {
             AlarmScheduler.schedule(this, next);
         } catch (SecurityException e) {

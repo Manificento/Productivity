@@ -54,19 +54,21 @@ final class AlarmPolicy {
     }
 
     /**
-     * The alarm repeats daily (#241): its next ring after `now` at the same local time — `at` itself if still ahead,
-     * else the same clock time one or more days later (a 23- or 25-hour day keeps the clock time).
+     * The alarm repeats daily (#241): its next ring after `now` at the wall-clock `hour`:`minute` — `at` itself if still
+     * ahead, else that clock time one or more days later. The clock time is passed in (not read from `at`), so a ring
+     * moved by a spring-forward gap (02:30 → 03:30) comes back to 02:30 the next day.
      */
-    static long nextDaily(long at, long now, TimeZone tz) {
+    static long nextDaily(long at, int hour, int minute, long now, TimeZone tz) {
+        if (at > now) return at;
         Calendar c = Calendar.getInstance(tz);
         c.setTimeInMillis(at);
-        int hour = c.get(Calendar.HOUR_OF_DAY);
-        int minute = c.get(Calendar.MINUTE);
-        while (c.getTimeInMillis() <= now) {
+        do {
             c.add(Calendar.DAY_OF_MONTH, 1);
             c.set(Calendar.HOUR_OF_DAY, hour);
             c.set(Calendar.MINUTE, minute);
-        }
+            c.set(Calendar.SECOND, 0);
+            c.set(Calendar.MILLISECOND, 0);
+        } while (c.getTimeInMillis() <= now);
         return c.getTimeInMillis();
     }
 
