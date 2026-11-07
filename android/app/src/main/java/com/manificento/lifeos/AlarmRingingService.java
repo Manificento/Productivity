@@ -1,0 +1,188 @@
+package com.manificento.lifeos;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
+import android.media.RingtoneManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.util.Log;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.ServiceCompat;
+
+/**
+ * Plays the alarm (alarm sound on the alarm stream + vibration) as a foreground service with a full-screen
+ * notification and a «Выключить» action. Switching it off stores a dismissal for JS (alarm:dismissed) and tells a
+ * running AlarmPlugin. Nobody switches it off within AlarmPolicy.RING_TIMEOUT_MS — it goes quiet (no dismissal).
+ */
+public class AlarmRingingService extends Service {
+
+    static final String ACTION_RING = "com.manificento.lifeos.ALARM_PLAY";
+    static final String ACTION_DISMISS = "com.manificento.lifeos.ALARM_DISMISS";
+    static final String EXTRA_ALARM_AT = "alarmAt";
+
+    private static final String TAG = "AlarmRingingService";
+    private static final String CHANNEL_ID = "alarm";
+    private static final int NOTIFICATION_ID = 4201;
+    private static final long[] VIBRATION = { 0, 800, 600 };
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable timeout = this::stopSelf;
+    private MediaPlayer player;
+    private Vibrator vibrator;
+    private PowerManager.WakeLock wakeLock;
+    private boolean ringing;
+    private long alarmAt;
+
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        String action = intent == null ? null : intent.getAction();
+        if (ACTION_DISMISS.equals(action)) {
+            dismiss();
+            return START_NOT_STICKY;
+        }
+        long at = intent == null ? System.currentTimeMillis() : intent.getLongExtra(EXTRA_ALARM_AT, System.currentTimeMillis());
+        if (ringing) {
+            // A newer alarm came while this one rings (set less than 10 minutes ahead): keep ringing for it.
+            alarmAt = at;
+            AlarmStore.clearAlarm(this);
+            handler.removeCallbacks(timeout);
+            handler.postDelayed(timeout, AlarmPolicy.RING_TIMEOUT_MS);
+            return START_NOT_STICKY;
+        }
+        alarmAt = at;
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), foregroundType());
+        } catch (RuntimeException e) {
+            Log.e(TAG, "could not start in the foreground", e);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        ringing = true;
+        // The alarm has rung: it is no longer pending (a reboot must not set it again).
+        AlarmStore.clearAlarm(this);
+        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+        wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeOS:Alarm");
+        wakeLock.acquire(AlarmPolicy.RING_TIMEOUT_MS + 5_000L);
+        play();
+        vibrate();
+        handler.postDelayed(timeout, AlarmPolicy.RING_TIMEOUT_MS);
+        return START_NOT_STICKY;
+    }
+
+    private void dismiss() {
+        if (ringing) {
+            AlarmStore.addDismissal(this, System.currentTimeMillis(), alarmAt);
+            AlarmPlugin.notifyDismissed();
+        }
+        stopSelf();
+    }
+
+    @Override
+    public void onDestroy() {
+        ringing = false;
+        handler.removeCallbacks(timeout);
+        if (player != null) {
+            try {
+                player.stop();
+            } catch (IllegalStateException e) {
+                // not started
+            }
+            player.release();
+            player = null;
+        }
+        if (vibrator != null) vibrator.cancel();
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
+        super.onDestroy();
+    }
+
+    private void play() {
+        Uri sound = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM);
+        if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+        if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
+        if (sound == null) return;
+        try {
+            player = new MediaPlayer();
+            player.setAudioAttributes(
+                new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            );
+            player.setDataSource(this, sound);
+            player.setLooping(true);
+            player.prepare();
+            player.start();
+        } catch (Exception e) {
+            // Vibration and the notification still wake the user.
+            Log.e(TAG, "could not play the alarm sound", e);
+        }
+    }
+
+    private void vibrate() {
+        vibrator = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        if (vibrator == null || !vibrator.hasVibrator()) return;
+        vibrator.vibrate(
+            VibrationEffect.createWaveform(VIBRATION, 0),
+            new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build()
+        );
+    }
+
+    private static int foregroundType() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK : 0;
+    }
+
+    private Notification buildNotification() {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Будильник", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Звонок будильника");
+            // The service plays the sound itself on the alarm stream.
+            channel.setSound(null, null);
+            manager.createNotificationChannel(channel);
+        }
+        Intent dismiss = new Intent(this, AlarmRingingService.class).setAction(ACTION_DISMISS);
+        PendingIntent dismissIntent = PendingIntent.getService(
+            this,
+            1,
+            dismiss,
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        // TODO(#233): a small lock-screen activity with «Выключить» (showWhenLocked / turnScreenOn).
+        PendingIntent open = AlarmScheduler.showIntent(this);
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Будильник")
+            .setContentText("Пора вставать")
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setOngoing(true)
+            // Android 14 lets the user swipe a foreground notification away: that switches the alarm off too.
+            .setDeleteIntent(dismissIntent)
+            // The «Выключить» action stays on a lock screen that hides sensitive content.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(open)
+            .setFullScreenIntent(open, true)
+            .addAction(0, "Выключить", dismissIntent)
+            .build();
+    }
+}

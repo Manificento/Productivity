@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin, type PermissionState } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PermissionState, type PluginListenerHandle } from '@capacitor/core';
 import { Health, type HealthPlugin } from '@capgo/capacitor-health';
 import { LocalNotifications, type LocalNotificationsPlugin } from '@capacitor/local-notifications';
 import { fromDateKey, shiftDateKey, toDateKey } from './dates';
@@ -376,6 +376,160 @@ export async function readNightSamples(): Promise<NightSample[]> {
  */
 export async function clearNightSamples(upTo: Millis): Promise<void> {
   if (sensorsAvailable()) await sleepSensors.clearSamples({ upTo });
+}
+
+// ---------- alarm ----------
+
+/** A user switching off a ringing alarm; kept by the native side until JS takes it (the app may be closed). */
+export interface AlarmDismissal {
+  /** When the user switched it off. */
+  dismissedAt: Millis;
+  /** When it was set to ring. */
+  alarmAt: Millis;
+}
+
+/** The app's own native plugin (`android/…/AlarmPlugin.java`): AlarmManager rings it, a foreground service plays it. */
+export interface AlarmBridge {
+  /** Android 13+: the ringing alarm is a notification with «Выключить», so it needs the notification permission. */
+  checkPermissions(): Promise<{ notifications: PermissionState }>;
+  requestPermissions(): Promise<{ notifications: PermissionState }>;
+  /** Sets THE alarm (a new one replaces it). Rejects with code `EXACT_DENIED` when «Alarms & reminders» is off. */
+  set(options: { at: Millis; windowMin: number }): Promise<void>;
+  cancel(): Promise<void>;
+  /** Dismissals not taken yet, oldest first; taking them removes them, so each reaches JS once. */
+  takeDismissals(): Promise<{ dismissals: AlarmDismissal[] }>;
+  /** Fired when a dismissal was stored while the app is running; JS then takes it with `takeDismissals()`. */
+  addListener(event: 'dismissed', listener: () => void): Promise<PluginListenerHandle>;
+}
+
+const Alarm = registerPlugin<AlarmBridge>(CAPABILITY_PLUGINS.alarms);
+let alarmPlugin: AlarmBridge = Alarm;
+
+/** Event for `onAlarmDismissed` subscribers. */
+export interface AlarmDismissedEvent extends AlarmDismissal {
+  type: 'alarm:dismissed';
+}
+
+const dismissListeners = new Set<(event: AlarmDismissedEvent) => void>();
+let dismissHandle: Promise<PluginListenerHandle | undefined> | undefined;
+
+/** Tests swap the plugin through `src/test/platform.ts`; app code never calls this. Drops every subscription. */
+export function setAlarmBridge(next: AlarmBridge | null): void {
+  alarmPlugin = next ?? Alarm;
+  dismissListeners.clear();
+  dismissHandle = undefined;
+}
+
+export type AlarmResult =
+  | { status: 'set' }
+  | { status: 'denied'; hint: string }
+  | { status: 'unsupported'; hint: string }
+  | { status: 'failed'; hint: string };
+
+export const ALARM_TEXTS = {
+  web: 'Будильник работает только в приложении для телефона: браузер не может разбудить, когда вкладка закрыта.',
+  nativeUnsupported: 'Будильник недоступен в этой версии приложения. Обновите приложение.',
+  denied:
+    'Будильнику нужны уведомления: через них он звонит и выключается. Разрешите уведомления для LifeOS в настройках телефона.',
+  exactDenied: 'Чтобы будильник звонил вовремя, включите для LifeOS «Будильники и напоминания» в настройках телефона.',
+  failed: 'Не удалось поставить будильник. Попробуйте ещё раз.',
+  past: 'Время будильника уже прошло — выберите время позже.',
+  window: 'Окно умного будильника — целое число минут от 0 до 120.',
+} as const;
+
+/** Longest smart-wake window, minutes. */
+const MAX_ALARM_WINDOW_MIN = 120;
+
+const alarmsAvailable = () => isNativePlatform() && getCapabilities().alarms;
+const errorCode = (e: unknown) => (e as { code?: unknown } | null)?.code;
+
+/**
+ * Sets the one alarm: the OS rings it at `at` also while the app is closed (Android: AlarmManager alarm clock,
+ * restored after a reboot). `windowMin` is the smart-wake window before `at` (adaptation targets), stored with the
+ * alarm for waking at a light-sleep moment; until that exists the alarm rings at `at`, never earlier.
+ * A new alarm replaces the previous one. Asks for notifications once, if undecided. Never rejects.
+ */
+export async function setAlarm({ at, windowMin }: { at: Millis; windowMin: number }): Promise<AlarmResult> {
+  if (!isNativePlatform()) return { status: 'unsupported', hint: ALARM_TEXTS.web };
+  if (!alarmsAvailable()) return { status: 'unsupported', hint: ALARM_TEXTS.nativeUnsupported };
+  if (!Number.isFinite(at) || at <= Date.now()) return { status: 'failed', hint: ALARM_TEXTS.past };
+  if (!Number.isInteger(windowMin) || windowMin < 0 || windowMin > MAX_ALARM_WINDOW_MIN)
+    return { status: 'failed', hint: ALARM_TEXTS.window };
+  try {
+    let { notifications } = await alarmPlugin.checkPermissions();
+    if (notifications === 'prompt' || notifications === 'prompt-with-rationale') {
+      ({ notifications } = await alarmPlugin.requestPermissions());
+    }
+    if (notifications !== 'granted') return { status: 'denied', hint: ALARM_TEXTS.denied };
+    await alarmPlugin.set({ at, windowMin });
+    return { status: 'set' };
+  } catch (e) {
+    if (errorCode(e) === 'EXACT_DENIED') return { status: 'denied', hint: ALARM_TEXTS.exactDenied };
+    console.error('setAlarm failed', e);
+    return { status: 'failed', hint: ALARM_TEXTS.failed };
+  }
+}
+
+/**
+ * Cancels the pending alarm; one already ringing keeps ringing until the user switches it off.
+ * Nothing set — nothing happens. Never rejects.
+ */
+export async function cancelAlarm(): Promise<void> {
+  if (!alarmsAvailable()) return;
+  try {
+    await alarmPlugin.cancel();
+  } catch (e) {
+    console.error('cancelAlarm failed', e);
+  }
+}
+
+/** Takes the stored dismissals and hands each to every subscriber; one bad listener does not stop the rest. */
+async function deliverDismissals(): Promise<void> {
+  const plugin = alarmPlugin;
+  let dismissals: AlarmDismissal[];
+  try {
+    ({ dismissals } = await plugin.takeDismissals());
+  } catch (e) {
+    console.error('takeDismissals failed', e);
+    return;
+  }
+  for (const d of dismissals ?? []) {
+    const event: AlarmDismissedEvent = { type: 'alarm:dismissed', dismissedAt: d.dismissedAt, alarmAt: d.alarmAt };
+    for (const listener of [...dismissListeners]) {
+      try {
+        listener(event);
+      } catch (e) {
+        console.error('alarm:dismissed listener failed', e);
+      }
+    }
+  }
+}
+
+/**
+ * Subscribes to `alarm:dismissed`: the user switched off a ringing alarm. A dismissal made while the app was closed
+ * reaches the first subscriber after start, once. Returns the unsubscribe function. On the web it never fires.
+ */
+export function onAlarmDismissed(listener: (event: AlarmDismissedEvent) => void): () => void {
+  if (!alarmsAvailable()) return () => {};
+  dismissListeners.add(listener);
+  if (!dismissHandle) {
+    const handle: Promise<PluginListenerHandle | undefined> = alarmPlugin
+      .addListener('dismissed', () => void deliverDismissals())
+      .catch((e: unknown) => {
+        console.error('alarm listener failed', e);
+        // The next subscriber tries again.
+        if (dismissHandle === handle) dismissHandle = undefined;
+        return undefined;
+      });
+    dismissHandle = handle;
+    void handle.then(deliverDismissals);
+  }
+  return () => {
+    if (!dismissListeners.delete(listener) || dismissListeners.size > 0 || !dismissHandle) return;
+    const handle = dismissHandle;
+    dismissHandle = undefined;
+    void handle.then((h) => h?.remove());
+  };
 }
 
 // ---------- health store import (Health Connect / HealthKit) ----------
