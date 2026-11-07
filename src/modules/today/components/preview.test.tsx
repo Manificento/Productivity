@@ -92,12 +92,37 @@ describe('Предпросмотр 10 дней', () => {
     const prep = within(dialog).getByLabelText('Дней подготовки');
     await user.clear(prep);
     await user.type(prep, '2');
-    // Clearing the field hides the plan for a moment, so look the table up again (it loads anew).
     const updated = await within(dialog).findByRole('table', { name: 'План на 10 дней' });
     expect(focusColumn(updated).slice(0, 4)).toEqual(['4', '4', '4', '5']);
 
     // Nothing is saved until «Сохранить».
     expect(await db.lifeEvents.get('e1')).toMatchObject({ importance: 3, prepDays: 7 });
+  });
+
+  it('Given форма события с планом на 10 дней When поле на миг становится неверным (стёрты «Дней подготовки») Then вместо таблицы подсказка, а после исправления таблица появляется сразу, без «Загрузка…» и нового запроса к БД', async () => {
+    const user = userEvent.setup();
+    renderAt('/today/events/e1');
+    await user.click(await screen.findByRole('button', { name: 'Изменить' }));
+    const dialog = screen.getByRole('dialog', { name: 'Изменить событие' });
+    await within(dialog).findByRole('table', { name: 'План на 10 дней' });
+
+    // This spy is what catches a remount (a remounted hook reads the DB again); the «Загрузка…» checks alone do not.
+    const reads = vi.spyOn(db.lifeEvents, 'where');
+    try {
+      const prep = within(dialog).getByLabelText('Дней подготовки');
+      await user.clear(prep);
+      expect(within(dialog).queryByRole('table')).not.toBeInTheDocument();
+      expect(within(dialog).getByText('Укажите дату и дни подготовки, чтобы увидеть план.')).toBeInTheDocument();
+      expect(within(dialog).queryByText('Загрузка…')).not.toBeInTheDocument();
+
+      await user.type(prep, '2');
+      // No waiting: the data is still loaded, so the table is back at once.
+      expect(within(dialog).getByRole('table', { name: 'План на 10 дней' })).toBeInTheDocument();
+      expect(within(dialog).queryByText('Загрузка…')).not.toBeInTheDocument();
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('shows a live plan while creating an event and a hint while the input is invalid', async () => {

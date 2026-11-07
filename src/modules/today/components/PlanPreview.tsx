@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import type { Phase } from '../../../core/adaptation/types';
@@ -56,8 +57,19 @@ const MEDITATION_SHORT: Record<MeditationKind, string> = {
  * «Как изменятся следующие 10 дней» — the day targets from today with `event` (possibly unsaved; it replaces the
  * stored event with the same id) next to the user's other events: a more important event still drives its days.
  */
-export function PlanPreview({ event, today }: { event: LifeEvent; today: DateKey }) {
+export function PlanPreview({
+  event,
+  today,
+  invalid,
+}: {
+  event: LifeEvent | undefined;
+  today: DateKey;
+  /** Shown instead of the plan while `event` is undefined (a form with an invalid field). The hook stays mounted. */
+  invalid?: ReactNode;
+}) {
+  // Called even for an invalid form on purpose: the loaded rows survive, so the plan returns without a reload.
   const rows = useDailyTargetsRange(today, shiftDateKey(today, PREVIEW_DAYS - 1), { event });
+  if (event === undefined) return <>{invalid}</>;
   if (rows === undefined) return <p className="text-sm text-zinc-500">Загрузка…</p>;
   if (rows.every((r) => r.phase === 'normal')) {
     return <p className="text-sm text-zinc-500">Ближайшие 10 дней идут в обычном режиме.</p>;

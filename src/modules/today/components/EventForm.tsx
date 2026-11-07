@@ -133,11 +133,11 @@ export function EventForm({
       {preview && (
         <section aria-label="Как изменятся следующие 10 дней" className="mb-3">
           <h3 className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Как изменятся следующие 10 дней</h3>
-          {previewEvent ? (
-            <PlanPreview event={previewEvent} today={preview.today} />
-          ) : (
-            <p className="text-sm text-zinc-500">Укажите дату и дни подготовки, чтобы увидеть план.</p>
-          )}
+          <PlanPreview
+            event={previewEvent}
+            today={preview.today}
+            invalid={<p className="text-sm text-zinc-500">Укажите дату и дни подготовки, чтобы увидеть план.</p>}
+          />
         </section>
       )}
       {saveError && (
