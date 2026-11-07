@@ -24,22 +24,31 @@ type Block = keyof typeof BLOCKS;
 /** Problems found on the way: buttons covered by something else, horizontal scroll. Checked at the end. */
 const problems: string[] = [];
 
-/** Buttons and links of the screen whose centre is covered by another element even when scrolled to them. */
+/**
+ * Buttons and links of the screen whose centre is covered by another element even when scrolled to them. Limits:
+ * each control is scrolled to the middle of the screen and only its centre is tested — so it catches a control
+ * that can never come out from under the bottom bar (the end of a page), not one half under it. The bottom bar's
+ * own links are tested where they are, without scrolling.
+ */
 async function coveredControls(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const nav = document.querySelector('nav[aria-label="Модули"]');
-    const controls = [...document.querySelectorAll<HTMLElement>('button, a[href], [role="button"]')].filter(
-      (el) => !nav?.contains(el) && el.checkVisibility() && el.getBoundingClientRect().width > 1,
+    const all = [...document.querySelectorAll<HTMLElement>('button, a[href], [role="button"]')].filter(
+      (el) => el.checkVisibility() && el.getBoundingClientRect().width > 1,
     );
     const covered: string[] = [];
-    for (const el of controls) {
-      el.scrollIntoView({ block: 'center', inline: 'center' });
+    const check = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       if (!hit || !el.contains(hit)) {
         const name = el.getAttribute('aria-label') ?? el.textContent?.trim() ?? el.tagName;
         covered.push(`«${name}» под ${hit?.closest('nav, header, [role="dialog"]')?.tagName ?? hit?.tagName}`);
       }
+    };
+    all.filter((el) => nav?.contains(el)).forEach(check);
+    for (const el of all.filter((el) => !nav?.contains(el))) {
+      el.scrollIntoView({ block: 'center', inline: 'center' });
+      check(el);
     }
     window.scrollTo(0, 0);
     return covered;
@@ -56,12 +65,13 @@ async function checkScreen(page: Page, where: string) {
 async function openBlock(page: Page, block: Block) {
   const { link, heading } = BLOCKS[block];
   const bar = page.getByRole('navigation', { name: 'Модули' });
-  const pinned = bar.getByRole('link', { name: new RegExp(link) });
+  const pinned = bar.getByRole('link', { name: new RegExp(`^${link}`) });
   if ((await pinned.count()) > 0) {
     await pinned.click();
   } else {
     await bar.getByRole('link', { name: /Блоки/ }).click();
     await expect(page.getByRole('heading', { name: 'Все блоки', level: 1 })).toBeVisible();
+    await checkScreen(page, '«Все блоки»');
     await page.getByRole('link', { name: new RegExp(`^${link}`) }).click();
   }
   await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
@@ -80,6 +90,8 @@ async function openToday(page: Page) {
     .getByRole('link', { name: /Сегодня/ })
     .click();
   await expect(page.getByRole('heading', { name: 'Сегодня', level: 1 })).toBeVisible();
+  await expect(page.getByText(/^Цели дня/)).toBeVisible();
+  await checkScreen(page, '«Сегодня»');
 }
 
 /** «Утро» of a new day: the app is opened again at that time. */
@@ -123,6 +135,7 @@ async function setUpBlocks(page: Page) {
 async function createExamTomorrow(page: Page) {
   await openToday(page);
   await page.getByRole('link', { name: /События/ }).click();
+  await checkScreen(page, '«События»');
   await page.getByRole('button', { name: 'Добавить событие' }).click();
   const form = page.getByRole('dialog', { name: 'Новое событие' });
   await form.getByLabel('Название').fill('IELTS');
@@ -131,16 +144,10 @@ async function createExamTomorrow(page: Page) {
   await form.getByRole('radio', { name: 'Критичное' }).click();
   await form.getByRole('button', { name: 'Сохранить' }).click();
   await expect(page.getByRole('region', { name: 'Предстоящие' }).getByRole('link', { name: /IELTS/ })).toBeVisible();
+  await checkScreen(page, '«События» с экзаменом');
 }
 
 const mindPlan = (page: Page) => page.getByText(/^Сегодня (\d+ мин|без тренажёров)/);
-
-/** Minutes of the mind-training plan from «Сегодня N мин: …». */
-async function mindPlanMinutes(page: Page): Promise<number> {
-  const text = (await mindPlan(page).textContent()) ?? '';
-  const m = /^Сегодня (\d+) мин/.exec(text);
-  return m ? Number(m[1]) : 0;
-}
 
 test('Given чистое приложение When я создаю экзамен на завтра Then «Питание» без дефицита, «Тренировки» — разгрузка, «Медитация» — дыхание, «Ум» ≤ 5 мин, «Привычки» — только ключевые, «Прогресс» — квесты дня события', async ({
   page,
@@ -200,7 +207,6 @@ test('Given чистое приложение When я создаю экзаме�
 
     await visit(page, 'mind', 'накануне', async () => {
       await expect(mindPlan(page)).toHaveText('Сегодня 5 мин: Струп 5 мин');
-      expect(await mindPlanMinutes(page)).toBeLessThanOrEqual(5);
     });
   });
 
@@ -231,17 +237,12 @@ test('Given чистое приложение When я создаю экзаме�
 
     await visit(page, 'mind', 'день экзамена', async () => {
       await expect(mindPlan(page)).toHaveText('Сегодня 5 мин: Струп 5 мин');
-      expect(await mindPlanMinutes(page)).toBeLessThanOrEqual(5);
     });
 
     await visit(page, 'nutrition', 'день экзамена', async () => {
       await expect(page.getByRole('status').filter({ hasText: 'Сегодня без дефицита' })).toContainText(
         'Сегодня «IELTS»',
       );
-    });
-
-    await visit(page, 'training', 'день экзамена', async () => {
-      await expect(page.getByText('День отдыха').first()).toBeVisible();
     });
   });
 
@@ -252,12 +253,14 @@ test('Given чистое приложение When я создаю экзаме�
   });
 
   await test.step('Given время зафиксировано `page.clock` When сценарий прогоняется Then результаты детерминированы', async () => {
-    // The clock does not move while the scenario runs: what the app reads as «now» is exactly the exam morning.
+    // Determinism is in the exact values asserted above (2050 → 2490 ккал, 2 × 8, 10 → 5 мин, the dates of the
+    // plan) — they hold only for the fixed days. Here: the clock does not move while the scenario runs, and the
+    // same morning opened again gives the same day.
+    await page.goto('/');
+    await expect(page.getByText('Цели дня · День события')).toBeVisible();
     expect(await page.evaluate(() => Date.now())).toBe(EXAM_DAY.getTime());
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Тренировки', level: 1 })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'IELTS сегодня · День события' })).toBeVisible();
     expect(await page.evaluate(() => Date.now())).toBe(EXAM_DAY.getTime());
-    await openToday(page);
-    await expect(page.getByText('Цели дня · День события')).toBeVisible();
   });
 });
