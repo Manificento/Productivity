@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
 import { newRecord } from '../../core/ids';
+import { importTasks } from '../../core/logging/tasks';
 import { atLocalTime } from '../../core/logging/sleepTime';
 import { ProgressPage } from './ProgressPage';
 import { XP_RULES } from './logic/xp';
@@ -88,8 +89,17 @@ describe('Прогресс', () => {
     );
     expect(screen.getByText('Твоя история учтена: уровень 2')).toBeInTheDocument();
     unmount();
+    const rows = Array.from({ length: 30 }, (_, i) => ({
+      externalId: `x${i}`,
+      title: `r${i}`,
+      completedAt: atLocalTime('2026-10-02', '10:00'),
+    }));
+    await importTasks({ projects: [], tasks: rows }, { source: 'todoist' });
+    await importTasks({ projects: [], tasks: rows }, { source: 'todoist' });
     open();
     await waitFor(() => expect(screen.getByTestId('xp-imported')).toBeInTheDocument());
     expect(screen.queryByText(/Твоя история учтена/)).not.toBeInTheDocument();
+    // two days at the cap; the second import of the same externalIds updated rows, it did not add experience
+    expect(screen.getByTestId('xp-imported')).toHaveTextContent('Перенесено из истории: 200 очков');
   });
 });

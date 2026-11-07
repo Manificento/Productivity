@@ -104,19 +104,34 @@ export function xpEventsFrom(s: XpSources): XpGain[] {
 }
 
 /**
- * Gains that actually count: base experience is limited to `DAILY_XP_CAP` per day, live actions first,
- * imported history fills what is left of the day. Quest bonuses pass through untouched.
+ * Gains that actually count: base experience is limited to `DAILY_XP_CAP` per day. A day over the cap is scaled
+ * down proportionally (largest remainder, so the day sums to exactly the cap), so every block and skill keeps its
+ * share and the result does not depend on table order. Quest bonuses pass through untouched.
  */
 export function countedGains(s: XpSources): XpGain[] {
   const gains = xpEventsFrom(s);
-  const base = gains.filter((g) => !g.bonus).sort((a, b) => Number(a.imported ?? false) - Number(b.imported ?? false));
-  const left = new Map<DateKey, number>();
+  const byDay = new Map<DateKey, XpGain[]>();
+  for (const g of gains) if (!g.bonus) byDay.set(g.date, [...(byDay.get(g.date) ?? []), g]);
   const out: XpGain[] = gains.filter((g) => g.bonus);
-  for (const g of base) {
-    const room = left.get(g.date) ?? DAILY_XP_CAP;
-    const amount = Math.min(g.amount, room);
-    left.set(g.date, room - amount);
-    if (amount > 0) out.push({ ...g, amount });
+  for (const day of byDay.values()) {
+    const sum = day.reduce((t, g) => t + g.amount, 0);
+    if (sum <= DAILY_XP_CAP) {
+      out.push(...day);
+      continue;
+    }
+    const exact = day.map((g) => (g.amount * DAILY_XP_CAP) / sum);
+    const amounts = exact.map(Math.floor);
+    let spare = DAILY_XP_CAP - amounts.reduce((t, a) => t + a, 0);
+    const order = exact.map((e, i) => ({ i, frac: e - Math.floor(e) })).sort((x, y) => y.frac - x.frac || x.i - y.i);
+    for (const { i } of order) {
+      if (spare <= 0) break;
+      amounts[i] = (amounts[i] ?? 0) + 1;
+      spare -= 1;
+    }
+    day.forEach((g, i) => {
+      const amount = amounts[i] ?? 0;
+      if (amount > 0) out.push({ ...g, amount });
+    });
   }
   return out;
 }
@@ -182,14 +197,16 @@ export function summarize(s: XpSources, today: DateKey): ProgressSummary {
   const events = countedGains(s);
   const weekStart = shiftDateKey(today, -6);
   let total = 0;
+  let imported = 0;
   let todayXp = 0;
   let week = 0;
   for (const e of events) {
     total += e.amount;
+    if (e.imported) imported += e.amount;
     if (e.date === today) todayXp += e.amount;
     if (e.date >= weekStart && e.date <= today) week += e.amount;
   }
-  return { total, imported: importedXp(s), today: todayXp, week, ...levelFromXp(total) };
+  return { total, imported, today: todayXp, week, ...levelFromXp(total) };
 }
 
 /** What earns experience, for the empty state. */

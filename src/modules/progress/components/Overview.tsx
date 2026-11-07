@@ -1,27 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, Empty } from '../../../ui';
 import { XP_HINTS, type ProgressSummary } from '../logic/xp';
 
 const ACK_KEY = 'progress.importAck';
 
-/** One-time notice per device: remembered in localStorage, which may be unavailable. */
+/** One-time notice per device: remembered in localStorage (may be unavailable), written after it was shown. */
 function useOnce(show: boolean): boolean {
-  const [seen] = useState(() => {
+  const [visible] = useState(() => {
+    if (!show) return false;
     try {
-      return localStorage.getItem(ACK_KEY) === '1';
+      return localStorage.getItem(ACK_KEY) !== '1';
     } catch {
-      return false;
+      return true;
     }
   });
-  const [visible] = useState(show && !seen);
-  if (show && !seen) {
+  useEffect(() => {
+    if (!visible) return;
     try {
       localStorage.setItem(ACK_KEY, '1');
     } catch {
       /* ignore */
     }
-  }
+  }, [visible]);
   return visible;
+}
+
+function pointsWord(n: number): string {
+  const last = n % 10;
+  const tens = n % 100;
+  if (last === 1 && tens !== 11) return 'очко';
+  if (last >= 2 && last <= 4 && (tens < 12 || tens > 14)) return 'очка';
+  return 'очков';
 }
 
 export function Overview({ s }: { s: ProgressSummary }) {
@@ -73,7 +82,7 @@ export function Overview({ s }: { s: ProgressSummary }) {
       {s.imported > 0 && (
         <Card>
           <p className="text-sm" data-testid="xp-imported">
-            Перенесено из истории: {s.imported} очков
+            Перенесено из истории: {s.imported} {pointsWord(s.imported)}
           </p>
           {notice && (
             <p role="status" className="mt-1 text-sm text-indigo-600 dark:text-indigo-400">
