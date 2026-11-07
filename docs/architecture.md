@@ -225,7 +225,10 @@ v6, индекс `[sourceId+externalId]` у `sleepLogs`): повторный и�
 Сопоставление — чистые функции `src/core/healthImport.ts`. Из прав плагина в манифесте оставлены только `READ_SLEEP`
 и `READ_EXERCISE` (CI `android.yml` это проверяет), `minSdk` — 26 (требование клиента Health Connect; сам Health
 Connect есть с Android 9). Для iOS-оболочки понадобятся entitlement HealthKit и `NSHealthShareUsageDescription`;
-политика конфиденциальности для экрана Health Connect — контент владельца (#214). В тестах — `mockHealthStore()` из
+политика конфиденциальности — `public/privacy/index.html` (русский + английский, #214): Vite кладёт её в сборку,
+`cap sync` — в `assets/public/`, экран разрешений Health Connect открывает её по `health_connect_privacy_policy_url`
+(`strings.xml`; CI `android.yml` проверяет файл в APK и адрес); на вебе — `/privacy/`, этот же адрес — для деклараций
+в Play Console и App Store Connect. В тестах — `mockHealthStore()` из
 `src/test/platform.ts` (`hidesDenial` повторяет поведение HealthKit).
 В `AndroidManifest.xml` намеренно выключены Auto Backup и перенос на новое устройство (`allowBackup="false"`,
 `data_extraction_rules.xml`): IndexedDB с данными о здоровье не покидает телефон до облака (ADR-0009) и согласия.

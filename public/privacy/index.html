@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Политика конфиденциальности LifeOS</title>
+    <title>Политика конфиденциальности LifeOS · Privacy policy</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -42,13 +42,19 @@
         font-size: 1.1rem;
         margin-top: 1.75rem;
       }
+      hr {
+        margin: 2.5rem 0;
+        border: 0;
+        border-top: 1px solid var(--muted);
+        opacity: 0.4;
+      }
       .muted {
         color: var(--muted);
         font-size: 0.9rem;
       }
-      a {
-        color: inherit;
+      .email {
         word-break: break-all;
+        user-select: all;
       }
     </style>
   </head>
@@ -62,6 +68,13 @@
         Из Health Connect (Android) и «Здоровья» (iPhone) LifeOS читает только сон и тренировки — и только после вашего
         разрешения. Другие данные о здоровье приложение не запрашивает: на Android в нём объявлены только разрешения на
         чтение сна и тренировок.
+      </p>
+
+      <h2>Ночной трекинг сна</h2>
+      <p>
+        Если вы включаете запись ночи, приложение на Android раз в минуту сохраняет движение телефона (акселерометр) и
+        уровень шума с микрофона. Звук не записывается и не сохраняется — только громкость в децибелах. Эти данные тоже
+        остаются на устройстве.
       </p>
 
       <h2>Где хранятся данные</h2>
@@ -84,7 +97,49 @@
       </p>
 
       <h2>Контакт</h2>
-      <p>Вопросы о данных: <a href="mailto:almasakhmediyar@gmail.com">almasakhmediyar@gmail.com</a>.</p>
+      <p>Вопросы о данных: <span class="email">almasakhmediyar@gmail.com</span></p>
+
+      <hr />
+
+      <section lang="en" aria-label="Privacy policy in English">
+        <h1>LifeOS privacy policy</h1>
+        <p class="muted">Effective from 7 November 2026.</p>
+
+        <h2>What we read</h2>
+        <p>
+          From Health Connect (Android) and Apple Health (iPhone) LifeOS reads only sleep and workouts, and only after
+          you allow it. The app asks for no other health data: on Android it declares only the permissions to read sleep
+          and exercise.
+        </p>
+
+        <h2>Night sleep tracking</h2>
+        <p>
+          If you turn on night recording, the app on Android stores once a minute the phone's movement (accelerometer)
+          and the noise level from the microphone. Sound is never recorded or stored — only its loudness in decibels.
+          This data also stays on the device.
+        </p>
+
+        <h2>Where the data is kept</h2>
+        <p>
+          Only on this device, in the app's internal database. Android backup and transfer to a new phone are turned off
+          for the app's data. There is no cloud yet; if one appears, data will go there only with your separate consent.
+        </p>
+
+        <h2>What we do not share</h2>
+        <p>
+          Health data is not sent to servers, third parties, advertising or analytics. The app's only request to the
+          internet is the food search in Open Food Facts, and it carries no health data.
+        </p>
+
+        <h2>Managing your data</h2>
+        <p>
+          You can withdraw access at any time in the settings of Health Connect or Apple Health. You can delete data by
+          deleting entries in the app or the app itself. Export is yours to do — as a backup file in LifeOS settings.
+        </p>
+
+        <h2>Contact</h2>
+        <p>Questions about your data: <span class="email">almasakhmediyar@gmail.com</span></p>
+      </section>
     </main>
   </body>
 </html>

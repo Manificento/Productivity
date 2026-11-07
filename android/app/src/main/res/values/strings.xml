@@ -4,6 +4,9 @@
     <string name="title_activity_main">LifeOS</string>
     <string name="package_name">com.manificento.lifeos</string>
     <string name="custom_url_scheme">com.manificento.lifeos</string>
+    <!-- Privacy policy for the Health Connect permission screen (#214): the page from public/privacy/ in the app's
+         assets — offline. When the web version is hosted, the same page lives at https://<домен>/privacy/. -->
+    <string name="health_connect_privacy_policy_url" translatable="false">file:///android_asset/public/privacy/index.html</string>
     <!-- Alarm screen over the lock screen (#233). -->
     <string name="alarm_title">Будильник</string>
     <string name="alarm_text">Пора вставать</string>
