@@ -165,3 +165,23 @@ describe('квесты дня', () => {
     expect(e[0]?.hint).toMatch(/Привычках/);
   });
 });
+
+describe('квесты и импорт (#224)', () => {
+  it('Given только импортированные задачи и тренировки When считаю квесты прошлого дня Then ни один квест не выполнен', () => {
+    const tasks = [
+      newRecord(
+        {
+          title: 'old',
+          priority: 4 as const,
+          tags: [],
+          completedAt: atLocalTime(DAY, '10:00'),
+          source: 'todoist' as const,
+          externalId: '1',
+        },
+        T,
+      ),
+    ];
+    const quests = questsFor(targets(), { ...empty, tasks });
+    expect(quests.some((q) => q.done)).toBe(false);
+  });
+});

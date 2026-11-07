@@ -65,33 +65,84 @@ export interface XpSources {
 /** A focus session is a pomodoro of at least 10 minutes (the `time` module's rule, #16; no cross-module import). */
 export const MIN_FOCUS_MS = 10 * 60_000;
 
+/**
+ * At most this much base experience counts per calendar day, for live actions and imported history alike (#224):
+ * a year of imported history gives roughly a year of live use, not the maximum level. Quest bonuses are outside the cap.
+ */
+export const DAILY_XP_CAP = 100;
+
 export interface XpGain {
   date: DateKey;
   skill: SkillId;
   amount: number;
+  /** Comes from a record imported from another app (`Task.source`, `WorkoutLog.sourceId`). */
+  imported?: boolean;
+  /** Quest bonus (`xpEvents`) — not capped and never granted retroactively by an import. */
+  bonus?: boolean;
 }
 
 /** One gain per qualifying record; a record that is undone or deleted simply stops appearing. */
 export function xpEventsFrom(s: XpSources): XpGain[] {
   const out: XpGain[] = [];
-  const add = (date: DateKey, skill: SkillId, amount: number) => out.push({ date, skill, amount });
-  for (const t of s.tasks) if (t.completedAt !== undefined) add(toDateKey(t.completedAt), 'tasks', XP_RULES.task);
+  const add = (date: DateKey, skill: SkillId, amount: number, imported = false) =>
+    out.push(imported ? { date, skill, amount, imported } : { date, skill, amount });
+  for (const t of s.tasks)
+    if (t.completedAt !== undefined) add(toDateKey(t.completedAt), 'tasks', XP_RULES.task, t.source !== undefined);
   for (const h of s.habitLogs) if (h.done) add(h.date, 'tasks', XP_RULES.habit);
   for (const e of s.timeEntries)
     if (e.source === 'pomodoro' && e.end !== undefined && e.end - e.start >= MIN_FOCUS_MS)
       add(e.date, 'tasks', XP_RULES.focus);
   for (const l of s.sleepLogs) add(l.date, 'sleep', XP_RULES.sleep);
-  for (const w of s.workoutLogs) add(w.date, 'body', XP_RULES.workout);
+  for (const w of s.workoutLogs) add(w.date, 'body', XP_RULES.workout, w.sourceId !== undefined);
   for (const m of s.meditationSessions) if (m.completed) add(m.date, 'calm', XP_RULES.meditation);
   for (const c of s.cognitiveTests) add(c.date, 'mind', XP_RULES.test);
   for (const m of s.mindSessions) add(m.date, 'mind', XP_RULES.test);
   for (const m of s.mealLogs) add(m.date, 'food', XP_RULES.meal);
-  for (const q of s.xpEvents) add(q.date, QUEST_SKILL[q.questId] ?? 'tasks', q.amount);
+  for (const q of s.xpEvents)
+    out.push({ date: q.date, skill: QUEST_SKILL[q.questId] ?? 'tasks', amount: q.amount, bonus: true });
+  return out;
+}
+
+/**
+ * Gains that actually count: base experience is limited to `DAILY_XP_CAP` per day. A day over the cap is scaled
+ * down proportionally (largest remainder, so the day sums to exactly the cap), so every block and skill keeps its
+ * share and the result does not depend on table order. Quest bonuses pass through untouched.
+ */
+export function countedGains(s: XpSources): XpGain[] {
+  const gains = xpEventsFrom(s);
+  const byDay = new Map<DateKey, XpGain[]>();
+  for (const g of gains) if (!g.bonus) byDay.set(g.date, [...(byDay.get(g.date) ?? []), g]);
+  const out: XpGain[] = gains.filter((g) => g.bonus);
+  for (const day of byDay.values()) {
+    const sum = day.reduce((t, g) => t + g.amount, 0);
+    if (sum <= DAILY_XP_CAP) {
+      out.push(...day);
+      continue;
+    }
+    const exact = day.map((g) => (g.amount * DAILY_XP_CAP) / sum);
+    const amounts = exact.map(Math.floor);
+    let spare = DAILY_XP_CAP - amounts.reduce((t, a) => t + a, 0);
+    const order = exact.map((e, i) => ({ i, frac: e - Math.floor(e) })).sort((x, y) => y.frac - x.frac || x.i - y.i);
+    for (const { i } of order) {
+      if (spare <= 0) break;
+      amounts[i] = (amounts[i] ?? 0) + 1;
+      spare -= 1;
+    }
+    day.forEach((g, i) => {
+      const amount = amounts[i] ?? 0;
+      if (amount > 0) out.push({ ...g, amount });
+    });
+  }
   return out;
 }
 
 export function totalXp(s: XpSources): number {
-  return xpEventsFrom(s).reduce((sum, e) => sum + e.amount, 0);
+  return countedGains(s).reduce((sum, e) => sum + e.amount, 0);
+}
+
+/** Counted experience that came from imported history — shown apart from experience for live actions. */
+export function importedXp(s: XpSources): number {
+  return countedGains(s).reduce((sum, e) => sum + (e.imported ? e.amount : 0), 0);
 }
 
 /** XP needed to go from `level` to `level + 1`: 100, 150, 200, … */
@@ -126,7 +177,7 @@ export interface SkillLevel extends LevelInfo {
 /** Level of each of the six skills from the XP that flows into it. */
 export function skillLevels(s: XpSources): SkillLevel[] {
   const sums = new Map<SkillId, number>();
-  for (const e of xpEventsFrom(s)) sums.set(e.skill, (sums.get(e.skill) ?? 0) + e.amount);
+  for (const e of countedGains(s)) sums.set(e.skill, (sums.get(e.skill) ?? 0) + e.amount);
   return SKILLS.map((k) => {
     const xp = sums.get(k.id) ?? 0;
     return { id: k.id, label: k.label, xp, ...levelFromXp(xp) };
@@ -135,23 +186,27 @@ export function skillLevels(s: XpSources): SkillLevel[] {
 
 export interface ProgressSummary extends LevelInfo {
   total: number;
+  /** Part of `total` carried over from imported history. */
+  imported: number;
   today: number;
   /** The last 7 days including today. */
   week: number;
 }
 
 export function summarize(s: XpSources, today: DateKey): ProgressSummary {
-  const events = xpEventsFrom(s);
+  const events = countedGains(s);
   const weekStart = shiftDateKey(today, -6);
   let total = 0;
+  let imported = 0;
   let todayXp = 0;
   let week = 0;
   for (const e of events) {
     total += e.amount;
+    if (e.imported) imported += e.amount;
     if (e.date === today) todayXp += e.amount;
     if (e.date >= weekStart && e.date <= today) week += e.amount;
   }
-  return { total, today: todayXp, week, ...levelFromXp(total) };
+  return { total, imported, today: todayXp, week, ...levelFromXp(total) };
 }
 
 /** What earns experience, for the empty state. */

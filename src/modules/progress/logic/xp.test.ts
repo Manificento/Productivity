@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { shiftDateKey } from '../../../core/dates';
 import { atLocalTime } from '../../../core/logging/sleepTime';
 import { newRecord } from '../../../core/ids';
-import { XP_RULES, levelFromXp, skillLevels, summarize, totalXp, xpEventsFrom, xpForLevel, type XpSources } from './xp';
+import {
+  DAILY_XP_CAP,
+  XP_RULES,
+  levelFromXp,
+  skillLevels,
+  summarize,
+  totalXp,
+  xpEventsFrom,
+  xpForLevel,
+  type XpSources,
+} from './xp';
 
 const T = 1_000;
 const empty: XpSources = {
@@ -147,8 +158,8 @@ describe('навыки', () => {
   it('Given опыт по источникам When я открываю «Навыки» Then шесть навыков — Дела, Тело, Сон, Питание, Ум, Покой — с уровнями по вкладу блоков', () => {
     const levels = skillLevels({
       ...empty,
-      workoutLogs: Array.from({ length: 7 }, () =>
-        newRecord({ date: '2026-11-03', type: 'run', durationMin: 30, rpe: 5 }, T),
+      workoutLogs: Array.from({ length: 7 }, (_, i) =>
+        newRecord({ date: `2026-11-0${i + 1}`, type: 'run', durationMin: 30, rpe: 5 }, T),
       ),
       mealLogs: [newRecord({ date: '2026-11-03', time: 0, kind: 'lunch' as const, items: [] }, T)],
       mindSessions: [newRecord({ date: '2026-11-03', kind: 'nback' as const, durationMs: 1, accuracyPct: 80 }, T)],
@@ -161,5 +172,92 @@ describe('навыки', () => {
     expect(by.mind?.xp).toBe(XP_RULES.test);
     expect(by.sleep?.xp).toBe(20); // quest bonus flows into the quest's skill
     expect(by.tasks?.xp).toBe(0);
+  });
+});
+
+describe('опыт от импортированной истории (#224)', () => {
+  const imported = (date: string, i: number) =>
+    newRecord(
+      {
+        title: `t${i}`,
+        priority: 4 as const,
+        tags: [],
+        completedAt: day(date),
+        source: 'todoist' as const,
+        externalId: `e${i}`,
+      },
+      T,
+    );
+  /** `perDay` imported tasks on every `step`-th of `days` days starting 2025-11-07. */
+  const history = (days: number, perDay: number, step = 1): XpSources => ({
+    ...empty,
+    tasks: Array.from({ length: days }, (_, d) => d)
+      .filter((d) => d % step === 0)
+      .flatMap((d) => Array.from({ length: perDay }, (_, i) => imported(shiftDateKey('2025-11-07', d), d * 100 + i))),
+  });
+
+  it('Given импорт задач When считаю Then за день засчитывается не больше DAILY_XP_CAP', () => {
+    expect(totalXp(history(1, 50))).toBe(DAILY_XP_CAP);
+    expect(totalXp(history(30, 50))).toBe(30 * DAILY_XP_CAP);
+    expect(totalXp(history(3, 2))).toBe(3 * 2 * XP_RULES.task); // below the cap nothing is lost
+  });
+
+  it('Given 300 задач за 12 месяцев When считаю Then уровень не максимальный', () => {
+    // 365 days, ~0.8 tasks/day: 300 tasks spread over the year
+    const tasks = Array.from({ length: 300 }, (_, i) =>
+      imported(shiftDateKey('2025-11-07', Math.floor((i * 365) / 300)), i),
+    );
+    const src = { ...empty, tasks };
+    expect(totalXp(src)).toBe(300 * XP_RULES.task);
+    expect(levelFromXp(totalXp(src)).level).toBe(levelFromXp(3000).level);
+  });
+
+  it('Given 365 дней по 50 задач When считаю Then ровно 365 × потолок и уровень года, а не максимум', () => {
+    const total = totalXp(history(365, 50));
+    expect(total).toBe(365 * DAILY_XP_CAP);
+    expect(levelFromXp(total).level).toBe(levelFromXp(36_500).level);
+  });
+
+  it('Given история с пропусками (каждый 3-й день) When считаю Then считаются только активные дни', () => {
+    expect(totalXp(history(30, 50, 3))).toBe(10 * DAILY_XP_CAP);
+  });
+
+  it('Given импорт When смотрю сводку Then перенесённый опыт отдельно от живого', () => {
+    const live = newRecord({ title: 'x', priority: 4 as const, tags: [], completedAt: day('2025-11-20') }, T);
+    const base = history(2, 50);
+    const s = summarize({ ...base, tasks: [...base.tasks, live] }, '2025-11-20');
+    expect(s.imported).toBe(2 * DAILY_XP_CAP);
+    expect(s.total).toBe(2 * DAILY_XP_CAP + XP_RULES.task);
+  });
+
+  it('Given повторный импорт When считаю Then опыт считается из таблиц и зависит только от записей', () => {
+    const once = history(2, 5);
+    expect(totalXp(once)).toBe(10 * XP_RULES.task);
+  });
+
+  it('Given импорт When считаю бонусы Then импорт не создаёт бонусов, записанные xpEvents учитываются без потолка', () => {
+    expect(xpEventsFrom(history(2, 5)).some((g) => g.bonus)).toBe(false);
+    const quest = newRecord(
+      { date: '2025-11-07', source: 'quest' as const, questId: 'focus', amount: XP_RULES.quest },
+      T,
+    );
+    expect(totalXp({ ...history(1, 50), xpEvents: [quest] })).toBe(DAILY_XP_CAP + XP_RULES.quest);
+  });
+
+  it('Given живые действия сверх потолка When считаю Then тот же потолок', () => {
+    const live = Array.from({ length: 12 }, (_, i) =>
+      newRecord({ title: `l${i}`, priority: 4 as const, tags: [], completedAt: day('2025-11-07') }, T),
+    );
+    expect(summarize({ ...empty, tasks: live }, '2025-11-07').total).toBe(DAILY_XP_CAP);
+  });
+
+  it('Given день сверх потолка When считаю навыки Then каждый блок получает долю, а не первый по порядку', () => {
+    const tasks = Array.from({ length: 10 }, (_, i) =>
+      newRecord({ title: `l${i}`, priority: 4 as const, tags: [], completedAt: day('2025-11-07') }, T),
+    );
+    const workoutLogs = [newRecord({ date: '2025-11-07', type: 'run', durationMin: 30, rpe: 5 }, T)];
+    const by = Object.fromEntries(skillLevels({ ...empty, tasks, workoutLogs }).map((l) => [l.id, l.xp]));
+    expect(by.body).toBeGreaterThan(0);
+    expect((by.body ?? 0) + (by.tasks ?? 0)).toBe(DAILY_XP_CAP);
   });
 });
