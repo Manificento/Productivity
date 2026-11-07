@@ -16,12 +16,32 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Robolectric tests of the native alarm screen (#233) read the app's resources and manifest. The Android jar
+    // Robolectric runs on comes through Gradle (proxy, cache) and Robolectric runs offline.
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            dependsOn 'robolectricJars'
+            systemProperty 'robolectric.offline', 'true'
+            systemProperty 'robolectric.dependency.dir', layout.buildDirectory.dir('robolectric-jars').get().asFile.path
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+configurations {
+    robolectricRuntime { transitive = false }
+}
+
+// Android 13 for Robolectric 4.16 (AlarmScreenTest runs with @Config(sdk = 33)).
+tasks.register('robolectricJars', Copy) {
+    from configurations.robolectricRuntime
+    into layout.buildDirectory.dir('robolectric-jars')
 }
 
 repositories {
@@ -37,6 +57,8 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.robolectric:robolectric:$robolectricVersion"
+    robolectricRuntime "org.robolectric:android-all-instrumented:13-robolectric-9030017-i7"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
