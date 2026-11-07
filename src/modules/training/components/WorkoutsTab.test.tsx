@@ -212,3 +212,35 @@ describe('workouts tab', () => {
     expect(item).not.toHaveTextContent('0 кг');
   });
 });
+
+describe('workouts tab across midnight', () => {
+  const renderAt = (today: string) => {
+    const ui = (d: string) => (
+      <MemoryRouter>
+        <WorkoutsTab today={d} />
+      </MemoryRouter>
+    );
+    const view = render(ui(today));
+    return (d: string) => view.rerender(ui(d));
+  };
+
+  it('Given страница «Тренировки» открыта через полночь и форма не тронута When наступает новый день Then дата в форме новой тренировки — новый день', async () => {
+    const setDay = renderAt(TODAY);
+    expect(await screen.findByLabelText('Дата')).toHaveValue(TODAY);
+    setDay('2026-11-05');
+    await waitFor(() => expect(screen.getByLabelText('Дата')).toHaveValue('2026-11-05'));
+    expect(screen.getByLabelText('Дата')).toHaveAttribute('max', '2026-11-05');
+  });
+
+  it('Given в форме уже введены данные When наступает новый день Then введённое не теряется', async () => {
+    const setDay = renderAt(TODAY);
+    await screen.findByLabelText('Дата');
+    type('Тип', 'Бег');
+    type('Длительность, мин', '45');
+    setDay('2026-11-05');
+    await waitFor(() => expect(screen.getByLabelText('Дата')).toHaveAttribute('max', '2026-11-05'));
+    expect(screen.getByLabelText('Тип')).toHaveValue('Бег');
+    expect(screen.getByLabelText('Длительность, мин')).toHaveValue('45');
+    expect(screen.getByLabelText('Дата')).toHaveValue(TODAY); // a workout started before midnight stays on its day
+  });
+});
