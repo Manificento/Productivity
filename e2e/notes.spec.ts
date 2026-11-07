@@ -18,3 +18,15 @@ test('Given пустой блок When я пишу заметку с markdown и
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('Given сегодняшний день When я нажимаю «Сегодня» Then открывается дневная страница без горизонтальной прокрутки', async ({
+  page,
+}) => {
+  await skipOnboarding(page);
+  await page.goto('/#/notes');
+  await page.getByRole('button', { name: 'Сегодня' }).click();
+  await expect(page.getByLabel('Название')).not.toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Удалить' })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});

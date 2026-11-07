@@ -1,21 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Card, Field, Input, Textarea } from '../../../ui';
+import { Button, Card, Field, Input, Sheet, Textarea } from '../../../ui';
 import type { Note } from '../../../core/types';
-import { toggleLink } from '../logic/notes';
-import { saveNote, useLinkTargets } from '../data/notes';
+import { noteTitle, relatedNotes, toggleLink } from '../logic/notes';
+import { deleteNote, saveNote, useLinkTargets, useNotes } from '../data/notes';
 import { Markdown } from './Markdown';
 
 const SAVE_DELAY_MS = 600;
 
 /** Editor with autosave (debounced, and flushed on blur / leaving) and a markdown preview. */
-export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void }) {
+export function NoteEditor({
+  note,
+  onClose,
+  onOpen,
+}: {
+  note: Note;
+  onClose: () => void;
+  /** Opens another note (from «Связано»). */
+  onOpen: (id: string) => void;
+}) {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [linkIds, setLinkIds] = useState(note.linkIds);
   const [preview, setPreview] = useState(false);
   const [day, setDay] = useState('');
   const [error, setError] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const targets = useLinkTargets();
+  const allNotes = useNotes();
   const latest = useRef({ title, body, linkIds });
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -66,6 +77,7 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
     change({ linkIds: next });
     void flush();
   };
+  const related = relatedNotes(allNotes ?? [], { id: note.id, linkIds });
   const dayKeys = linkIds.filter((id) => /^\d{4}-\d{2}-\d{2}$/.test(id));
 
   return (
@@ -161,6 +173,26 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
           )}
         </Field>
       </fieldset>
+      {related.length > 0 && (
+        <section aria-label="Связано" className="mb-3">
+          <h3 className="mb-1 text-sm font-medium">Связано</h3>
+          <ul>
+            {related.map((n) => (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  className="min-h-11 w-full py-2 text-left text-sm"
+                  onClick={async () => {
+                    if (await flush()) onOpen(n.id);
+                  }}
+                >
+                  {noteTitle(n)}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {error && (
         <p role="alert" className="mb-2 text-sm text-rose-600 dark:text-rose-400">
           {error}
@@ -174,7 +206,33 @@ export function NoteEditor({ note, onClose }: { note: Note; onClose: () => void 
         >
           Готово
         </Button>
+        <Button variant="secondary" onClick={() => setConfirmDelete(true)}>
+          Удалить
+        </Button>
       </div>
+      <Sheet open={confirmDelete} title="Удалить заметку?" onClose={() => setConfirmDelete(false)}>
+        <p className="mb-3 text-sm">«{noteTitle({ title })}» будет удалена. Ссылки других заметок останутся.</p>
+        <div className="flex gap-2">
+          <Button
+            onClick={async () => {
+              clearTimeout(timer.current);
+              dirty.current = false;
+              try {
+                await deleteNote(note.id);
+                onClose();
+              } catch {
+                setConfirmDelete(false);
+                setError('Не удалось удалить заметку');
+              }
+            }}
+          >
+            Удалить
+          </Button>
+          <Button variant="secondary" onClick={() => setConfirmDelete(false)}>
+            Отмена
+          </Button>
+        </div>
+      </Sheet>
     </Card>
   );
 }
