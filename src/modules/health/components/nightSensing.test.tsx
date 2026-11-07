@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
 import { NIGHT_SENSING_TEXTS } from '../../../core/platform';
@@ -18,7 +18,7 @@ describe('«Спать» — night sensing on «Сон» (#249)', () => {
     await db.settings.put({ key: 'health.alarm', value: { enabled: true, at: Date.now() + 8 * 3_600_000 } });
     render(<SleepTab today={TODAY} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Спать' }));
-    expect(await screen.findByText(/Идёт запись ночи/)).toBeInTheDocument();
+    expect(await screen.findByText(/Идёт запись ночи/, undefined, { timeout: 3_000 })).toBeInTheDocument();
     expect(sensors.running).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: 'Остановить запись' }));
@@ -58,5 +58,45 @@ describe('«Спать» — night sensing on «Сон» (#249)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Спать' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(NIGHT_SENSING_TEXTS.failed);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Спать' })).toBeEnabled());
+  });
+
+  it('the service did not really start: after a moment the card says so and goes back to «Спать»', async () => {
+    mockNativePlatform('android', ['backgroundSensors']);
+    const sensors = mockNightSensors('granted');
+    sensors.bridge.isActive.mockResolvedValue({ active: false });
+    render(<SleepTab today={TODAY} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Спать' }));
+    expect(await screen.findByRole('alert', undefined, { timeout: 3_000 })).toHaveTextContent(
+      NIGHT_SENSING_TEXTS.failed,
+    );
+    expect(screen.getByRole('button', { name: 'Спать' })).toBeEnabled();
+  });
+
+  it('after «Остановить запись» the card shows stopped even while the service is still winding down', async () => {
+    mockNativePlatform('android', ['backgroundSensors']);
+    const sensors = mockNightSensors('granted');
+    sensors.running = true;
+    sensors.bridge.isActive.mockResolvedValueOnce({ active: true }).mockResolvedValue({ active: true });
+    render(<SleepTab today={TODAY} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Остановить запись' }));
+    expect(await screen.findByRole('button', { name: 'Спать' })).toBeInTheDocument();
+  });
+
+  it('coming back to the screen re-reads the state: a service ended at night shows as stopped', async () => {
+    mockNativePlatform('android', ['backgroundSensors']);
+    const sensors = mockNightSensors('granted');
+    sensors.running = true;
+    render(<SleepTab today={TODAY} />);
+    await screen.findByText(/Идёт запись ночи/);
+    sensors.running = false; // the OS ended it
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(await screen.findByRole('button', { name: 'Спать' })).toBeInTheDocument();
+  });
+
+  it('a native shell without the sensing plugin explains it and offers no «Спать»', async () => {
+    mockNativePlatform('android', []);
+    render(<SleepTab today={TODAY} />);
+    expect(await screen.findByText(NIGHT_SENSING_TEXTS.nativeUnsupported)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Спать' })).not.toBeInTheDocument();
   });
 });
