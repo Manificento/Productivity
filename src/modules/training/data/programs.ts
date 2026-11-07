@@ -71,7 +71,11 @@ export async function replaceExercise(sessionId: string, index: number, name: st
   });
 }
 
-/** Moves a session to another day: the date changes and the status is `planned` again; at most one session per program per day. */
+/**
+ * Moves a session to another day: the date changes and the status is `planned` again; at most one session per program
+ * per day. A missed session brought back whole takes back what was carried from it: its carried copies leave the
+ * planned sessions and `carriedOut` is cleared (#226).
+ */
 export async function rescheduleSession(
   sessionId: string,
   date: DateKey,
@@ -84,7 +88,14 @@ export async function rescheduleSession(
     const siblings = await db.plannedSessions.where('programId').equals(session.programId).toArray();
     const error = rescheduleError(session, date, siblings, today);
     if (error) throw new Error(error);
-    await db.plannedSessions.update(sessionId, touch({ date, status: 'planned' as const }, now));
+    if (session.status === 'skipped' && session.carriedOut) {
+      for (const s of siblings) {
+        if (s.status !== 'planned' || !s.exercises.some((e) => e.carriedFrom === session.date)) continue;
+        const exercises = s.exercises.filter((e) => e.carriedFrom !== session.date);
+        await db.plannedSessions.update(s.id, touch({ exercises }, now));
+      }
+    }
+    await db.plannedSessions.update(sessionId, touch({ date, status: 'planned' as const, carriedOut: undefined }, now));
   });
 }
 
