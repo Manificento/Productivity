@@ -169,6 +169,17 @@ describe('NotesPage', () => {
     expect(await db.notes.count()).toBe(1);
   });
 
+  it('Given дневная страница переименована When я снова нажимаю «Сегодня» Then открывается та же страница, дубль не создаётся', async () => {
+    const user = userEvent.setup();
+    renderNotes();
+    await user.click(await screen.findByRole('button', { name: 'Сегодня' }));
+    await user.type(await screen.findByLabelText('Название'), ' — дневник');
+    await user.click(screen.getByRole('button', { name: 'Готово' }));
+    await user.click(await screen.findByRole('button', { name: 'Сегодня' }));
+    expect(await screen.findByLabelText('Название')).toHaveValue('4 ноября 2026 — дневник');
+    expect(await db.notes.count()).toBe(1);
+  });
+
   it('Given заметка When я удаляю её с подтверждением Then она удалена, ссылки других заметок остаются', async () => {
     const user = userEvent.setup();
     const event = exam();

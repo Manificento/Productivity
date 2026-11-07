@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Page, Select } from '../../ui';
 import { NoteEditor } from './components/NoteEditor';
 import { db } from '../../core/db';
-import { todayKey } from '../../core/dates';
+import { useTodayKey } from '../../core/dates';
 import { addNote, createPrepNote, deleteNote, openDayNote, useLinkTargets, useNotes } from './data/notes';
 import type { LifeEvent } from '../../core/types';
 import { filterNotes, noteTitle } from './logic/notes';
@@ -26,7 +26,7 @@ export function NotesPage() {
     [notes, query, projectId, eventId],
   );
   // Upcoming events without a page of their own yet get a «подготовка» suggestion.
-  const today = todayKey();
+  const today = useTodayKey();
   const suggested = (targets?.events ?? []).filter(
     (e) => e.date >= today && !(notes ?? []).some((n) => n.linkIds.includes(e.id)),
   );
@@ -58,17 +58,24 @@ export function NotesPage() {
     }
   };
 
+  /** A note nothing was typed into is not worth keeping. */
+  const dropIfEmpty = async (id: string) => {
+    const saved = await db.notes.get(id);
+    if (saved && !saved.title.trim() && !saved.body.trim()) await deleteNote(id);
+  };
+
   if (open)
     return (
       <Page title="Заметки">
         <NoteEditor
           key={open.id}
           note={open}
-          onOpen={setOpenId}
+          onOpen={async (id) => {
+            await dropIfEmpty(open.id);
+            setOpenId(id);
+          }}
           onClose={async () => {
-            // A note nothing was typed into is not worth keeping.
-            const saved = await db.notes.get(open.id);
-            if (saved && !saved.title.trim() && !saved.body.trim()) await deleteNote(open.id);
+            await dropIfEmpty(open.id);
             setOpenId(null);
           }}
         />

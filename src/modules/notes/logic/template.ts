@@ -19,9 +19,11 @@ export function prepTitle(event: Pick<LifeEvent, 'title'>): string {
 
 /** Markdown of the «подготовка к событию» template: a day-by-day plan from the daily targets, then a checklist. */
 export function buildPrepTemplate(event: LifeEvent, rows: DailyTargets[]): string {
-  const plan = rows.map((r) => {
-    const day = format(fromDateKey(r.date), 'd MMM', { locale: ru });
-    return `- ${day} (${PHASE_LABEL[r.phase]}): задачи ${r.taskCapacityMin} мин, сон ${r.sleepHours} ч, фокус ${r.focusPomodoros}`;
-  });
+  const plan = rows.every((r) => r.phase === 'normal')
+    ? ['Ближайшие 10 дней идут в обычном режиме — план появится ближе к событию.']
+    : rows.map((r) => {
+        const day = format(fromDateKey(r.date), 'd MMM', { locale: ru });
+        return `- ${day} (${PHASE_LABEL[r.phase]}): задачи ${r.taskCapacityMin} мин, сон ${r.sleepHours} ч, фокус ${r.focusPomodoros}`;
+      });
   return [`# ${prepTitle(event)}`, '', '## План по дням', ...plan, '', '## Что нужно сделать', '- [ ] ', ''].join('\n');
 }

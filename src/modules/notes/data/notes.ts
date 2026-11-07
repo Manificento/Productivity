@@ -55,9 +55,14 @@ export async function createPrepNote(event: LifeEvent, today: DateKey, now: numb
 /** The page of a day: the existing one, or a new one titled with the date. */
 export async function openDayNote(date: DateKey, now: number = Date.now()): Promise<Note> {
   const title = dayTitle(date);
-  const existing = (await db.notes.where('linkIds').equals(date).toArray()).find((n) => n.title === title);
-  if (existing) return existing;
-  const note: Note = newRecord({ title, body: '', linkIds: [date] }, now);
-  await db.notes.add(note);
-  return note;
+  // The title is editable, so the page is the oldest note of the day whose title still starts with the date.
+  return db.transaction('rw', db.notes, async () => {
+    const existing = (await db.notes.where('linkIds').equals(date).sortBy('createdAt')).find((n) =>
+      n.title.startsWith(title),
+    );
+    if (existing) return existing;
+    const note: Note = newRecord({ title, body: '', linkIds: [date] }, now);
+    await db.notes.add(note);
+    return note;
+  });
 }
