@@ -100,18 +100,23 @@ async function importOnce(today: DateKey, now: Millis): Promise<HealthImportOutc
     );
     for (const input of workoutInputs(workouts.items)) {
       const key = `${input.sourceId}|${input.externalId}`;
-      if (known.has(key)) {
-        const inJournal = await db.workoutLogs
-          .where('[sourceId+externalId]')
-          .equals([input.sourceId!, input.externalId!])
-          .count();
-        // Imported before and gone from the journal: the user deleted it.
-        if (inJournal === 0) continue;
-      }
       try {
-        await saveWorkout(input, now);
+        // The check and the write in one transaction: a delete in «Тренировки» in between is not undone.
+        const written = await db.transaction('rw', db.workoutLogs, async () => {
+          if (known.has(key)) {
+            const inJournal = await db.workoutLogs
+              .where('[sourceId+externalId]')
+              .equals([input.sourceId!, input.externalId!])
+              .count();
+            // Imported before and gone from the journal: the user deleted it.
+            if (inJournal === 0) return false;
+          }
+          await saveWorkout(input, now);
+          return true;
+        });
+        // Still in the store: keep remembering it with its current date (also when skipped).
         known.set(key, input.date);
-        saved++;
+        if (written) saved++;
       } catch (e) {
         console.error('import: workout skipped', e);
       }

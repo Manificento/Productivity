@@ -57,7 +57,8 @@ describe('health store import on «Сон» (#131)', () => {
     mockNativePlatform('android', ['healthImport']);
     mockHealthStore([], { sleep: 'deny', workouts: 'deny' });
     render(<SleepTab today={TODAY} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }));
+    // The whole «Сон» tab loads several live queries: give it time under a parallel test run.
+    fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }, { timeout: 5_000 }));
     expect(await screen.findByRole('alert')).toHaveTextContent(HEALTH_TEXTS.deniedAndroid);
     expect(screen.getByText('Сон можно записать вручную ниже.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Открыть Health Connect' })).toBeInTheDocument();

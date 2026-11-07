@@ -207,6 +207,10 @@ describe('health import data (#131)', () => {
     store.workouts = [run('w-7', 7)];
     await runHealthImport(TODAY, NOW + 1);
     expect((await db.workoutLogs.toArray()).map((w) => w.externalId)).toEqual(['w-7']);
+    // The manual delete leaves no trace in the import's memory.
+    expect((await db.settings.get('health.import.workouts'))?.value).toEqual([
+      { key: 'com.strava|w-7', date: '2026-11-07' },
+    ]);
   });
 
   it('remembers only workouts within the import window', async () => {
