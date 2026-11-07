@@ -38,14 +38,17 @@
         <!-- Alarm (#139): AlarmManager alarm clock → AlarmReceiver → AlarmRingingService plays it; restored after reboot. -->
         <receiver
             android:name=".AlarmReceiver"
+            android:directBootAware="true"
             android:exported="false">
             <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
         <service
             android:name=".AlarmRingingService"
+            android:directBootAware="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
@@ -70,8 +73,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Alarm (#139): an exact alarm clock that rings with the app closed and survives a reboot; it plays as a
          foreground service with a full-screen notification and «Выключить». USE_EXACT_ALARM (Android 13+) is for
-         alarm-clock apps; on Android 12 SCHEDULE_EXACT_ALARM (declared by local-notifications) applies. -->
+         alarm-clock apps; on Android 12 SCHEDULE_EXACT_ALARM applies. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- From Android 13 USE_EXACT_ALARM covers exact alarms (also local-notifications' reminders). -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"
+        tools:node="replace" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />

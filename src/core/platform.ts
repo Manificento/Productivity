@@ -470,7 +470,10 @@ export async function setAlarm({ at, windowMin }: { at: Millis; windowMin: numbe
   }
 }
 
-/** Cancels the alarm (also a ringing one stays until dismissed). Nothing set — nothing happens. Never rejects. */
+/**
+ * Cancels the pending alarm; one already ringing keeps ringing until the user switches it off.
+ * Nothing set — nothing happens. Never rejects.
+ */
 export async function cancelAlarm(): Promise<void> {
   if (!alarmsAvailable()) return;
   try {
@@ -510,14 +513,16 @@ export function onAlarmDismissed(listener: (event: AlarmDismissedEvent) => void)
   if (!alarmsAvailable()) return () => {};
   dismissListeners.add(listener);
   if (!dismissHandle) {
-    const plugin = alarmPlugin;
-    dismissHandle = plugin
+    const handle: Promise<PluginListenerHandle | undefined> = alarmPlugin
       .addListener('dismissed', () => void deliverDismissals())
       .catch((e: unknown) => {
         console.error('alarm listener failed', e);
+        // The next subscriber tries again.
+        if (dismissHandle === handle) dismissHandle = undefined;
         return undefined;
       });
-    void dismissHandle.then(deliverDismissals);
+    dismissHandle = handle;
+    void handle.then(deliverDismissals);
   }
   return () => {
     if (!dismissListeners.delete(listener) || dismissListeners.size > 0 || !dismissHandle) return;

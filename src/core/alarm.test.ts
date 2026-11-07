@@ -181,9 +181,41 @@ describe('alarm — alarm:dismissed', () => {
   });
 });
 
+describe('alarm — plugin failures while subscribing', () => {
+  it('a failed attach is logged and the next subscriber tries again', async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    alarm.bridge.addListener.mockRejectedValueOnce(new Error('bridge gone'));
+    onAlarmDismissed(() => {});
+    await settle();
+    expect(error).toHaveBeenCalledWith('alarm listener failed', expect.any(Error));
+
+    const seen: number[] = [];
+    onAlarmDismissed((e) => seen.push(e.dismissedAt));
+    await settle();
+    expect(alarm.bridge.addListener).toHaveBeenCalledTimes(2);
+    alarm.dismiss(WAKE);
+    await settle();
+    expect(seen).toEqual([WAKE]);
+  });
+
+  it('a failed read of the stored dismissals is logged and nothing is delivered', async () => {
+    mockNativePlatform('android', ['alarms']);
+    const alarm = mockAlarm();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    alarm.bridge.takeDismissals.mockRejectedValueOnce(new Error('prefs broken'));
+    const seen: number[] = [];
+    onAlarmDismissed((e) => seen.push(e.dismissedAt));
+    await settle();
+    expect(error).toHaveBeenCalledWith('takeDismissals failed', expect.any(Error));
+    expect(seen).toEqual([]);
+  });
+});
+
 describe('alarm — tests and boundaries', () => {
   it('Given тесты When прогоняются Then обёртка мокается целиком; ни один модуль не импортирует @capacitor-*', async () => {
-    // The whole native side is one fake: every method of the bridge is a mock and nothing reaches Capacitor.
+    // The whole native side is one fake: every wrapper call lands in it, and the result follows the fake's state.
     vi.spyOn(Date, 'now').mockReturnValue(NOW);
     mockNativePlatform('android', ['alarms']);
     const alarm = mockAlarm();
@@ -191,8 +223,13 @@ describe('alarm — tests and boundaries', () => {
     await cancelAlarm();
     onAlarmDismissed(() => {});
     await settle();
-    for (const method of Object.values(alarm.bridge)) expect(vi.isMockFunction(method)).toBe(true);
-    expect(alarm.bridge.set).toHaveBeenCalledTimes(1);
+    expect(alarm.bridge.checkPermissions).toHaveBeenCalledTimes(1);
+    expect(alarm.bridge.set).toHaveBeenCalledWith({ at: WAKE, windowMin: 10 });
+    expect(alarm.bridge.cancel).toHaveBeenCalledTimes(1);
+    expect(alarm.bridge.addListener).toHaveBeenCalledWith('dismissed', expect.any(Function));
+    expect(alarm.bridge.takeDismissals).toHaveBeenCalledTimes(1);
+    alarm.exactAlarm = 'denied';
+    expect((await setAlarm({ at: WAKE, windowMin: 10 })).status).toBe('denied');
 
     // No module reaches the native side past platform.ts (the project's own rule, as `npm run deps` runs it).
     const config = await extractDepcruiseConfig('./.dependency-cruiser.cjs');

@@ -4,7 +4,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import java.util.List;
 
-/** The one alarm (time and smart-wake window) and the dismissals JS has not taken yet, in private preferences. */
+/**
+ * The one alarm (time and smart-wake window) and the dismissals JS has not taken yet, in private preferences in
+ * device-protected storage: after a night reboot the alarm is restored and rings before the phone is unlocked.
+ */
 final class AlarmStore {
 
     private static final String PREFS = "lifeos_alarm";
@@ -15,7 +18,7 @@ final class AlarmStore {
     private AlarmStore() {}
 
     private static SharedPreferences prefs(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
     static synchronized void saveAlarm(Context context, long at, int windowMin) {

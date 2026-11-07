@@ -59,8 +59,16 @@ public class AlarmRingingService extends Service {
             dismiss();
             return START_NOT_STICKY;
         }
-        if (ringing) return START_NOT_STICKY;
-        alarmAt = intent == null ? System.currentTimeMillis() : intent.getLongExtra(EXTRA_ALARM_AT, System.currentTimeMillis());
+        long at = intent == null ? System.currentTimeMillis() : intent.getLongExtra(EXTRA_ALARM_AT, System.currentTimeMillis());
+        if (ringing) {
+            // A newer alarm came while this one rings (set less than 10 minutes ahead): keep ringing for it.
+            alarmAt = at;
+            AlarmStore.clearAlarm(this);
+            handler.removeCallbacks(timeout);
+            handler.postDelayed(timeout, AlarmPolicy.RING_TIMEOUT_MS);
+            return START_NOT_STICKY;
+        }
+        alarmAt = at;
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), foregroundType());
         } catch (RuntimeException e) {
@@ -159,6 +167,7 @@ public class AlarmRingingService extends Service {
             dismiss,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+        // TODO(#233): a small lock-screen activity with «Выключить» (showWhenLocked / turnScreenOn).
         PendingIntent open = AlarmScheduler.showIntent(this);
         return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -167,6 +176,10 @@ public class AlarmRingingService extends Service {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
+            // Android 14 lets the user swipe a foreground notification away: that switches the alarm off too.
+            .setDeleteIntent(dismissIntent)
+            // The «Выключить» action stays on a lock screen that hides sensitive content.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(open)
             .setFullScreenIntent(open, true)
             .addAction(0, "Выключить", dismissIntent)
