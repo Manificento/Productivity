@@ -87,6 +87,15 @@ export async function refreshExpenditure(today: DateKey, now: number = Date.now(
   const input = { today, weights, intakeByDay };
   const estimate = estimateExpenditure(input, fallback);
   if (!estimate) return undefined;
+  if (estimate.kind === 'incomplete') {
+    // Thin diary: the targets stay as they are. Only a missing or starter value is (re)filled with the starter estimate.
+    const { starterKcal } = estimate;
+    const replaceable = !stored || stored.source === 'starter';
+    if (starterKcal !== undefined && replaceable && stored?.kcal !== starterKcal) {
+      await db.settings.put({ key: EXPENDITURE_KEY, value: { kcal: starterKcal, updatedAt: now, source: 'starter' } });
+    }
+    return estimate;
+  }
   const canMeasure = estimate.kind === 'measured';
   // A starter estimate is cheap and deterministic: rewrite it whenever the profile or weight changed it.
   const starterChanged = estimate.kind === 'starter' && (stored?.source !== 'starter' || stored.kcal !== estimate.kcal);

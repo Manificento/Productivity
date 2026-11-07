@@ -3,7 +3,16 @@ import { todayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Button, Card, Empty, Field, Input } from '../../../ui';
 import { logWeight, useWeightLogs } from '../data/weight';
-import { TREND_MIN_ENTRIES, formatKg, parseKg, trendSeries, validateKg, weeklyChange } from '../logic/trend';
+import {
+  CHART_DAYS,
+  TREND_MIN_ENTRIES,
+  formatKg,
+  lastDays,
+  parseKg,
+  trendSeries,
+  validateKg,
+  weeklyChange,
+} from '../logic/trend';
 import { WeightChart } from './WeightChart';
 
 /** «Вес»: quick input for today and the trend chart. */
@@ -12,6 +21,7 @@ export function WeightCard({ today = todayKey() }: { today?: DateKey }) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string>();
   const [saved, setSaved] = useState<string>();
+  const [allHistory, setAllHistory] = useState(false);
 
   if (!logs) return <Empty>Загрузка…</Empty>;
 
@@ -36,6 +46,9 @@ export function WeightCard({ today = todayKey() }: { today?: DateKey }) {
   }
 
   const series = trendSeries(logs);
+  const recent = lastDays(series, today);
+  const hasOlder = recent.length < series.length;
+  const visible = allHistory || !hasOlder ? series : recent;
   const showTrend = series.length >= TREND_MIN_ENTRIES;
   const raw = showTrend ? weeklyChange(series) : undefined;
   const change = raw === undefined ? undefined : Math.round(raw * 10) / 10;
@@ -71,7 +84,16 @@ export function WeightCard({ today = todayKey() }: { today?: DateKey }) {
           <p className="mt-3 text-sm text-zinc-500">Записей веса пока нет — внесите первый, чтобы увидеть тренд.</p>
         ) : (
           <div className="mt-3">
-            <WeightChart series={series} showTrend={showTrend} />
+            {visible.length > 0 ? (
+              <WeightChart series={visible} today={today} showTrend={showTrend} />
+            ) : (
+              <p className="text-sm text-zinc-500">За последние {CHART_DAYS} дней записей нет.</p>
+            )}
+            {hasOlder && (
+              <Button variant="secondary" className="mt-2 w-full" onClick={() => setAllHistory((v) => !v)}>
+                {allHistory ? `Последние ${CHART_DAYS} дней` : 'Вся история'}
+              </Button>
+            )}
             {showTrend ? (
               change !== undefined && (
                 <p className="text-sm">

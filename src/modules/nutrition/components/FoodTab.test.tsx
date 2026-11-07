@@ -157,6 +157,21 @@ describe('food tab', () => {
     expect(await screen.findByText(/Кофеин — до/)).toHaveTextContent('Кофеин — до 14:00');
   });
 
+  it('Given цели на день When открываю экран питания Then кофеин и шкалы — в одной карточке «Цель на день», карточки «Цели дня» нет', async () => {
+    await db.settings.bulkPut([
+      { key: 'nutrition.goal', value: { kind: 'maintain', ratePct: 0 } },
+      { key: 'nutrition.expenditure', value: { kcal: 2000, updatedAt: 0, source: 'measured' } },
+      { key: 'adaptation.baseline', value: { caffeineCutoff: '14:00' } },
+    ]);
+    await db.weightLogs.put({ id: 'w', date: TODAY, kg: 80, createdAt: 0, updatedAt: 0 });
+    renderTab();
+    const section = await screen.findByRole('region', { name: 'Цель на день' });
+    expect(await within(section).findByText(/Кофеин — до/)).toBeInTheDocument();
+    expect(within(section).getByRole('progressbar', { name: 'Калории' })).toBeInTheDocument();
+    expect(screen.queryByText('Цели дня')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Цель на день')).toHaveLength(1);
+  });
+
   describe('day targets', () => {
     const setUpTargets = async () => {
       await db.settings.bulkPut([

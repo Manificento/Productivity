@@ -40,7 +40,7 @@ describe('measured expenditure', () => {
     expect(r).toMatchObject({ kind: 'measured', kcal: 2730 });
   });
 
-  it('Given пропуски дней в весе и еде (но ≥ 14 и ≥ 10 дней) When считаю Then оценка та же', () => {
+  it('Given пропуски дней в весе и еде (но ≥ 14 и ≥ 14 дней) When считаю Then оценка та же', () => {
     const r = estimateExpenditure(
       series({
         weight: (i) => 80 + (i * 0.5) / 7,
@@ -55,7 +55,7 @@ describe('measured expenditure', () => {
   it('Given шум веса ±1 кг вокруг стабильного When считаю Then расход близок к приёму', () => {
     const r = estimateExpenditure(series({ weight: (i) => 80 + (i % 2 ? 1 : -1), kcal: 2500 }));
     expect(r?.kind).toBe('measured');
-    expect(Math.abs((r?.kcal ?? 0) - 2500)).toBeLessThanOrEqual(150);
+    expect(Math.abs((r && 'kcal' in r ? r.kcal : 0) - 2500)).toBeLessThanOrEqual(150);
   });
 });
 
@@ -85,19 +85,32 @@ describe('starter estimate', () => {
     expect(estimateExpenditure(series({ weight: () => 80, kcal: 2500, days: 5 }))).toBeUndefined();
   });
 
-  it('Given 28 дней веса, но 9 дней дневника When считаю Then ещё не измеренный расход', () => {
+  it('Given 28 дней веса, но 9 дней дневника (меньше половины окна) When считаю Then «неполная» оценка без числа', () => {
     const input = series({ weight: () => 80, kcal: 2500, skipFood: (i) => i >= 9 });
     const r = estimateExpenditure(input, { profile, weightKg: 80, year: 2026 });
-    expect(r).toMatchObject({ kind: 'starter', daysLeft: 1 });
+    expect(r).toEqual({ kind: 'incomplete', loggedDays: 9, windowDays: 28, starterKcal: 2490 });
+  });
+
+  it('Given мало веса и дневник пуст When считаю Then стартовая оценка, а не «неполная»', () => {
+    const input = series({ weight: () => 80, kcal: 2500, days: 5, skipFood: () => true });
+    expect(estimateExpenditure(input, { profile, weightKg: 80, year: 2026 })).toMatchObject({
+      kind: 'starter',
+      daysLeft: 14,
+    });
   });
 });
 
 describe('thresholds', () => {
-  it('Given ровно 14 дней веса и ровно 10 дней дневника в окне 28 дней When считаю Then уже измеренный расход', () => {
+  it('Given ровно 14 дней веса и ровно половина окна (14 из 28 дней) дневника When считаю Then уже измеренный расход', () => {
     const r = estimateExpenditure(
-      series({ weight: () => 80, kcal: 2500, skipWeight: (i) => i % 2 === 1, skipFood: (i) => i % 2 === 1 || i > 18 }),
+      series({ weight: () => 80, kcal: 2500, skipWeight: (i) => i % 2 === 1, skipFood: (i) => i % 2 === 1 }),
     );
     expect(r).toMatchObject({ kind: 'measured', kcal: 2500 });
+  });
+
+  it('Given 13 дней дневника из 28 When считаю Then «Оценка неточна»: числа нет', () => {
+    const r = estimateExpenditure(series({ weight: () => 80, kcal: 2500, skipFood: (i) => i % 2 === 1 || i === 0 }));
+    expect(r).toEqual({ kind: 'incomplete', loggedDays: 13, windowDays: 28, starterKcal: undefined });
   });
 });
 

@@ -94,13 +94,15 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
 
   if (!settings) return <Empty>Загрузка…</Empty>;
 
-  const currentKind = kind ?? settings.goal?.kind ?? 'lose';
+  // Nothing is preselected until a goal is saved or picked.
+  const currentKind: Kind | undefined = kind ?? settings.goal?.kind;
   const savedRate = settings.goal?.ratePct;
   // A saved rate outside the options (0 for «удержать», or from an imported backup) would not match what the select shows.
   const currentRate = rate ?? (RATE_OPTIONS.some((r) => r === savedRate) ? (savedRate as number) : 0.5);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!currentKind) return;
     setSaved(false);
     try {
       await saveGoal({ kind: currentKind, ratePct: currentKind === 'maintain' ? 0 : currentRate });
@@ -121,14 +123,14 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
         <form onSubmit={onSubmit} noValidate>
           <Segmented
             label="Цель по весу"
-            value={currentKind}
+            value={currentKind as Kind}
             options={KINDS}
             onChange={(k) => {
               setKind(k);
               setSaved(false);
             }}
           />
-          {currentKind !== 'maintain' && (
+          {currentKind && currentKind !== 'maintain' && (
             <Field label="Темп">
               {(id) => (
                 <Select
@@ -158,7 +160,7 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
               Цель сохранена
             </p>
           )}
-          <Button type="submit" className="w-full">
+          <Button type="submit" className="w-full" disabled={!currentKind}>
             Сохранить цель
           </Button>
         </form>
@@ -190,6 +192,12 @@ export function GoalCard({ today = todayKey() }: { today?: DateKey }) {
         ) : (
           <p className="mt-4 text-sm text-zinc-500">
             Цели по калориям появятся, когда будут заданы цель, вес и стартовые данные.
+          </p>
+        )}
+
+        {estimate?.kind === 'incomplete' && (
+          <p role="note" className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+            Оценка неточна: дневник заполнен {estimate.loggedDays} из {estimate.windowDays} дней
           </p>
         )}
 

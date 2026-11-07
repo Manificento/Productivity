@@ -34,7 +34,7 @@ test.describe('nutrition weight', () => {
     await expect(page.getByText('Цель сохранена')).toBeVisible();
     const targets = page.getByRole('group', { name: 'Цели дня по питанию' });
     await expect(targets).toContainText('2050 ккал');
-    await expect(targets).toContainText('уточним через 13 дней');
+    await expect(targets).toContainText('уточним через 14 дней');
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });

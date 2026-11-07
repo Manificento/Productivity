@@ -1,4 +1,4 @@
-import { daysBetween } from '../../../core/dates';
+import { daysBetween, shiftDateKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 
 /** From how many entries the chart draws a trend line. */
@@ -37,14 +37,44 @@ export function formatKg(kg: number): string {
   return String(Math.round(kg * 10) / 10).replace('.', ',');
 }
 
-/** Exponentially smoothed weight per entry, sorted by date. */
+/** The chart shows this many last calendar days unless the whole history is asked for. */
+export const CHART_DAYS = 90;
+/** The trend line breaks where two entries are further apart than this many days. */
+export const MAX_LINE_GAP_DAYS = 3;
+
+/**
+ * Exponentially smoothed weight per entry, sorted by date. The smoothing decays per calendar day:
+ * after a gap of n days the old trend keeps (1 − α)^n of its weight, as if each missing day were lost.
+ */
 export function trendSeries(entries: WeightPoint[]): TrendPoint[] {
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   let trend = 0;
   return sorted.map((e, i) => {
-    trend = i === 0 ? e.kg : trend + ALPHA * (e.kg - trend);
+    if (i === 0) trend = e.kg;
+    else {
+      const gap = Math.max(1, daysBetween(sorted[i - 1]!.date, e.date));
+      trend += (1 - (1 - ALPHA) ** gap) * (e.kg - trend);
+    }
     return { ...e, trend };
   });
+}
+
+/** Entries of the last `days` calendar days up to and including `today`. */
+export function lastDays(series: TrendPoint[], today: DateKey, days: number = CHART_DAYS): TrendPoint[] {
+  const from = shiftDateKey(today, -(days - 1));
+  return series.filter((p) => p.date >= from);
+}
+
+/** Consecutive runs of the series without a gap longer than MAX_LINE_GAP_DAYS; each is drawn as its own line. */
+export function trendSegments(series: TrendPoint[]): TrendPoint[][] {
+  const segments: TrendPoint[][] = [];
+  for (const p of series) {
+    const current = segments.at(-1);
+    const prev = current?.at(-1);
+    if (current && prev && daysBetween(prev.date, p.date) <= MAX_LINE_GAP_DAYS) current.push(p);
+    else segments.push([p]);
+  }
+  return segments;
 }
 
 /** Oldest allowed distance to the reference entry; with a longer gap the «week» would describe something else. */
