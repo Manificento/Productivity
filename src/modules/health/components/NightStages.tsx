@@ -21,14 +21,18 @@ function StageBar({ log, stages }: { log: SleepLog; stages: SleepStage[] }) {
     <div
       role="img"
       aria-label={`Этапы сна с ${format(log.bedtime, 'H:mm')} до ${format(log.wakeTime, 'H:mm')}: ${stageSummary(stages)}`}
-      className="flex h-4 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
+      className="relative h-4 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
     >
+      {/* Placed by time: before the recording started or in its gaps the bar stays grey. */}
       {stages.map((s) => (
         <span
           key={s.start}
           title={STAGE_STYLE[s.stage].label}
-          className={`h-full ${STAGE_STYLE[s.stage].className}`}
-          style={{ width: `${((s.end - s.start) / total) * 100}%` }}
+          className={`absolute inset-y-0 ${STAGE_STYLE[s.stage].className}`}
+          style={{
+            left: `${((s.start - log.bedtime) / total) * 100}%`,
+            width: `${((s.end - s.start) / total) * 100}%`,
+          }}
         />
       ))}
     </div>
@@ -46,20 +50,20 @@ export function NightStages({ lastNight }: { lastNight?: SleepLog }) {
   const sensing = getCapabilities().backgroundSensors;
   const stages = lastNight?.stages ?? [];
   const id = lastNight?.id;
+  const bedtime = lastNight?.bedtime;
+  const wakeTime = lastNight?.wakeTime;
 
   useEffect(() => {
     setCanAdd(false);
-    if (!sensing || !lastNight || stages.length > 0) return;
+    if (!sensing || id === undefined || bedtime === undefined || wakeTime === undefined || stages.length > 0) return;
     let alive = true;
     void loadNightSamples().then((samples) => {
-      if (alive) setCanAdd(sleepStages(samples, lastNight.bedtime, lastNight.wakeTime).length > 0);
+      if (alive) setCanAdd(sleepStages(samples, bedtime, wakeTime).length > 0);
     });
     return () => {
       alive = false;
     };
-    // Re-check per night; the stages' presence is part of `lastNight`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sensing, id, stages.length]);
+  }, [sensing, id, bedtime, wakeTime, stages.length]);
 
   if (!lastNight || (stages.length === 0 && !canAdd)) return null;
 
@@ -84,12 +88,14 @@ export function NightStages({ lastNight }: { lastNight?: SleepLog }) {
             <p className="mb-2 text-sm">{stageSummary(stages)}</p>
             <StageBar log={lastNight} stages={stages} />
             <ul className="mt-2 flex flex-wrap gap-3 text-xs text-zinc-600 dark:text-zinc-400" aria-hidden="true">
-              {(['deep', 'light', 'awake'] as const).map((s) => (
-                <li key={s} className="flex items-center gap-1">
-                  <span className={`inline-block size-2.5 rounded-full ${STAGE_STYLE[s].className}`} />
-                  {STAGE_STYLE[s].label}
-                </li>
-              ))}
+              {(['deep', 'light', 'rem', 'awake'] as const)
+                .filter((s) => stages.some((x) => x.stage === s))
+                .map((s) => (
+                  <li key={s} className="flex items-center gap-1">
+                    <span className={`inline-block size-2.5 rounded-full ${STAGE_STYLE[s].className}`} />
+                    {STAGE_STYLE[s].label}
+                  </li>
+                ))}
             </ul>
           </>
         ) : (

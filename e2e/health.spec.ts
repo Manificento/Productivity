@@ -282,7 +282,7 @@ test.describe('night sensing', () => {
 });
 
 test.describe('sleep stages', () => {
-  test('Given ночь с stages When я открываю «Сон» Then у записи видна сводка этапов и полоса этапов по времени', async ({
+  test('Given ночь с stages When я открываю «Сон» Then у записи видна сводка этапов и простая полоса этапов по времени, тёмная тема, подписи для экранных читалок', async ({
     page,
   }) => {
     await page.clock.setFixedTime(new Date('2026-11-08T08:00:00'));

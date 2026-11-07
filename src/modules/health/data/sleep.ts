@@ -43,14 +43,20 @@ export function nightStages(entry: Pick<SleepEntry, 'wakeDay' | 'bedtime' | 'wak
 /**
  * «Добавить этапы из записи ночи» (#255): stages of an already saved night from the night-sensing buffer, saved through
  * `saveSleep` with the same times and quality (a hand save: an imported night stops being re-import's target), then
- * the recording stops and the buffer is cleared. Returns how many stages were added (0 — nothing to add).
+ * only this night's minutes are cleared — the recording is left alone (tonight's may already be running). Returns how
+ * many stages were added (0 — nothing to add). Rejects if saving fails; the buffer is then untouched.
  */
 export async function addStagesFromSensing(log: SleepLog): Promise<number> {
   const samples = await loadNightSamples();
   const stages = sleepStages(samples, log.bedtime, log.wakeTime);
   if (stages.length === 0) return 0;
   await saveSleep({ bedtime: log.bedtime, wakeTime: log.wakeTime, quality: log.quality, stages });
-  await finishNight(samples);
+  const thisNight = samples.filter((s) => s.minuteStart < log.wakeTime).map((s) => s.minuteStart);
+  try {
+    await clearNightSamples(Math.max(...thisNight));
+  } catch (e) {
+    console.error('clearNightSamples failed: the stages are saved, the buffer stays', e);
+  }
   return stages.length;
 }
 
