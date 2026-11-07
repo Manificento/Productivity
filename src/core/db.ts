@@ -94,6 +94,10 @@ export class LifeDB extends Dexie {
     this.version(5).stores({
       workoutLogs: 'id, date, [sourceId+externalId]',
     });
+    // v6 (contract #227): re-import of a night (Sleep Cycle, Health) finds it by source + external id.
+    this.version(6).stores({
+      sleepLogs: 'id, &date, [sourceId+externalId]',
+    });
   }
 }
 

@@ -179,3 +179,33 @@ describe('contract: imported workouts (Dexie v5)', () => {
     db.close();
   });
 });
+
+describe('contract: imported sleep (Dexie v6)', () => {
+  it('Given ночи из старой базы When база открывается Then они читаются как раньше, а у новых есть индекс [sourceId+externalId]', async () => {
+    const name = `migration-v6-${Math.random()}`;
+    const v5 = new Dexie(name);
+    v5.version(1).stores({ sleepLogs: 'id, &date' });
+    v5.version(5).stores({ workoutLogs: 'id, date, [sourceId+externalId]' });
+    await v5.table('sleepLogs').add({ id: 's1', date: '2026-11-04', bedtime: 1, wakeTime: 2, quality: 4 });
+    v5.close();
+
+    const db = new LifeDB(name);
+    expect(db.verno).toBeGreaterThanOrEqual(6);
+    expect((await db.sleepLogs.get('s1'))?.quality).toBe(4);
+    await db.sleepLogs.add({
+      id: 's2',
+      createdAt: 0,
+      updatedAt: 0,
+      date: '2026-11-05',
+      bedtime: 1,
+      wakeTime: 2,
+      quality: 3,
+      sourceId: 'com.northcube.sleepcycle',
+      externalId: 'sc-1',
+    });
+    expect(await db.sleepLogs.where('[sourceId+externalId]').equals(['com.northcube.sleepcycle', 'sc-1']).count()).toBe(
+      1,
+    );
+    db.close();
+  });
+});

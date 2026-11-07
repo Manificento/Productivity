@@ -122,6 +122,16 @@ export interface SleepLog extends BaseRecord {
   wakeTime: Millis;
   /** 1–5 */
   quality: number;
+  /**
+   * App the night was imported from (Sleep Cycle, Health Connect / HealthKit source); absent for a night entered in
+   * LifeOS. Lets «Прогресс» tell transferred history from nights lived in the app (#227).
+   */
+  sourceId?: string;
+  /**
+   * Id in that app or store; with `sourceId` it keys the update on re-import (`[sourceId+externalId]`). Dropped when
+   * the night is corrected by hand, so a re-import no longer overwrites it (`sourceId` stays).
+   */
+  externalId?: string;
 }
 
 /**
