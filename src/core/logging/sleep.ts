@@ -7,6 +7,12 @@ import { sleepHours } from './sleepTime';
 
 const ImportKey = z.string().trim().min(1);
 
+const Stage = z.object({
+  start: z.number().int(),
+  end: z.number().int(),
+  stage: z.enum(['light', 'deep', 'rem', 'awake'], 'Неизвестный этап сна'),
+});
+
 /**
  * The ONE write path for sleep records (contract C1).
  * Owner of `sleepLogs` is the health module; `today` (morning screen) writes sleep only through
@@ -21,7 +27,21 @@ export const SleepInput = z
     sourceId: ImportKey.optional(),
     /** …and its id there. Both or neither. */
     externalId: ImportKey.optional(),
+    /** Stages from night sensing (#250): in order, not overlapping, within the night. */
+    stages: z.array(Stage).optional(),
   })
+  .refine(
+    (s) =>
+      !s.stages ||
+      s.stages.every(
+        (x, i) =>
+          x.start < x.end &&
+          x.start >= s.bedtime &&
+          x.end <= s.wakeTime &&
+          (i === 0 || x.start >= s.stages![i - 1]!.end),
+      ),
+    { message: 'Этапы сна должны идти по порядку внутри ночи', path: ['stages'] },
+  )
   .refine((s) => (s.sourceId === undefined) === (s.externalId === undefined), {
     message: 'У импортированной ночи нужны и источник, и внешний id',
     path: ['externalId'],
@@ -54,10 +74,22 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
   return db.transaction('rw', db.sleepLogs, async () => {
     const onDay = await db.sleepLogs.where('date').equals(date).first();
     if (sourceId === undefined || externalId === undefined) {
-      const entered = { date, bedtime: valid.bedtime, wakeTime: valid.wakeTime, quality: valid.quality };
+      const entered = {
+        date,
+        bedtime: valid.bedtime,
+        wakeTime: valid.wakeTime,
+        quality: valid.quality,
+        ...(valid.stages && { stages: valid.stages }),
+      };
       if (onDay) {
-        const { externalId: _wasImportId, ...rest } = onDay;
-        const updated: SleepLog = { ...rest, ...touch(entered, now) };
+        const { externalId: _wasImportId, stages: oldStages, ...rest } = onDay;
+        // Stages describe the night as it was: they stay only while its times stay.
+        const sameNight = onDay.bedtime === valid.bedtime && onDay.wakeTime === valid.wakeTime;
+        const updated: SleepLog = {
+          ...rest,
+          ...(sameNight && oldStages && { stages: oldStages }),
+          ...touch(entered, now),
+        };
         await db.sleepLogs.put(updated);
         return updated;
       }

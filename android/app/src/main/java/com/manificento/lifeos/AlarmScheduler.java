@@ -25,6 +25,15 @@ final class AlarmScheduler {
         alarmManager(context).setAlarmClock(new AlarmManager.AlarmClockInfo(at, showIntent(context)), ringIntent(context));
     }
 
+    /**
+     * Sets the alarm for its wake window: the first fire at its start (`at` − `windowMin`, or `at` when the window has
+     * already begun); the receiver then checks for light sleep every minute until `at` (#250). Each check is an alarm
+     * clock too (exact in Doze), so the system's «next alarm» shows the next check, not `at`. Throws SecurityException.
+     */
+    static void scheduleWindow(Context context, long at, int windowMin) {
+        schedule(context, SmartWake.firstFire(at, windowMin, AlarmReceiver.now()));
+    }
+
     static void cancel(Context context) {
         alarmManager(context).cancel(ringIntent(context));
     }

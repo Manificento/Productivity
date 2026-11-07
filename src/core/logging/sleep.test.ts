@@ -190,3 +190,58 @@ describe('saveSleep — imported nights (#227)', () => {
     expect(await db.sleepLogs.count()).toBe(0);
   });
 });
+
+describe('saveSleep — sleep stages (#250)', () => {
+  const w = () => sleepWindow('2026-11-05', '23:00', '07:00');
+  const MIN = 60_000;
+
+  it('Given src/core/types.ts When читаю SleepLog Then есть необязательное stages, saveSleep принимает и проверяет его; старые записи читаются без миграции', async () => {
+    const { bedtime, wakeTime } = w();
+    const stages = [
+      { start: bedtime, end: bedtime + 90 * MIN, stage: 'deep' as const },
+      { start: bedtime + 90 * MIN, end: wakeTime, stage: 'light' as const },
+    ];
+    const saved = await saveSleep({ bedtime, wakeTime, quality: 4, stages }, 1_000);
+    expect((await db.sleepLogs.get(saved.id))?.stages).toEqual(stages);
+
+    const version = db.verno;
+    await db.sleepLogs.add({
+      id: 'old',
+      createdAt: 1,
+      updatedAt: 1,
+      date: '2026-11-01',
+      bedtime: 1,
+      wakeTime: 2,
+      quality: 3,
+    });
+    expect((await db.sleepLogs.get('old'))?.stages).toBeUndefined();
+    expect(db.verno).toBe(version);
+  });
+
+  it('rejects stages outside the night, empty, overlapping or out of order, and an unknown stage', async () => {
+    const { bedtime, wakeTime } = w();
+    const bad = [
+      [{ start: bedtime - MIN, end: bedtime + MIN, stage: 'deep' }],
+      [{ start: bedtime, end: bedtime, stage: 'deep' }],
+      [
+        { start: bedtime, end: bedtime + 10 * MIN, stage: 'deep' },
+        { start: bedtime + 5 * MIN, end: bedtime + 20 * MIN, stage: 'light' },
+      ],
+      [{ start: bedtime, end: bedtime + MIN, stage: 'nap' }],
+    ];
+    for (const stages of bad)
+      // @ts-expect-error — invalid on purpose
+      await expect(saveSleep({ bedtime, wakeTime, quality: 3, stages })).rejects.toThrow(/этап/i);
+    expect(await db.sleepLogs.count()).toBe(0);
+  });
+
+  it('a hand edit keeps the stages only while the night times stay the same', async () => {
+    const { bedtime, wakeTime } = w();
+    const stages = [{ start: bedtime, end: wakeTime, stage: 'deep' as const }];
+    await saveSleep({ bedtime, wakeTime, quality: 3, stages }, 1_000);
+    expect((await saveSleep({ bedtime, wakeTime, quality: 5 }, 2_000)).stages).toEqual(stages);
+    expect(
+      (await saveSleep({ ...sleepWindow('2026-11-05', '23:30', '07:00'), quality: 5 }, 3_000)).stages,
+    ).toBeUndefined();
+  });
+});

@@ -95,10 +95,12 @@ public class AlarmRingingService extends Service {
     }
 
     private void scheduleTomorrow() {
-        long next = AlarmStore.rollDaily(this, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+        // Rang inside the window, possibly before `at` (#250): tomorrow all the same, never today's window again.
+        long rangUpTo = Math.max(AlarmReceiver.now(), AlarmStore.alarmAt(this));
+        long next = AlarmStore.rollDaily(this, rangUpTo, java.util.TimeZone.getDefault());
         if (next == AlarmPolicy.NONE) return;
         try {
-            AlarmScheduler.schedule(this, next);
+            AlarmScheduler.scheduleWindow(this, next, AlarmStore.windowMin(this));
         } catch (SecurityException e) {
             Log.e(TAG, "exact alarms are off: tomorrow's alarm is not set", e);
         }

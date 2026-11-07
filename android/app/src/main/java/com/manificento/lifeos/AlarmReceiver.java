@@ -15,6 +15,12 @@ import androidx.core.content.ContextCompat;
 public class AlarmReceiver extends BroadcastReceiver {
 
     static final String ACTION_RING = "com.manificento.lifeos.ALARM_RING";
+    /** The clock; tests fix it (CLAUDE.md rule 7). */
+    static java.util.function.LongSupplier clock = System::currentTimeMillis;
+
+    static long now() {
+        return clock.getAsLong();
+    }
     private static final String TAG = "AlarmReceiver";
     /** Keeps the CPU awake between onReceive and the service taking its own lock. */
     private static final long HANDOFF_WAKE_MS = 30_000L;
@@ -24,6 +30,9 @@ public class AlarmReceiver extends BroadcastReceiver {
         String action = intent.getAction();
         if (ACTION_RING.equals(action)) {
             long at = AlarmStore.alarmAt(context);
+            int windowMin = AlarmStore.windowMin(context);
+            long now = now();
+            if (at != AlarmPolicy.NONE && windowMin > 0 && now < at && waitForLightSleep(context, now, at)) return;
             Intent ring = new Intent(context, AlarmRingingService.class)
                 .setAction(AlarmRingingService.ACTION_RING)
                 .putExtra(AlarmRingingService.EXTRA_ALARM_AT, at == AlarmPolicy.NONE ? System.currentTimeMillis() : at);
@@ -43,13 +52,34 @@ public class AlarmReceiver extends BroadcastReceiver {
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
         ) {
             // Daily: a ring missed while the phone was off moves to the next day at the same time.
-            long at = AlarmStore.rollDaily(context, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+            long at = AlarmStore.rollDaily(context, now(), java.util.TimeZone.getDefault());
             if (!AlarmPolicy.shouldRestore(at)) return;
             try {
-                AlarmScheduler.schedule(context, at);
+                AlarmScheduler.scheduleWindow(context, at, AlarmStore.windowMin(context));
             } catch (SecurityException e) {
                 Log.e(TAG, "exact alarms are off: the alarm is not restored", e);
             }
+        }
+    }
+
+    /**
+     * Inside the wake window (#250): in deep sleep, check again in a minute (never past `at`) and return true; ring now
+     * (false) in light sleep or when there are no readings — e.g. sensing off or the phone not unlocked since a restart.
+     */
+    private static boolean waitForLightSleep(Context context, long now, long at) {
+        java.util.List<String> lines;
+        try {
+            lines = NightSampleStore.lines(context);
+        } catch (RuntimeException e) {
+            lines = java.util.Collections.emptyList();
+        }
+        if (SmartWake.decide(lines, now, at) == SmartWake.Decision.RING) return false;
+        try {
+            AlarmScheduler.schedule(context, SmartWake.nextCheck(now, at));
+            return true;
+        } catch (SecurityException e) {
+            Log.e(TAG, "exact alarms are off: ringing now", e);
+            return false;
         }
     }
 }
