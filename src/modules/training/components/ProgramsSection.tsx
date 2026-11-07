@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
 import type { DateKey, Program } from '../../../core/types';
 import { Button, Card, Empty, Sheet } from '../../../ui';
-import { archiveProgram, skipMissedSessions, useActivePrograms, useTodaySession } from '../data/programs';
+import {
+  archiveProgram,
+  extendEndedPrograms,
+  skipMissedSessions,
+  useActivePrograms,
+  useTodaySession,
+} from '../data/programs';
 import {
   PROGRAM_TEMPLATES,
   WEEKDAY_SHORT,
@@ -10,6 +16,8 @@ import {
   emptyProgramDraft,
   type ProgramDraft,
 } from '../logic/programs';
+import { ExtendPlan } from './ExtendPlan';
+import { MissedSessions } from './MissedSessions';
 import { ProgramForm } from './ProgramForm';
 import { PlanOutlook } from './PlanOutlook';
 import { SessionRunner } from './SessionRunner';
@@ -27,6 +35,7 @@ export function ProgramsSection({ today }: { today: DateKey }) {
   const [version, setVersion] = useState(0);
   const [archiving, setArchiving] = useState<Program>();
   const [archiveError, setArchiveError] = useState<string>();
+  const [extendError, setExtendError] = useState<string>();
 
   const startDraft = (d: ProgramDraft) => {
     setDraft(d);
@@ -57,9 +66,28 @@ export function ProgramsSection({ today }: { today: DateKey }) {
           {todaySession === null || todaySession === undefined || targets === undefined ? (
             <Empty>Загрузка…</Empty>
           ) : todaySession.rest ? (
-            <p className="py-4 text-center text-base font-medium">
-              {todaySession.ended ? 'План закончился — создайте новую программу' : 'День отдыха'}
-            </p>
+            todaySession.ended ? (
+              <div className="py-2 text-center">
+                <p className="mb-3 text-base font-medium">План завершён</p>
+                {extendError && (
+                  <p role="alert" className="mb-3 text-sm text-rose-600 dark:text-rose-400">
+                    {extendError}
+                  </p>
+                )}
+                <Button
+                  onClick={() => {
+                    setExtendError(undefined);
+                    extendEndedPrograms(today).catch(() =>
+                      setExtendError('Не удалось продлить план — попробуйте ещё раз'),
+                    );
+                  }}
+                >
+                  Продлить план
+                </Button>
+              </div>
+            ) : (
+              <p className="py-4 text-center text-base font-medium">День отдыха</p>
+            )
           ) : todaySession.session.status === 'done' ? (
             <>
               <p className="mb-2 text-sm text-zinc-500">{todaySession.program.name}</p>
@@ -78,6 +106,8 @@ export function ProgramsSection({ today }: { today: DateKey }) {
         </Card>
       )}
 
+      {programs.length > 0 && <MissedSessions today={today} />}
+      {programs.length > 0 && <ExtendPlan today={today} />}
       {programs.length > 0 && <PlanOutlook today={today} />}
 
       {draft && (

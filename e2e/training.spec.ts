@@ -67,4 +67,37 @@ test.describe('training programs', () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   });
+
+  test('Given пропущенная сессия When я переношу её на другой день Then она снова в плане; а в конце плана его можно продлить', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-03T08:00:00')); // Tuesday — a «Растяжка» day
+    await page.goto('/#/training');
+    await page.getByRole('button', { name: 'Шаблон: Растяжка' }).click();
+    await page.getByRole('button', { name: 'Сохранить программу' }).click();
+    await expect(page.getByRole('list', { name: 'Сессия на сегодня' })).toBeVisible();
+
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.reload();
+    const missed = page.getByRole('list', { name: 'Пропущенные сессии' });
+    await expect(missed).toContainText('пропущена');
+    await missed.getByRole('button', { name: /Перенести/ }).click();
+    await page.getByLabel('Новая дата').fill('2026-11-06');
+    await page.getByRole('dialog').getByRole('button', { name: 'Сохранить' }).click();
+    await expect(page.getByRole('list', { name: 'Пропущенные сессии' })).toHaveCount(0);
+    await expect(
+      page.getByRole('list', { name: 'План на 2 недели' }).getByRole('listitem', { name: /6 ноября/ }),
+    ).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    await page.clock.setFixedTime(new Date('2026-11-25T08:00:00')); // the plan ends on 11-29
+    await page.reload();
+    await page.getByRole('button', { name: /Продлить план на 4 недели/ }).click();
+    await expect(page.getByRole('button', { name: /Продлить план на 4 недели/ })).toHaveCount(0);
+
+    await page.clock.setFixedTime(new Date('2026-12-20T08:00:00')); // still running thanks to the extension
+    await page.reload();
+    await expect(page.getByText('План завершён')).toHaveCount(0);
+  });
 });

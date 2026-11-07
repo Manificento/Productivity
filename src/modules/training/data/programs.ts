@@ -3,6 +3,8 @@ import { db } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import { saveWorkout, type WorkoutInput } from '../../../core/logging/workout';
 import type { DateKey, PlannedSession, Program, WorkoutLog } from '../../../core/types';
+import { shiftDateKey } from '../../../core/dates';
+import { EXTEND_WEEKS, extensionPlan, planEnd, rescheduleError } from '../logic/plan';
 import { planSessions, sessionOn, type ProgramInput } from '../logic/programs';
 
 /** Writes `programs` and `plannedSessions` (owner: training). The workout log goes only through saveWorkout(). */
@@ -69,6 +71,69 @@ export async function replaceExercise(sessionId: string, index: number, name: st
   });
 }
 
+/** Moves a session to another day: the date changes and the status is `planned` again; at most one session per program per day. */
+export async function rescheduleSession(
+  sessionId: string,
+  date: DateKey,
+  today: DateKey,
+  now = Date.now(),
+): Promise<void> {
+  await db.transaction('rw', db.plannedSessions, async () => {
+    const session = await db.plannedSessions.get(sessionId);
+    if (!session) throw new Error('Сессия не найдена');
+    const siblings = await db.plannedSessions.where('programId').equals(session.programId).toArray();
+    const error = rescheduleError(session, date, siblings, today);
+    if (error) throw new Error(error);
+    await db.plannedSessions.update(sessionId, touch({ date, status: 'planned' as const }, now));
+  });
+}
+
+/** Adds `EXTEND_WEEKS` weeks on the program's own weekdays after its last session; returns how many sessions were added. */
+export async function extendProgram(programId: string, today: DateKey, now = Date.now()): Promise<number> {
+  return db.transaction('rw', db.programs, db.plannedSessions, async () => {
+    const program = await db.programs.get(programId);
+    if (!program || program.archived) throw new Error('Программа не найдена');
+    const existing = await db.plannedSessions.where('programId').equals(programId).toArray();
+    const added = extensionPlan(program.days, existing, today, EXTEND_WEEKS).map((d) =>
+      newRecord({ programId, date: d.date, exercises: d.exercises, status: 'planned' as const }, now),
+    );
+    await db.plannedSessions.bulkAdd(added);
+    await db.programs.update(programId, touch({ weeks: program.weeks + EXTEND_WEEKS }, now));
+    return added.length;
+  });
+}
+
+/** Extends every active program whose plan is over (last session before `today`); returns how many programs. */
+export async function extendEndedPrograms(today: DateKey, now = Date.now()): Promise<number> {
+  const ends = await loadPlanEnds();
+  const ended = [...ends].filter(([, end]) => end < today);
+  for (const [id] of ended) await extendProgram(id, today, now);
+  return ended.length;
+}
+
+/** Last session date of each active program that has a plan. */
+export async function loadPlanEnds(): Promise<Map<string, DateKey>> {
+  const [programs, sessions] = await Promise.all([loadActivePrograms(), db.plannedSessions.toArray()]);
+  const ends = new Map<string, DateKey>();
+  for (const p of programs) {
+    const end = planEnd(sessions, p.id);
+    if (end) ends.set(p.id, end);
+  }
+  return ends;
+}
+
+/** «Пропущена»: skipped sessions of active programs from the last two weeks, oldest first. */
+export async function loadMissedSessions(today: DateKey): Promise<PlannedSession[]> {
+  const [sessions, programs] = await Promise.all([
+    db.plannedSessions.where('date').between(shiftDateKey(today, -14), today, true, false).toArray(),
+    loadActivePrograms(),
+  ]);
+  const active = new Set(programs.map((p) => p.id));
+  return sessions
+    .filter((s) => s.status === 'skipped' && active.has(s.programId))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function loadActivePrograms(): Promise<Program[]> {
   const all = await db.programs.toArray();
   return all.filter((p) => !p.archived).sort((a, b) => a.createdAt - b.createdAt);
@@ -107,6 +172,14 @@ export async function loadUpcomingSessions(from: DateKey, to: DateKey): Promise<
 
 export function useUpcomingSessions(from: DateKey, to: DateKey): PlannedSession[] | undefined {
   return useLiveQuery(() => loadUpcomingSessions(from, to), [from, to]);
+}
+
+export function useMissedSessions(today: DateKey): PlannedSession[] | undefined {
+  return useLiveQuery(() => loadMissedSessions(today), [today]);
+}
+
+export function usePlanEnds(): Map<string, DateKey> | undefined {
+  return useLiveQuery(loadPlanEnds, []);
 }
 
 export function useActivePrograms(): Program[] | undefined {

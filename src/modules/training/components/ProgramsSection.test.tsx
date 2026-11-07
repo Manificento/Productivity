@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
+import { createProgram } from '../data/programs';
 import { ProgramsSection } from './ProgramsSection';
 
 const TODAY = '2026-11-04'; // Wednesday
@@ -159,5 +160,83 @@ describe('session execution', () => {
       expect((await db.plannedSessions.where('date').equals(TODAY).first())?.status).toBe('skipped'),
     );
     expect((await db.plannedSessions.toArray()).map((s) => s.date).sort()).toEqual(before);
+  });
+});
+
+describe('missed sessions, reschedule and extension', () => {
+  it('Given сессия вчера не выполнена When я открываю план Then она помечена «пропущена», с кнопкой «Перенести»', async () => {
+    await createProgram(
+      { name: 'Сила', weeks: 4, days: [{ weekday: 2, exercises: [{ name: 'Присед', sets: 3 }] }] },
+      '2026-11-03',
+    ); // Tuesday 11-03
+    cleanup();
+    renderIt('2026-11-04');
+    const list = await screen.findByRole('list', { name: 'Пропущенные сессии' });
+    expect(within(list).getByText('пропущена')).toBeInTheDocument();
+    expect(within(list).getByText(/Присед/)).toBeInTheDocument();
+    expect(within(list).getByRole('button', { name: /Перенести/ })).toBeInTheDocument();
+  });
+
+  it('Given я переношу сессию When выбираю другой день Then дата меняется, статус planned; занятый день — ошибка', async () => {
+    await createProgram(
+      { name: 'Сила', weeks: 4, days: [{ weekday: 2, exercises: [{ name: 'Присед', sets: 3 }] }] },
+      '2026-11-03',
+    );
+    renderIt('2026-11-04');
+    fireEvent.click(
+      await within(await screen.findByRole('list', { name: 'Пропущенные сессии' })).findByRole('button', {
+        name: /Перенести/,
+      }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Новая дата'), { target: { value: '2026-11-10' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('уже есть');
+    fireEvent.change(within(dialog).getByLabelText('Новая дата'), { target: { value: '2026-11-06' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(async () =>
+      expect(await db.plannedSessions.where('date').equals('2026-11-06').toArray()).toMatchObject([
+        { status: 'planned' },
+      ]),
+    );
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Пропущенные сессии' })).not.toBeInTheDocument());
+  });
+
+  it('Given до конца плана меньше 7 дней When я продлеваю Then 4 недели, карточка исчезает', async () => {
+    await createProgram(
+      { name: 'Сила', weeks: 4, days: [{ weekday: 1, exercises: [{ name: 'Присед', sets: 3 }] }] },
+      '2026-11-04',
+    ); // last Monday 11-30
+    renderIt('2026-11-27');
+    expect(screen.queryByRole('button', { name: /Продлить план на 4 недели/ })).not.toBeInTheDocument();
+    const button = await screen.findByRole('button', { name: /Продлить план на 4 недели/ });
+    fireEvent.click(button);
+    await waitFor(async () => expect(await db.plannedSessions.count()).toBe(8));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Продлить план на 4 недели/ })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('a plan that still has 7+ days shows no extension card', async () => {
+    await createProgram(
+      { name: 'Сила', weeks: 4, days: [{ weekday: 1, exercises: [{ name: 'Присед', sets: 3 }] }] },
+      '2026-11-04',
+    );
+    renderIt('2026-11-04');
+    await screen.findByText('Сила');
+    expect(screen.queryByRole('button', { name: /Продлить план на 4 недели/ })).not.toBeInTheDocument();
+  });
+
+  it('Given план закончился и не продлён When я открываю «Сегодня» Then «План завершён» и кнопка продления, а не «день отдыха»', async () => {
+    await createProgram(
+      { name: 'Сила', weeks: 4, days: [{ weekday: 1, exercises: [{ name: 'Присед', sets: 3 }] }] },
+      '2026-11-04',
+    );
+    renderIt('2026-12-05'); // Saturday, the plan ended 11-30
+    expect(await screen.findByText('План завершён')).toBeInTheDocument();
+    expect(screen.queryByText('День отдыха')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Продлить план' }));
+    await waitFor(async () => expect(await db.plannedSessions.where('date').above('2026-12-04').count()).toBe(4));
+    expect(await screen.findByText('День отдыха')).toBeInTheDocument(); // Saturday has no session; the plan lives on
   });
 });
