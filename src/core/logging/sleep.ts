@@ -5,13 +5,13 @@ import { newRecord, touch } from '../ids';
 import type { SleepLog } from '../types';
 import { sleepHours } from './sleepTime';
 
+const ImportKey = z.string().trim().min(1);
+
 /**
  * The ONE write path for sleep records (contract C1).
  * Owner of `sleepLogs` is the health module; `today` (morning screen) writes sleep only through
  * this function, so validation and the one-record-per-night rule live in a single place.
  */
-const ImportKey = z.string().trim().min(1);
-
 export const SleepInput = z
   .object({
     bedtime: z.number().int(),
@@ -41,10 +41,11 @@ const IMPORT_OWNED = ['date', 'bedtime', 'wakeTime'] as const;
  * Creates or updates the sleep record for the night that ended on the wake-up day
  * (`date` = local day of `wakeTime`; one record per day).
  *
- * Entered in LifeOS (no `sourceId`): the day's record is created or overwritten; an imported night edited by hand
- * keeps its import marks — it was not lived in the app.
+ * Entered in LifeOS (no `sourceId`): the day's record is created or overwritten. An imported night corrected by hand
+ * keeps `sourceId` (it was not lived in the app) but loses `externalId`: the next re-import no longer reverts it.
  * Imported (`sourceId` + `externalId`, #227): a re-import updates its own record (no duplicate), and never overwrites
- * a night the day already has (entered by hand or from another app) — the import only fills empty days.
+ * a night the day already has (entered or corrected by hand, or from another app) — the import only fills empty days.
+ * Then, and when a re-imported night moves onto such a day, the day's existing record is returned, not this night.
  */
 export async function saveSleep(input: SleepInput, now: number = Date.now()): Promise<SleepLog> {
   const valid = SleepInput.parse(input);
@@ -53,12 +54,14 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
   return db.transaction('rw', db.sleepLogs, async () => {
     const onDay = await db.sleepLogs.where('date').equals(date).first();
     if (sourceId === undefined || externalId === undefined) {
+      const entered = { date, bedtime: valid.bedtime, wakeTime: valid.wakeTime, quality: valid.quality };
       if (onDay) {
-        const updated: SleepLog = { ...onDay, ...touch(valid, now), date };
+        const { externalId: _wasImportId, ...rest } = onDay;
+        const updated: SleepLog = { ...rest, ...touch(entered, now) };
         await db.sleepLogs.put(updated);
         return updated;
       }
-      const created: SleepLog = newRecord({ ...valid, date }, now);
+      const created: SleepLog = newRecord(entered, now);
       await db.sleepLogs.add(created);
       return created;
     }

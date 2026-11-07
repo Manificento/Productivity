@@ -138,7 +138,10 @@ describe('saveSleep — imported nights (#227)', () => {
       1_000,
     );
     expect(
-      await saveSleep({ ...night('2026-11-06', '22:00', '06:00'), quality: 3, sourceId: SC, externalId: 'sc-2' }),
+      await saveSleep(
+        { ...night('2026-11-06', '22:00', '06:00'), quality: 3, sourceId: SC, externalId: 'sc-2' },
+        2_000,
+      ),
     ).toEqual(fromHealth);
   });
 
@@ -152,10 +155,32 @@ describe('saveSleep — imported nights (#227)', () => {
     expect(await db.sleepLogs.count()).toBe(1);
   });
 
-  it('editing an imported night by hand keeps it marked as imported (it was not lived in the app)', async () => {
+  it('editing an imported night by hand keeps sourceId (it was not lived in the app) and drops externalId', async () => {
     const imported = await saveSleep({ ...night('2026-11-05'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 1_000);
     const edited = await saveSleep({ ...night('2026-11-05', '23:00', '07:00'), quality: 5 }, 2_000);
-    expect(edited).toMatchObject({ id: imported.id, quality: 5, sourceId: SC, externalId: 'sc-1' });
+    expect(edited).toMatchObject({ id: imported.id, quality: 5, sourceId: SC });
+    expect(edited.externalId).toBeUndefined();
+    expect(await db.sleepLogs.get(imported.id)).toEqual(edited);
+  });
+
+  it('an imported night corrected by hand is not reverted by the next re-import', async () => {
+    await saveSleep({ ...night('2026-11-05'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 1_000);
+    const corrected = await saveSleep({ ...night('2026-11-05', '00:30', '07:30'), quality: 5 }, 2_000);
+    expect(await saveSleep({ ...night('2026-11-05'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 3_000)).toEqual(
+      corrected,
+    );
+    // Even when the store moves that night onto the next day, the corrected record is not deleted.
+    await saveSleep({ ...night('2026-11-06'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 4_000);
+    expect(await db.sleepLogs.get(corrected.id)).toEqual(corrected);
+  });
+
+  it('a manual save that passes explicit undefined keys is still manual and does not wipe sourceId', async () => {
+    await saveSleep({ ...night('2026-11-05'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 1_000);
+    const edited = await saveSleep(
+      { ...night('2026-11-05'), quality: 4, sourceId: undefined, externalId: undefined },
+      2_000,
+    );
+    expect(edited.sourceId).toBe(SC);
   });
 
   it('sourceId and externalId come together and are not empty', async () => {
