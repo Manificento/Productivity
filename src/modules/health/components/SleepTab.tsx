@@ -1,6 +1,7 @@
 import { todayKey } from '../../../core/dates';
 import type { DateKey } from '../../../core/types';
 import { Card, Empty } from '../../../ui';
+import { AlarmCard } from './AlarmCard';
 import { SleepChart } from './SleepChart';
 import { SleepForm } from './SleepForm';
 import { SleepGoal } from './SleepGoal';
@@ -15,6 +16,7 @@ export function SleepTab({ today = todayKey() }: { today?: DateKey }) {
   return (
     <>
       <SleepGoal today={today} lastNight={logs?.find((l) => l.date === today)} />
+      <AlarmCard today={today} recordFor={(day) => logs?.find((l) => l.date === day)} />
       {/* Re-mount after midnight so the form defaults to the new «last night». */}
       <SleepForm key={today} today={today} recordFor={(day) => logs?.find((l) => l.date === day)} />
       <Card title="Сон за 14 дней">
