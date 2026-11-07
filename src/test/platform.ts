@@ -1,7 +1,10 @@
 import { vi } from 'vitest';
 import {
   CAPABILITY_PLUGINS,
+  type AlarmBridge,
+  type AlarmDismissal,
   clearWebReminders,
+  setAlarmBridge,
   setHealthStoreBridge,
   setLocalNotificationsBridge,
   setPlatformRuntime,
@@ -113,6 +116,74 @@ export function mockNightSensors(
   return fake;
 }
 
+/** A fake native alarm plugin: `dismiss()` plays the user switching off a ringing alarm (app open or closed). */
+export interface FakeAlarm {
+  notifications: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale';
+  /** What `requestPermissions()` turns a prompt into. */
+  answer: 'granted' | 'denied';
+  /** Android 12 «Alarms & reminders» (exact alarms); `set()` rejects with `EXACT_DENIED` when off. */
+  exactAlarm: 'granted' | 'denied';
+  /** When set, `set()` rejects with it. */
+  setError?: unknown;
+  /** The one alarm the OS holds now. */
+  scheduled?: { at: number; windowMin: number };
+  /** Dismissals not yet taken by JS (kept by the native side while the app is closed). */
+  pending: AlarmDismissal[];
+  /** Whether a JS listener is attached to the native `dismissed` event. */
+  listening: boolean;
+  /** The alarm rang and the user switched it off at `dismissedAt`. */
+  dismiss(dismissedAt: number): void;
+  bridge: { [K in keyof AlarmBridge]: ReturnType<typeof vi.fn<AlarmBridge[K]>> };
+}
+
+export function mockAlarm(
+  notifications: FakeAlarm['notifications'] = 'granted',
+  answer: FakeAlarm['answer'] = 'granted',
+): FakeAlarm {
+  const fake = { notifications, answer, exactAlarm: 'granted', pending: [], listening: false } as unknown as FakeAlarm;
+  const listeners = new Set<() => void>();
+  fake.dismiss = (dismissedAt) => {
+    const alarmAt = fake.scheduled?.at ?? dismissedAt;
+    fake.scheduled = undefined;
+    fake.pending.push({ dismissedAt, alarmAt });
+    for (const l of listeners) l();
+  };
+  fake.bridge = {
+    checkPermissions: vi.fn(async () => ({ notifications: fake.notifications })),
+    requestPermissions: vi.fn(async () => {
+      if (fake.notifications === 'prompt' || fake.notifications === 'prompt-with-rationale')
+        fake.notifications = fake.answer;
+      return { notifications: fake.notifications };
+    }),
+    set: vi.fn(async ({ at, windowMin }) => {
+      if (fake.setError !== undefined) throw fake.setError;
+      if (fake.exactAlarm === 'denied')
+        throw Object.assign(new Error('Exact alarms are off'), { code: 'EXACT_DENIED' });
+      fake.scheduled = { at, windowMin };
+    }),
+    cancel: vi.fn(async () => {
+      fake.scheduled = undefined;
+    }),
+    takeDismissals: vi.fn(async () => {
+      const dismissals = fake.pending;
+      fake.pending = [];
+      return { dismissals };
+    }),
+    addListener: vi.fn(async (_event, listener) => {
+      listeners.add(listener);
+      fake.listening = true;
+      return {
+        remove: async () => {
+          listeners.delete(listener);
+          fake.listening = listeners.size > 0;
+        },
+      };
+    }),
+  };
+  setAlarmBridge(fake.bridge);
+  return fake;
+}
+
 type HealthKind = 'sleep' | 'workouts';
 type StoreSamples = Awaited<ReturnType<HealthStoreBridge['readSamples']>>['samples'];
 type StoreWorkouts = Awaited<ReturnType<HealthStoreBridge['queryWorkouts']>>['workouts'];
@@ -196,5 +267,6 @@ export function resetPlatform(): void {
   setLocalNotificationsBridge(null);
   setSleepSensorsBridge(null);
   setHealthStoreBridge(null);
+  setAlarmBridge(null);
   clearWebReminders();
 }
