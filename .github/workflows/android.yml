@@ -48,6 +48,13 @@ jobs:
           EXPECTED="android.permission.health.READ_EXERCISE android.permission.health.READ_SLEEP "
           echo "health permissions: $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
+      # The Health Connect permission screen opens the privacy policy from the app's assets (#214).
+      - name: Privacy policy is in the APK and the policy URL points at it
+        run: |
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt
+          unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -q 'assets/public/privacy/index.html'
+          "$AAPT" dump --values resources android/app/build/outputs/apk/debug/app-debug.apk \
+            | grep -A1 'health_connect_privacy_policy_url' | grep -q 'file:///android_asset/public/privacy/index.html'
       - uses: actions/upload-artifact@v4
         with:
           name: lifeos-debug-apk

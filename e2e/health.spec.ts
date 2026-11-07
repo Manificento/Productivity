@@ -253,3 +253,18 @@ test.describe('health store import', () => {
     await expect(page.getByRole('button', { name: 'Сохранить сон' })).toBeVisible();
   });
 });
+
+test.describe('privacy policy', () => {
+  test('Given окно разрешений Health Connect When я нажимаю «Политика конфиденциальности» Then открывается текст политики LifeOS на русском', async ({
+    page,
+  }) => {
+    // Health Connect opens the same page from the app's assets (`public/privacy/index.html` in the build).
+    await page.goto('/privacy/');
+    await expect(page.getByRole('heading', { name: 'Политика конфиденциальности LifeOS', level: 1 })).toBeVisible();
+    await expect(page.getByText(/только сон и тренировки/)).toBeVisible();
+    await expect(page.getByText(/только на этом устройстве/i)).toBeVisible();
+    await expect(page.getByText('almasakhmediyar@gmail.com').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'LifeOS privacy policy' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+});
