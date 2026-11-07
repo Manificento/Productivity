@@ -67,6 +67,7 @@ export function PlanPreview({
   /** Shown instead of the plan while `event` is undefined (a form with an invalid field). The hook stays mounted. */
   invalid?: ReactNode;
 }) {
+  // Called even for an invalid form on purpose: the loaded rows survive, so the plan returns without a reload.
   const rows = useDailyTargetsRange(today, shiftDateKey(today, PREVIEW_DAYS - 1), { event });
   if (event === undefined) return <>{invalid}</>;
   if (rows === undefined) return <p className="text-sm text-zinc-500">Загрузка…</p>;

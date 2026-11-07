@@ -106,19 +106,23 @@ describe('Предпросмотр 10 дней', () => {
     const dialog = screen.getByRole('dialog', { name: 'Изменить событие' });
     await within(dialog).findByRole('table', { name: 'План на 10 дней' });
 
+    // This spy is what catches a remount (a remounted hook reads the DB again); the «Загрузка…» checks alone do not.
     const reads = vi.spyOn(db.lifeEvents, 'where');
-    const prep = within(dialog).getByLabelText('Дней подготовки');
-    await user.clear(prep);
-    expect(within(dialog).queryByRole('table')).not.toBeInTheDocument();
-    expect(within(dialog).getByText('Укажите дату и дни подготовки, чтобы увидеть план.')).toBeInTheDocument();
-    expect(within(dialog).queryByText('Загрузка…')).not.toBeInTheDocument();
+    try {
+      const prep = within(dialog).getByLabelText('Дней подготовки');
+      await user.clear(prep);
+      expect(within(dialog).queryByRole('table')).not.toBeInTheDocument();
+      expect(within(dialog).getByText('Укажите дату и дни подготовки, чтобы увидеть план.')).toBeInTheDocument();
+      expect(within(dialog).queryByText('Загрузка…')).not.toBeInTheDocument();
 
-    await user.type(prep, '2');
-    // No waiting: the data is still loaded, so the table is back at once.
-    expect(within(dialog).getByRole('table', { name: 'План на 10 дней' })).toBeInTheDocument();
-    expect(within(dialog).queryByText('Загрузка…')).not.toBeInTheDocument();
-    expect(reads).not.toHaveBeenCalled();
-    reads.mockRestore();
+      await user.type(prep, '2');
+      // No waiting: the data is still loaded, so the table is back at once.
+      expect(within(dialog).getByRole('table', { name: 'План на 10 дней' })).toBeInTheDocument();
+      expect(within(dialog).queryByText('Загрузка…')).not.toBeInTheDocument();
+      expect(reads).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+    }
   });
 
   it('shows a live plan while creating an event and a hint while the input is invalid', async () => {
