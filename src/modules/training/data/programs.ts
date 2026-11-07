@@ -4,7 +4,7 @@ import { newRecord, touch } from '../../../core/ids';
 import { saveWorkout, type WorkoutInput } from '../../../core/logging/workout';
 import type { DateKey, PlannedSession, Program, WorkoutLog } from '../../../core/types';
 import { shiftDateKey } from '../../../core/dates';
-import { EXTEND_WEEKS, extensionPlan, planEnd, rescheduleError } from '../logic/plan';
+import { EXTEND_WEEKS, extensionPlan, needsExtension, planEnd, rescheduleError } from '../logic/plan';
 import { planSessions, sessionOn, type ProgramInput } from '../logic/programs';
 
 /** Writes `programs` and `plannedSessions` (owner: training). The workout log goes only through saveWorkout(). */
@@ -88,27 +88,31 @@ export async function rescheduleSession(
   });
 }
 
-/** Adds `EXTEND_WEEKS` weeks on the program's own weekdays after its last session; returns how many sessions were added. */
+/**
+ * Adds `EXTEND_WEEKS` weeks on the program's own weekdays after its last session; returns how many sessions were added.
+ * Idempotent: the need (under 7 days left, or the plan is over) is re-checked inside the transaction, so a double tap adds nothing.
+ */
 export async function extendProgram(programId: string, today: DateKey, now = Date.now()): Promise<number> {
   return db.transaction('rw', db.programs, db.plannedSessions, async () => {
     const program = await db.programs.get(programId);
     if (!program || program.archived) throw new Error('Программа не найдена');
     const existing = await db.plannedSessions.where('programId').equals(programId).toArray();
+    const end = planEnd(existing, programId);
+    if (end !== undefined && !needsExtension(end, today)) return 0;
     const added = extensionPlan(program.days, existing, today, EXTEND_WEEKS).map((d) =>
       newRecord({ programId, date: d.date, exercises: d.exercises, status: 'planned' as const }, now),
     );
     await db.plannedSessions.bulkAdd(added);
-    await db.programs.update(programId, touch({ weeks: program.weeks + EXTEND_WEEKS }, now));
     return added.length;
   });
 }
 
-/** Extends every active program whose plan is over (last session before `today`); returns how many programs. */
+/** Extends every active program whose plan is over (last session before `today`); returns how many programs grew. */
 export async function extendEndedPrograms(today: DateKey, now = Date.now()): Promise<number> {
   const ends = await loadPlanEnds();
-  const ended = [...ends].filter(([, end]) => end < today);
-  for (const [id] of ended) await extendProgram(id, today, now);
-  return ended.length;
+  let grown = 0;
+  for (const [id, end] of ends) if (end < today && (await extendProgram(id, today, now)) > 0) grown++;
+  return grown;
 }
 
 /** Last session date of each active program that has a plan. */

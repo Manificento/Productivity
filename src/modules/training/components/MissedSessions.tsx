@@ -82,7 +82,9 @@ export function MissedSessions({ today }: { today: DateKey }) {
           ))}
         </ul>
       </Card>
-      <RescheduleSheet session={moving} today={today} onClose={() => setMoving(undefined)} />
+      {moving && (
+        <RescheduleSheet key={moving.id} session={moving} today={today} onClose={() => setMoving(undefined)} />
+      )}
     </>
   );
 }

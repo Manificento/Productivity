@@ -208,12 +208,11 @@ describe('missed sessions, reschedule and extension', () => {
     const p = await createProgram(input, TODAY, 1); // ends 2026-11-30
     expect(await loadPlanEnds()).toEqual(new Map([[p.id, '2026-11-30']]));
     expect(await extendProgram(p.id, '2026-11-27', 9)).toBe(8);
-    expect(await extendProgram(p.id, '2026-11-27', 10)).toBe(8); // second run continues, never duplicates a date
+    expect(await extendProgram(p.id, '2026-11-27', 10)).toBe(0); // a double tap adds nothing
     const dates = (await db.plannedSessions.toArray()).map((s) => s.date);
     expect(new Set(dates).size).toBe(dates.length);
-    expect(dates).toHaveLength(24);
+    expect(dates).toHaveLength(16);
     expect(dates).toContain('2026-12-02');
-    expect((await db.programs.get(p.id))?.weeks).toBe(12);
   });
 
   it('Given план закончился When продлеваю все закончившиеся Then новый план стартует с сегодня', async () => {

@@ -48,7 +48,7 @@ describe('plan end and extension', () => {
     expect(needsExtension('2026-11-10', '2026-11-04')).toBe(true); // 6 days left
     expect(needsExtension('2026-11-11', '2026-11-04')).toBe(false); // 7 days left
     expect(needsExtension('2026-11-04', '2026-11-04')).toBe(true);
-    expect(needsExtension('2026-11-03', '2026-11-04')).toBe(false); // already over — the «Сегодня» card handles it
+    expect(needsExtension('2026-11-03', '2026-11-04')).toBe(true); // already over
   });
   it('extension continues the same weekdays for 4 weeks after the plan end, no duplicates', () => {
     const plan = extensionPlan(days, [s('2026-11-02'), s('2026-11-04')], '2026-11-04', 4);

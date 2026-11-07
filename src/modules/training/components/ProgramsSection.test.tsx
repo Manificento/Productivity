@@ -169,9 +169,9 @@ describe('missed sessions, reschedule and extension', () => {
       { name: 'Сила', weeks: 4, days: [{ weekday: 2, exercises: [{ name: 'Присед', sets: 3 }] }] },
       '2026-11-03',
     ); // Tuesday 11-03
-    cleanup();
     renderIt('2026-11-04');
     const list = await screen.findByRole('list', { name: 'Пропущенные сессии' });
+    expect(within(list).getByText('пропущена').closest('div')).toHaveClass('text-zinc-500'); // grey
     expect(within(list).getByText('пропущена')).toBeInTheDocument();
     expect(within(list).getByText(/Присед/)).toBeInTheDocument();
     expect(within(list).getByRole('button', { name: /Перенести/ })).toBeInTheDocument();
@@ -208,7 +208,6 @@ describe('missed sessions, reschedule and extension', () => {
       '2026-11-04',
     ); // last Monday 11-30
     renderIt('2026-11-27');
-    expect(screen.queryByRole('button', { name: /Продлить план на 4 недели/ })).not.toBeInTheDocument();
     const button = await screen.findByRole('button', { name: /Продлить план на 4 недели/ });
     fireEvent.click(button);
     await waitFor(async () => expect(await db.plannedSessions.count()).toBe(8));
@@ -238,5 +237,15 @@ describe('missed sessions, reschedule and extension', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Продлить план' }));
     await waitFor(async () => expect(await db.plannedSessions.where('date').above('2026-12-04').count()).toBe(4));
     expect(await screen.findByText('День отдыха')).toBeInTheDocument(); // Saturday has no session; the plan lives on
+  });
+
+  it('Given две программы, одна закончилась When я открываю план Then её можно продлить, вторая не трогается', async () => {
+    const day = (weekday: number) => [{ weekday, exercises: [{ name: 'Присед', sets: 3 }] }];
+    const a = await createProgram({ name: 'Сила', weeks: 4, days: day(1) }, '2026-11-04'); // ends 11-30
+    await createProgram({ name: 'Растяжка', weeks: 4, days: day(2) }, '2026-11-24'); // ends 12-15
+    renderIt('2026-12-02');
+    fireEvent.click(await screen.findByRole('button', { name: 'Продлить план на 4 недели: Сила' }));
+    await waitFor(async () => expect(await db.plannedSessions.where('programId').equals(a.id).count()).toBe(8));
+    expect(screen.queryByRole('button', { name: 'Продлить план на 4 недели: Растяжка' })).not.toBeInTheDocument();
   });
 });

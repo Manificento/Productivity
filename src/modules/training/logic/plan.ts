@@ -27,10 +27,10 @@ export function planEnd(sessions: PlannedSession[], programId: string): DateKey 
   return end;
 }
 
-/** Fewer than 7 days to the end of the plan (the end day counts); a finished plan is handled by «Сегодня». */
+/** Fewer than 7 days to the end of the plan (the end day counts), or the plan is already over. */
 export function needsExtension(end: DateKey, today: DateKey): boolean {
   const left = daysBetween(today, end);
-  return left >= 0 && left < EXTEND_THRESHOLD_DAYS;
+  return left < EXTEND_THRESHOLD_DAYS;
 }
 
 /**

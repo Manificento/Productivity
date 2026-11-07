@@ -36,6 +36,7 @@ export function ProgramsSection({ today }: { today: DateKey }) {
   const [archiving, setArchiving] = useState<Program>();
   const [archiveError, setArchiveError] = useState<string>();
   const [extendError, setExtendError] = useState<string>();
+  const [extending, setExtending] = useState(false);
 
   const startDraft = (d: ProgramDraft) => {
     setDraft(d);
@@ -75,11 +76,13 @@ export function ProgramsSection({ today }: { today: DateKey }) {
                   </p>
                 )}
                 <Button
+                  disabled={extending}
                   onClick={() => {
                     setExtendError(undefined);
-                    extendEndedPrograms(today).catch(() =>
-                      setExtendError('Не удалось продлить план — попробуйте ещё раз'),
-                    );
+                    setExtending(true);
+                    extendEndedPrograms(today)
+                      .catch(() => setExtendError('Не удалось продлить план — попробуйте ещё раз'))
+                      .finally(() => setExtending(false));
                   }}
                 >
                   Продлить план
