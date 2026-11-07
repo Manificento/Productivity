@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { useDailyTargets } from '../../../core/adaptation/useDailyTargets';
+import { useEffect, useMemo, useState } from 'react';
+import { useDailyTargets, useDailyTargetsRange } from '../../../core/adaptation/useDailyTargets';
+import { shiftDateKey } from '../../../core/dates';
 import type { DateKey, Program } from '../../../core/types';
 import { Button, Card, Empty, Sheet } from '../../../ui';
 import {
@@ -9,6 +10,8 @@ import {
   useActivePrograms,
   useTodaySession,
 } from '../data/programs';
+import { applyCarryOver } from '../data/carry';
+import { CARRY_HORIZON_DAYS, CARRY_LOOKBACK_DAYS, type CarryTargets } from '../logic/carry';
 import {
   PROGRAM_TEMPLATES,
   WEEKDAY_SHORT,
@@ -18,6 +21,7 @@ import {
 } from '../logic/programs';
 import { ExtendPlan } from './ExtendPlan';
 import { MissedSessions } from './MissedSessions';
+import { MuscleBalance } from './MuscleBalance';
 import { ProgramForm } from './ProgramForm';
 import { PlanOutlook } from './PlanOutlook';
 import { SessionRunner } from './SessionRunner';
@@ -29,6 +33,30 @@ export function ProgramsSection({ today }: { today: DateKey }) {
   useEffect(() => {
     skipMissedSessions(today).catch((e: unknown) => console.error('skipMissedSessions failed', e));
   }, [today]);
+  // Exercises of missed sessions come back in the next ones (#226), by the targets of the days around today.
+  const range = useDailyTargetsRange(
+    shiftDateKey(today, -CARRY_LOOKBACK_DAYS),
+    shiftDateKey(today, CARRY_HORIZON_DAYS),
+  );
+  const carryKey = useMemo(
+    () => range?.map((t) => `${t.date}:${t.deload ? 1 : 0}:${t.maxWorkoutIntensity}`).join('|'),
+    [range],
+  );
+  useEffect(() => {
+    if (!carryKey) return;
+    const targets = new Map<string, CarryTargets>(
+      carryKey.split('|').map((part) => {
+        const [date, deload, intensity] = part.split(':');
+        return [
+          date!,
+          { deload: deload === '1', maxWorkoutIntensity: intensity as CarryTargets['maxWorkoutIntensity'] },
+        ];
+      }),
+    );
+    skipMissedSessions(today)
+      .then(() => applyCarryOver(today, (date) => targets.get(date)))
+      .catch((e: unknown) => console.error('applyCarryOver failed', e));
+  }, [today, carryKey]);
   const todaySession = useTodaySession(today);
   const targets = useDailyTargets(today);
   const [draft, setDraft] = useState<ProgramDraft>();
@@ -100,7 +128,7 @@ export function ProgramsSection({ today }: { today: DateKey }) {
             </>
           ) : (
             <SessionRunner
-              key={todaySession.session.id}
+              key={`${todaySession.session.id}:${todaySession.session.exercises.length}`}
               program={todaySession.program}
               session={todaySession.session}
               targets={targets}
@@ -112,6 +140,7 @@ export function ProgramsSection({ today }: { today: DateKey }) {
       {programs.length > 0 && <MissedSessions today={today} />}
       {programs.length > 0 && <ExtendPlan today={today} />}
       {programs.length > 0 && <PlanOutlook today={today} />}
+      {programs.length > 0 && <MuscleBalance today={today} />}
 
       {draft && (
         <ProgramForm

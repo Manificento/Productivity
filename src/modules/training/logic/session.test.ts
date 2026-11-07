@@ -72,4 +72,14 @@ describe('workoutTypeFor', () => {
     expect(workoutTypeFor('Сила 3 раза в неделю')).toBe('Силовая');
     expect(workoutTypeFor('Растяжка')).toBe('Другое');
   });
+
+  it('passes the muscle groups of an exercise (a carried copy has them) on to the journal', () => {
+    const draft = toggleSet(
+      draftFromExercises([{ name: 'Свой комплекс', sets: 1, muscleGroups: ['back'], carriedFrom: '2026-11-02' }]),
+      0,
+      0,
+    );
+    const built = buildWorkout(draft, { date: '2026-11-04', durationMin: '30', rpe: '6' });
+    expect(built.ok && built.value.exercises).toEqual([{ name: 'Свой комплекс', muscleGroups: ['back'], sets: [{}] }]);
+  });
 });

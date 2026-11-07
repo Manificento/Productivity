@@ -32,6 +32,7 @@ export function buildWorkout(
   const exercises = draft
     .map(({ exercise, done }) => ({
       name: exercise.name,
+      ...(exercise.muscleGroups && { muscleGroups: exercise.muscleGroups }),
       sets: done.filter(Boolean).map(() => ({
         ...(exercise.reps !== undefined && { reps: exercise.reps }),
         ...(exercise.weightKg !== undefined && { weightKg: exercise.weightKg }),

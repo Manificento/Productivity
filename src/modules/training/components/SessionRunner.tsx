@@ -1,7 +1,11 @@
+import { format } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import { useState } from 'react';
 import type { DailyTargets } from '../../../core/adaptation/types';
+import { fromDateKey } from '../../../core/dates';
 import type { PlannedSession, Program } from '../../../core/types';
 import { Button, Field, Input, Sheet } from '../../../ui';
+import { removeExercise } from '../data/carry';
 import { completeSession, replaceExercise } from '../data/programs';
 import { adjustForTargets } from '../logic/periodization';
 import { exerciseLine } from '../logic/programs';
@@ -29,6 +33,7 @@ export function SessionRunner({
   const [replacing, setReplacing] = useState<number>();
   const [newName, setNewName] = useState('');
   const [replaceError, setReplaceError] = useState<string>();
+  const [removeError, setRemoveError] = useState<string>();
 
   // The plan itself (names) lives in the session record; the checked sets are local until «Завершить».
   // Sets and weights come from the frozen adjustment, names from the live session (a replacement shows at once).
@@ -65,6 +70,16 @@ export function SessionRunner({
       setReplacing(undefined);
     } catch {
       setReplaceError('Не удалось заменить упражнение — попробуйте ещё раз');
+    }
+  }
+
+  // A carried exercise the user does not want: it leaves this session and does not come back (#226).
+  // The runner is keyed by the number of exercises, so it starts afresh with the shorter list.
+  async function remove(index: number) {
+    try {
+      await removeExercise(session.id, index);
+    } catch {
+      setRemoveError('Не удалось убрать упражнение — попробуйте ещё раз');
     }
   }
 
@@ -110,12 +125,26 @@ export function SessionRunner({
             <div className="flex items-center justify-between gap-2">
               <p className="min-w-0 text-sm">
                 {exerciseLine(d.exercise)}
+                {session.exercises[i]?.carriedFrom && (
+                  <span className="ml-2 rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-900 dark:bg-sky-900 dark:text-sky-100">
+                    перенесено с {format(fromDateKey(session.exercises[i].carriedFrom), 'd MMMM', { locale: ru })}
+                  </span>
+                )}
                 {adjusted.easier[i] && (
                   <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-900 dark:text-amber-100">
                     сегодня легче
                   </span>
                 )}
               </p>
+              {session.exercises[i]?.carriedFrom && (
+                <Button
+                  variant="secondary"
+                  aria-label={`Убрать перенесённое: ${d.exercise.name}`}
+                  onClick={() => void remove(i)}
+                >
+                  Убрать
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 aria-label={`Заменить упражнение: ${d.exercise.name}`}
@@ -148,6 +177,11 @@ export function SessionRunner({
         ))}
       </ul>
 
+      {removeError && (
+        <p role="alert" className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+          {removeError}
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="Длительность, мин">
           {(id) => <Input id={id} inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} />}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DateKey, PlannedSession, ProgramExercise } from '../../../core/types';
-import { CARRY_VOLUME_FACTOR, planCarryOver, RECOVERY_DAYS, WEEKLY_VOLUME_CAP, type CarryLog } from './carry';
+import { CARRY_VOLUME_FACTOR, groupsOf, planCarryOver, RECOVERY_DAYS, WEEKLY_VOLUME_CAP, type CarryLog } from './carry';
+import { PROGRAM_TEMPLATES } from './programs';
 
 // November 2026: Mon 2, Wed 4, Fri 6, Mon 9, Wed 11, Fri 13, Mon 16.
 const TODAY = '2026-11-03'; // Tuesday
@@ -156,5 +157,13 @@ describe('planCarryOver — adaptive plan (#226)', () => {
     ]);
     // 48 h between the two carried rows: Wednesday → Friday.
     expect(RECOVERY_DAYS).toBe(2);
+  });
+});
+
+describe('templates and the core exercise dictionary', () => {
+  it('every exercise of the training templates has muscle groups (src/core/exercises.ts)', () => {
+    const names = PROGRAM_TEMPLATES.flatMap((t) => t.days.flatMap((d) => d.exercises.map((e) => e.name)));
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((name) => groupsOf({ name }).length === 0)).toEqual([]);
   });
 });
