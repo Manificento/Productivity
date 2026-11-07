@@ -447,7 +447,8 @@ const errorCode = (e: unknown) => (e as { code?: unknown } | null)?.code;
  * Sets the one alarm: the OS rings it at `at` also while the app is closed (Android: AlarmManager alarm clock,
  * restored after a reboot). `windowMin` is the smart-wake window before `at` (adaptation targets), stored with the
  * alarm for waking at a light-sleep moment; until that exists the alarm rings at `at`, never earlier.
- * A new alarm replaces the previous one. Asks for notifications once, if undecided. Never rejects.
+ * The alarm repeats daily at the same local time until `cancelAlarm()` or a new `setAlarm()` (#241), also when
+ * LifeOS is not opened. A new alarm replaces the previous one. Asks for notifications once, if undecided. Never rejects.
  */
 export async function setAlarm({ at, windowMin }: { at: Millis; windowMin: number }): Promise<AlarmResult> {
   if (!isNativePlatform()) return { status: 'unsupported', hint: ALARM_TEXTS.web };

@@ -67,7 +67,7 @@ public class AlarmRingingService extends Service {
         if (ringing) {
             // A newer alarm came while this one rings (set less than 10 minutes ahead): keep ringing for it.
             alarmAt = at;
-            AlarmStore.clearAlarm(this);
+            scheduleTomorrow();
             // The notification and an open alarm screen show the new time.
             ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).notify(NOTIFICATION_ID, buildNotification());
             handler.removeCallbacks(timeout);
@@ -83,8 +83,8 @@ public class AlarmRingingService extends Service {
             return START_NOT_STICKY;
         }
         ringing = true;
-        // The alarm has rung: it is no longer pending (a reboot must not set it again).
-        AlarmStore.clearAlarm(this);
+        // The alarm repeats daily (#241): the same time tomorrow, until cancelled or replaced.
+        scheduleTomorrow();
         PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LifeOS:Alarm");
         wakeLock.acquire(AlarmPolicy.RING_TIMEOUT_MS + 5_000L);
@@ -92,6 +92,16 @@ public class AlarmRingingService extends Service {
         vibrate();
         handler.postDelayed(timeout, AlarmPolicy.RING_TIMEOUT_MS);
         return START_NOT_STICKY;
+    }
+
+    private void scheduleTomorrow() {
+        long next = AlarmStore.rollDaily(this, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+        if (next == AlarmPolicy.NONE) return;
+        try {
+            AlarmScheduler.schedule(this, next);
+        } catch (SecurityException e) {
+            Log.e(TAG, "exact alarms are off: tomorrow's alarm is not set", e);
+        }
     }
 
     private void dismiss() {

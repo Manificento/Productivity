@@ -43,10 +43,15 @@ final class AlarmScheduler {
         );
     }
 
+    /** Opens LifeOS (its launcher activity). */
+    static Intent openAppIntent(Context context) {
+        Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        return open != null ? open : new Intent(context, MainActivity.class);
+    }
+
     /** What the system opens when the user taps the next alarm in the status bar or quick settings. */
     static PendingIntent showIntent(Context context) {
-        Intent open = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        if (open == null) open = new Intent(context, MainActivity.class);
+        Intent open = openAppIntent(context);
         return PendingIntent.getActivity(
             context,
             REQUEST_SHOW,

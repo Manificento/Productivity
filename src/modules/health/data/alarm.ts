@@ -27,8 +27,8 @@ export function useAlarmState(): AlarmState | undefined {
 }
 
 /**
- * Turns the alarm on for `at` (the start of the next wake window). The native alarm rings once: `keepArmed` sets the
- * next one. Until the smart moment exists (NV4) it rings at `at` itself (`windowMin: 0`). Off and why, if refused.
+ * Turns the alarm on for `at` (the start of the next wake window). The native alarm repeats daily at that time (#241);
+ * `keepArmed` moves it onto each day's wake window. Until the smart moment exists (NV4) it rings at `at` itself (`windowMin: 0`). Off and why, if refused.
  */
 export async function enableAlarm(at: Millis): Promise<AlarmResult> {
   const result = await setAlarm({ at, windowMin: 0 });

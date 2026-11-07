@@ -150,8 +150,8 @@ export function AlarmCard({ today, recordFor }: { today: DateKey; recordFor: (da
           <p className="text-sm text-zinc-500">Окно подъёма</p>
           <p className="text-2xl font-semibold tabular-nums">{label ?? '—'}</p>
           <p className="text-xs text-zinc-500">
-            Звонит в начале окна, даже если приложение закрыто. Следующий будильник ставится, когда вы открываете
-            LifeOS.
+            Звонит в начале окна каждый день, даже если приложение закрыто. Окно обновляется по целям дня, когда вы
+            открываете LifeOS.
           </p>
           {state.enabled && state.at !== undefined && !state.error && (
             <p className="mt-1 text-sm">Поставлен на {format(state.at, 'd MMMM, H:mm', { locale: ru })}</p>

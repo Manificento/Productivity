@@ -9,7 +9,7 @@ import androidx.core.content.ContextCompat;
 
 /**
  * The alarm time came (also with the app closed): start the ringing service. After a reboot or an app update
- * AlarmManager has forgotten the alarm: set the stored one again if it is still ahead — already before the first
+ * AlarmManager has forgotten the alarm: set the stored one again (its next daily ring) — already before the first
  * unlock (LOCKED_BOOT_COMPLETED; the store lives in device-protected storage).
  */
 public class AlarmReceiver extends BroadcastReceiver {
@@ -42,11 +42,9 @@ public class AlarmReceiver extends BroadcastReceiver {
             Intent.ACTION_BOOT_COMPLETED.equals(action) ||
             Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
         ) {
-            long at = AlarmStore.alarmAt(context);
-            if (!AlarmPolicy.shouldRestore(at, System.currentTimeMillis())) {
-                AlarmStore.clearAlarm(context);
-                return;
-            }
+            // Daily: a ring missed while the phone was off moves to the next day at the same time.
+            long at = AlarmStore.rollDaily(context, System.currentTimeMillis(), java.util.TimeZone.getDefault());
+            if (!AlarmPolicy.shouldRestore(at)) return;
             try {
                 AlarmScheduler.schedule(context, at);
             } catch (SecurityException e) {
