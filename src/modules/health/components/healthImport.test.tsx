@@ -51,14 +51,17 @@ describe('health store import on «Сон» (#131)', () => {
     await db.settings.put({ key: 'health.import', value: { enabled: true, lastRunAt: Date.now() - 10 * 3_600_000 } });
     render(<HealthImportBackground />);
     await waitFor(async () => expect(await db.sleepLogs.where('date').equals(TODAY).count()).toBe(1));
+    // Let the whole run finish (it ends by stamping lastRunAt), so it does not spill into the next test.
+    await waitFor(async () =>
+      expect((await db.settings.get('health.import'))?.value).toMatchObject({ lastRunAt: Date.now() }),
+    );
   });
 
   it('Given отказ в разрешении When я пробую импорт Then понятная ошибка и ручной ввод', async () => {
     mockNativePlatform('android', ['healthImport']);
     mockHealthStore([], { sleep: 'deny', workouts: 'deny' });
     render(<SleepTab today={TODAY} />);
-    // The whole «Сон» tab loads several live queries: give it time under a parallel test run.
-    fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }, { timeout: 5_000 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Подключить' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(HEALTH_TEXTS.deniedAndroid);
     expect(screen.getByText('Сон можно записать вручную ниже.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Открыть Health Connect' })).toBeInTheDocument();
