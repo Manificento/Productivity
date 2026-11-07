@@ -27,7 +27,11 @@ export interface StarterExercise {
  * and by analytics; extend it here, not in a module.
  */
 export const STARTER_EXERCISES: readonly StarterExercise[] = [
-  { name: 'Приседания', aliases: ['Присед', 'Squat', 'Squats', 'Back squat'], muscleGroups: ['legs', 'glutes', 'core'] },
+  {
+    name: 'Приседания',
+    aliases: ['Присед', 'Squat', 'Squats', 'Back squat'],
+    muscleGroups: ['legs', 'glutes', 'core'],
+  },
   { name: 'Жим лёжа', aliases: ['Bench press', 'Bench'], muscleGroups: ['chest', 'shoulders', 'arms'] },
   {
     name: 'Тяга в наклоне',
