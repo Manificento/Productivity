@@ -345,7 +345,8 @@ export interface PlannedSession extends BaseRecord {
   workoutLogId?: Id;
   /**
    * A missed session: names of its exercises already carried over to later sessions (or dropped by the user) — the
-   * automatic carry-over never takes them again (#238). Absent: nothing carried yet.
+   * automatic carry-over never takes them again (#238). Names are compared with `normalizeExerciseName`
+   * (`src/core/exercises.ts`). Absent: nothing carried yet.
    */
   carriedOut?: string[];
 }

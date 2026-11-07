@@ -157,7 +157,7 @@ describe('src/core/types.ts — пометки переноса (#238)', () => {
     expect(db.verno).toBe(version);
   });
 
-  it('Given PlannedSession When читаю Then есть необязательное carriedOut?: string[] — уже перенесённые упражнения пропущенной сессии', async () => {
+  it('Given PlannedSession When читаю Then есть необязательное carriedOut?: string[] — названия упражнений этой пропущенной сессии, уже перенесённых (или отклонённых): автоматический перенос их больше не трогает', async () => {
     const skipped: PlannedSession = {
       id: 'ps-skipped',
       createdAt: 1,
