@@ -15,7 +15,7 @@ export const CONFIRM_START_MS = 1_000;
 /**
  * «Спать» (#249): starts night sensing — movement and noise level, one aggregate a minute, also with the app closed
  * (`startNightSensing` in `platform.ts`). The state is re-read when the app comes back to the screen (the OS may end
- * the service at night). Using it — the smart alarm with a window and the morning record with stages — is #130.
+ * the service at night). The alarm wakes in light sleep from it, and «Я встал» saves the night with stages (#130).
  * Manual entry below stays as it was.
  */
 export function NightSensingCard() {

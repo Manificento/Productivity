@@ -23,19 +23,24 @@ export function windowLabel(wakeDay: DateKey, wakeTime: string, windowMin: numbe
 }
 
 /**
- * When the alarm rings next: the start of the wake window of today or tomorrow, whichever is still ahead of `now`.
- * Until the smart moment inside the window exists (sleep phases, NV4) the alarm rings at the start of the window.
+ * The wake window the alarm is for: today's while it has not been switched off (its wake time `at` still ahead and no
+ * switch-off since its start — inside the window the alarm may not have rung yet), else tomorrow's. `at` is the wake
+ * time (the window's end), `windowMin` its length. The native smart alarm (#250) rings in light sleep inside it, at
+ * the start without night-sensing data, at `at` at the latest.
  */
 export function nextAlarm(
   now: Millis,
   targetsFor: (wakeDay: DateKey) => WakeTargets | undefined,
-): { at: Millis; wakeDay: DateKey } | undefined {
+  lastDismissedAt?: Millis,
+): { at: Millis; windowMin: number; start: Millis; wakeDay: DateKey } | undefined {
   const today = toDateKey(now);
   for (const wakeDay of [today, shiftDateKey(today, 1)]) {
     const t = targetsFor(wakeDay);
     if (!t) continue;
-    const at = windowStartAt(wakeDay, t.wakeTime, t.wakeWindowMin);
-    if (at > now) return { at, wakeDay };
+    const start = windowStartAt(wakeDay, t.wakeTime, t.wakeWindowMin);
+    const at = atLocalTime(wakeDay, t.wakeTime);
+    const switchedOff = lastDismissedAt !== undefined && lastDismissedAt >= start;
+    if (at > now && !switchedOff) return { at, windowMin: t.wakeWindowMin, start, wakeDay };
   }
   return undefined;
 }

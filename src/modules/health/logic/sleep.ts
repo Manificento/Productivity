@@ -1,6 +1,6 @@
 import { shiftDateKey } from '../../../core/dates';
 import { sleepHours } from '../../../core/logging/sleepTime';
-import type { DateKey } from '../../../core/types';
+import type { DateKey, SleepStage } from '../../../core/types';
 
 /** The form opens on last night: to bed yesterday at 23:30, up today at 07:30. */
 export const DEFAULT_BEDTIME = '23:30';
@@ -51,4 +51,26 @@ export function formatHoursDiff(hours: number): string {
   if (rounded === 0) return '0 ч';
   const abs = Math.abs(rounded).toString().replace('.', ',');
   return `${rounded < 0 ? '−' : '+'}${abs} ч`;
+}
+
+const STAGE_ORDER = [
+  ['deep', 'Глубокий сон'],
+  ['light', 'лёгкий'],
+  ['rem', 'быстрый'],
+  ['awake', 'без сна'],
+] as const;
+
+const hoursMinutes = (min: number) => {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h} ч ${m} мин` : `${m} мин`;
+};
+
+/** «Глубокий сон 2 ч 20 мин · лёгкий 4 ч 5 мин · без сна 15 мин» — minutes per stage (#130); '' without stages. */
+export function stageSummary(stages: readonly SleepStage[]): string {
+  const minutes = new Map<string, number>();
+  for (const s of stages) minutes.set(s.stage, (minutes.get(s.stage) ?? 0) + (s.end - s.start) / 60_000);
+  return STAGE_ORDER.filter(([stage]) => (minutes.get(stage) ?? 0) > 0)
+    .map(([stage, label]) => `${label} ${hoursMinutes(minutes.get(stage)!)}`)
+    .join(' · ');
 }

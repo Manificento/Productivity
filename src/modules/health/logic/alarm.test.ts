@@ -12,25 +12,26 @@ describe('alarm logic', () => {
     expect(windowLabel('2026-11-08', '00:10', 30)).toBe('23:40–0:10');
   });
 
-  it('Given будильник включён When наступает окно Then звонит в начале окна: the next window start after now', () => {
+  it('Given будильник включён When наступает окно Then the alarm gets the whole window: the wake time and its length (the smart moment is native, #250)', () => {
+    const window8 = { at: at(2026, 11, 8, 7, 0), windowMin: 30, start: at(2026, 11, 8, 6, 30), wakeDay: '2026-11-08' };
     // Evening: tomorrow's window.
-    expect(nextAlarm(at(2026, 11, 7, 22, 0), targets('07:00', 30))).toEqual({
-      at: at(2026, 11, 8, 6, 30),
-      wakeDay: '2026-11-08',
-    });
+    expect(nextAlarm(at(2026, 11, 7, 22, 0), targets('07:00', 30))).toEqual(window8);
     // Early morning before the window: today's.
-    expect(nextAlarm(at(2026, 11, 8, 5, 0), targets('07:00', 30))).toEqual({
-      at: at(2026, 11, 8, 6, 30),
-      wakeDay: '2026-11-08',
-    });
-    // Inside or after today's window start: tomorrow's.
-    expect(nextAlarm(at(2026, 11, 8, 6, 30), targets('07:00', 30))?.wakeDay).toBe('2026-11-09');
+    expect(nextAlarm(at(2026, 11, 8, 5, 0), targets('07:00', 30))).toEqual(window8);
+    // Inside today's window before it rang: still today's (the smart alarm may ring up to 7:00).
+    expect(nextAlarm(at(2026, 11, 8, 6, 40), targets('07:00', 30))?.wakeDay).toBe('2026-11-08');
+    // Switched off inside the window: tomorrow's.
+    expect(nextAlarm(at(2026, 11, 8, 6, 40), targets('07:00', 30), at(2026, 11, 8, 6, 35))?.wakeDay).toBe('2026-11-09');
+    // A switch-off from yesterday does not count for today.
+    expect(nextAlarm(at(2026, 11, 8, 6, 40), targets('07:00', 30), at(2026, 11, 7, 6, 35))?.wakeDay).toBe('2026-11-08');
+    // After the wake time: tomorrow's.
+    expect(nextAlarm(at(2026, 11, 8, 7, 0), targets('07:00', 30))?.wakeDay).toBe('2026-11-09');
     // Each wake day has its own targets.
     expect(
       nextAlarm(at(2026, 11, 7, 22, 0), (day) =>
         day === '2026-11-08' ? { wakeTime: '08:00', wakeWindowMin: 20 } : undefined,
       ),
-    ).toEqual({ at: at(2026, 11, 8, 7, 40), wakeDay: '2026-11-08' });
+    ).toEqual({ at: at(2026, 11, 8, 8, 0), windowMin: 20, start: at(2026, 11, 8, 7, 40), wakeDay: '2026-11-08' });
     expect(nextAlarm(at(2026, 11, 7, 22, 0), () => undefined)).toBeUndefined();
   });
 
