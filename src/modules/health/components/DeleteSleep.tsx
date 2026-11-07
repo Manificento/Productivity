@@ -2,11 +2,12 @@ import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useState } from 'react';
 import { fromDateKey } from '../../../core/dates';
-import { deleteSleep } from '../../../core/logging/sleep';
 import type { SleepLog } from '../../../core/types';
 import { Button, Sheet } from '../../../ui';
+import { removeSleep } from '../data/healthImport';
 
-/** «Удалить запись» for the night of the chosen wake-up day; asks before deleting (contract C1: `deleteSleep`). */
+/** «Удалить запись» for the night of the chosen wake-up day; asks before deleting (contract C1: `deleteSleep`;
+ * an imported night is not imported again — `removeSleep`). */
 export function DeleteSleep({ log, onDeleted }: { log: SleepLog; onDeleted: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
@@ -20,7 +21,7 @@ export function DeleteSleep({ log, onDeleted }: { log: SleepLog; onDeleted: () =
   async function remove() {
     setBusy(true);
     try {
-      await deleteSleep(log.id);
+      await removeSleep(log);
       close();
       onDeleted();
     } catch {
