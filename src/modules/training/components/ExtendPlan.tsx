@@ -33,7 +33,7 @@ export function ExtendPlan({ today }: { today: DateKey }) {
       {due.map((p) => {
         const left = daysBetween(today, ends.get(p.id)!);
         return (
-          <Card key={p.id} title={left < 0 ? 'План завершён' : 'План скоро закончится'}>
+          <Card key={p.id} title={left < 0 ? 'План закончился' : 'План скоро закончится'}>
             <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
               {p.name}:{' '}
               {left < 0
