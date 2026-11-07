@@ -280,3 +280,48 @@ test.describe('night sensing', () => {
     await expect(page.getByRole('button', { name: 'Сохранить сон' })).toBeVisible();
   });
 });
+
+test.describe('sleep stages', () => {
+  test('Given ночь с stages When я открываю «Сон» Then у записи видна сводка этапов и полоса этапов по времени', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-11-08T08:00:00'));
+    await page.goto('/#/health');
+    await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
+    // A night recorded with stages (as «Я встал» saves it on a phone).
+    await page.evaluate(async () => {
+      const bed = new Date(2026, 10, 7, 23, 30).getTime();
+      const wake = new Date(2026, 10, 8, 7, 0).getTime();
+      const M = 60_000;
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const r = indexedDB.open('lifeos');
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('sleepLogs', 'readwrite');
+        tx.objectStore('sleepLogs').put({
+          id: 'night-1',
+          createdAt: 1,
+          updatedAt: 1,
+          date: '2026-11-08',
+          bedtime: bed,
+          wakeTime: wake,
+          quality: 4,
+          stages: [
+            { start: bed, end: bed + 300 * M, stage: 'deep' },
+            { start: bed + 300 * M, end: wake, stage: 'light' },
+          ],
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    });
+    await page.reload();
+    const card = page.getByRole('region', { name: 'Этапы прошлой ночи' });
+    await expect(card).toContainText('Глубокий сон 5 ч 0 мин · лёгкий 2 ч 30 мин');
+    await expect(card.getByRole('img', { name: /Этапы сна с 23:30 до 7:00/ })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+});
