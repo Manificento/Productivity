@@ -74,23 +74,26 @@ test.describe('pomodoro', () => {
     // The screen shows the new durations before IndexedDB has them. Reloading right away can cancel the
     // write on a loaded machine, so wait until the stored settings really hold the value.
     await expect
-      .poll(() =>
-        page.evaluate(async () => {
-          const db = await new Promise<IDBDatabase>((resolve, reject) => {
-            const r = indexedDB.open('lifeos');
-            r.onsuccess = () => resolve(r.result);
-            r.onerror = () => reject(r.error);
-          });
-          try {
-            return await new Promise<number | undefined>((resolve, reject) => {
-              const req = db.transaction('settings').objectStore('settings').get('time.pomodoro');
-              req.onsuccess = () => resolve(req.result?.value?.workMin);
-              req.onerror = () => reject(req.error);
+      .poll(
+        () =>
+          page.evaluate(async () => {
+            const db = await new Promise<IDBDatabase>((resolve, reject) => {
+              const r = indexedDB.open('lifeos');
+              r.onsuccess = () => resolve(r.result);
+              r.onerror = () => reject(r.error);
             });
-          } finally {
-            db.close();
-          }
-        }),
+            try {
+              if (!db.objectStoreNames.contains('settings')) return undefined;
+              return await new Promise<number | undefined>((resolve, reject) => {
+                const req = db.transaction('settings').objectStore('settings').get('time.pomodoro');
+                req.onsuccess = () => resolve(req.result?.value?.workMin);
+                req.onerror = () => reject(req.error);
+              });
+            } finally {
+              db.close();
+            }
+          }),
+        { message: 'settings time.pomodoro.workMin is stored in IndexedDB' },
       )
       .toBe(50);
 
