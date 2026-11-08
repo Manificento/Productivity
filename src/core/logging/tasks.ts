@@ -44,6 +44,13 @@ export const ImportTask = z
     /** Due instant (epoch ms) in the user's time zone — becomes `dueDate` + `dueTime`. */
     dueAt: millis('Срок — момент времени в миллисекундах').optional(),
     completedAt: millis('Время выполнения — момент времени в миллисекундах').optional(),
+    /** Estimated minutes (Todoist DURATION), counted in the day capacity like a task's own estimate. */
+    estimateMin: z
+      .number({ error: 'Оценка времени — целое число минут от 1 до 1440' })
+      .int('Оценка времени — целое число минут от 1 до 1440')
+      .min(1, 'Оценка времени — целое число минут от 1 до 1440')
+      .max(1440, 'Оценка времени — целое число минут от 1 до 1440')
+      .optional(),
     tags: z
       .array(text('Метка — текст').trim().min(1, 'Метка не может быть пустой'), { error: 'Метки — список' })
       .optional(),
@@ -80,7 +87,17 @@ export interface ImportTasksResult {
 type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
 
 /** Fields the import owns: re-import rewrites exactly these and keeps the rest (e.g. `recurrence`). */
-const IMPORT_OWNED = ['title', 'notes', 'projectId', 'priority', 'dueDate', 'dueTime', 'completedAt', 'tags'] as const;
+const IMPORT_OWNED = [
+  'title',
+  'notes',
+  'projectId',
+  'priority',
+  'dueDate',
+  'dueTime',
+  'estimateMin',
+  'completedAt',
+  'tags',
+] as const;
 
 /** First zod issue as «Задача 3: сообщение (поле)» — the row number helps to fix the source file. */
 function rowError(kind: 'Проект' | 'Задача', row: number, error: z.ZodError): Error {
@@ -127,6 +144,7 @@ function toNewTask(t: z.output<typeof ImportTask>, source: TaskSource): Omit<New
     ...(t.notes !== undefined && { notes: t.notes }),
     ...(dueDate !== undefined && { dueDate }),
     ...(dueTime !== undefined && { dueTime }),
+    ...(t.estimateMin !== undefined && { estimateMin: t.estimateMin }),
     ...(t.completedAt !== undefined && { completedAt: t.completedAt }),
     ...(t.externalId !== undefined && { externalId: t.externalId }),
   };
