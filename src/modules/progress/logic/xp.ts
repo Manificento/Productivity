@@ -1,4 +1,5 @@
 import { shiftDateKey, toDateKey } from '../../../core/dates';
+import { atLocalTime } from '../../../core/logging/sleepTime';
 import type {
   CognitiveTest,
   DateKey,
@@ -71,6 +72,17 @@ export const MIN_FOCUS_MS = 10 * 60_000;
  */
 export const DAILY_XP_CAP = 100;
 
+const DAY_MS = 24 * 3_600_000;
+
+/**
+ * A night carried over from another app (#236): it has a `sourceId` and was recorded more than a day after its day
+ * ended. A fresh night from a watch's daily import (recorded the same or the next day) is lived experience, like a
+ * night entered by hand; a night without `sourceId` is never history, however late it was written.
+ */
+export function isImportedNight(l: SleepLog): boolean {
+  return l.sourceId !== undefined && l.createdAt > atLocalTime(shiftDateKey(l.date, 1), '00:00') + DAY_MS;
+}
+
 export interface XpGain {
   date: DateKey;
   skill: SkillId;
@@ -92,7 +104,7 @@ export function xpEventsFrom(s: XpSources): XpGain[] {
   for (const e of s.timeEntries)
     if (e.source === 'pomodoro' && e.end !== undefined && e.end - e.start >= MIN_FOCUS_MS)
       add(e.date, 'tasks', XP_RULES.focus);
-  for (const l of s.sleepLogs) add(l.date, 'sleep', XP_RULES.sleep);
+  for (const l of s.sleepLogs) add(l.date, 'sleep', XP_RULES.sleep, isImportedNight(l));
   for (const w of s.workoutLogs) add(w.date, 'body', XP_RULES.workout, w.sourceId !== undefined);
   for (const m of s.meditationSessions) if (m.completed) add(m.date, 'calm', XP_RULES.meditation);
   for (const c of s.cognitiveTests) add(c.date, 'mind', XP_RULES.test);
