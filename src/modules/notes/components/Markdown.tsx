@@ -58,7 +58,7 @@ function block(b: Block, key: number): ReactNode {
               checked={item.checked}
               disabled
               readOnly
-              aria-label="Пункт списка"
+              aria-label={item.inlines.map((i) => i.text).join('') || 'Пункт списка'}
               className="mr-2"
             />
           )}
@@ -73,5 +73,5 @@ function block(b: Block, key: number): ReactNode {
 export function Markdown({ source }: { source: string }) {
   const blocks = parseMarkdown(source);
   if (blocks.length === 0) return <p className="text-sm text-zinc-500">Нечего показывать</p>;
-  return <div className="text-sm text-zinc-900 dark:text-zinc-100">{blocks.map(block)}</div>;
+  return <div className="text-sm text-zinc-900 [overflow-wrap:anywhere] dark:text-zinc-100">{blocks.map(block)}</div>;
 }

@@ -201,4 +201,55 @@ describe('NotesPage', () => {
     expect((await db.notes.get(b.id))?.linkIds).toEqual([event.id]);
     expect(await screen.findByRole('button', { name: /Эссе/ })).toBeInTheDocument();
   });
+
+  it('Given проект в архиве When открываю выбор привязки Then он в конце списка с пометкой «в архиве», и карточка привязанной заметки её показывает', async () => {
+    const user = userEvent.setup();
+    const old: Project = { ...newRecord({ name: 'Старый', archived: true }, 1) };
+    const fresh: Project = { ...newRecord({ name: 'Свежий', archived: false }, 2) };
+    await db.projects.bulkAdd([old, fresh]);
+    await db.notes.add(note('Итоги', [old.id, '2026-11-07'], 1));
+    renderNotes();
+    const card = await screen.findByRole('button', { name: /Итоги/ });
+    await waitFor(() => expect(card).toHaveTextContent('Старый (в архиве)'));
+    expect(card).toHaveTextContent('7 ноя 2026');
+    expect(card).not.toHaveTextContent('2026-11-07');
+    await user.click(card);
+    const boxes = (await screen.findAllByLabelText(/^Проект:/)).map((b) => b.closest('label')?.textContent);
+    expect(boxes).toEqual(['Проект: Свежий', 'Проект: Старый (в архиве)']);
+    expect(screen.getByRole('button', { name: 'Убрать день 7 ноя 2026' })).toHaveTextContent('День 7 ноя 2026');
+  });
+
+  it('Given предпросмотр с чекбоксами When читает скринридер Then у чекбокса имя — текст пункта, и он недоступен для изменения', async () => {
+    const user = userEvent.setup();
+    await db.notes.add({
+      ...newRecord({ title: 'Список', body: '- [x] паспорт\n- [ ] билет', linkIds: [] as string[] }, 1),
+    });
+    renderNotes();
+    await user.click(await screen.findByRole('button', { name: /Список/ }));
+    await user.click(screen.getByRole('button', { name: 'Предпросмотр' }));
+    const done = screen.getByRole('checkbox', { name: 'паспорт' });
+    expect(done).toBeChecked();
+    expect(done).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'билет' })).toBeDisabled();
+  });
+
+  it('Given привязки к дню When открываю фильтр «По дню» Then дни по-русски, выбор фильтрует, а исчезнувший день не фильтрует скрыто', async () => {
+    const user = userEvent.setup();
+    await db.notes.bulkAdd([note('Дневник', ['2026-11-07'], 1), note('Идеи', [], 2)]);
+    renderNotes();
+    const filter = await screen.findByLabelText('По дню');
+    expect(
+      within(filter)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Все дни', '7 ноя 2026']);
+    await user.selectOptions(filter, '2026-11-07');
+    expect(screen.getByText('Дневник')).toBeInTheDocument();
+    expect(screen.queryByText('Идеи')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Дневник/ }));
+    await user.click(await screen.findByRole('button', { name: 'Убрать день 7 ноя 2026' }));
+    await user.click(screen.getByRole('button', { name: 'Готово' }));
+    expect(await screen.findByText('Идеи')).toBeInTheDocument();
+    expect(screen.getByText('Дневник')).toBeInTheDocument();
+  });
 });
