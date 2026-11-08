@@ -181,7 +181,8 @@ describe('exercise list', () => {
       </MemoryRouter>,
     );
     const card = (await screen.findByText('Упражнения')).closest('div')!;
-    expect(await within(card).findByText('медиана 280 мс')).toBeInTheDocument();
+    // Every exercise reads its own live query; wait for each last result instead of only the first one,
+    // otherwise the later queries may still be loading when the machine is busy.
     for (const [name, href, last] of [
       ['PVT', '/cognition/pvt', 'медиана 280 мс'],
       ['n-back', '/cognition/nback', 'n = 3, точность 90%'],
@@ -189,7 +190,7 @@ describe('exercise list', () => {
       ['Шульте', '/cognition/schulte', '41,2 с, ошибок 1'],
     ]) {
       expect(within(card).getByRole('link', { name })).toHaveAttribute('href', href);
-      expect(within(card).getByText(last)).toBeInTheDocument();
+      expect(await within(card).findByText(last)).toBeInTheDocument();
     }
   });
 
