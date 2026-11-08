@@ -1,0 +1,4 @@
+# AWS CLI settings for S3-compatible storage (MinIO, Yandex Object Storage…), used by lib.sh.
+[default]
+s3 =
+  addressing_style = path
