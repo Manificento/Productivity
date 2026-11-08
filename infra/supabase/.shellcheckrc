@@ -1,0 +1,3 @@
+# ShellCheck settings for the infra scripts: sourced helpers resolve next to the script.
+source-path=SCRIPTDIR
+external-sources=true

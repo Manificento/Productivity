@@ -1,0 +1,54 @@
+name: Infra
+
+# Supabase self-hosted as code (infra/supabase, issue #172): the stack is deployed into the runner's Docker and
+# checked on every change of infra/; the restore drill (backup → MinIO → restore on an empty stack) also runs weekly,
+# so a broken backup is noticed within a week even when nobody touches infra/.
+on:
+  pull_request:
+    paths: ['infra/**', '.github/workflows/infra.yml']
+  push:
+    branches: [main]
+    paths: ['infra/**', '.github/workflows/infra.yml']
+  schedule:
+    - cron: '17 3 * * 1' # Mondays 03:17 UTC
+  workflow_dispatch:
+
+concurrency:
+  # A push to main must not cancel the weekly restore drill.
+  group: infra-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x infra/supabase/*.sh infra/supabase/tests/*.sh
+      - run: docker compose -f infra/supabase/docker-compose.yml --env-file infra/supabase/env.example config --quiet
+        env:
+          # config needs the required secrets set; these dummies never reach a running stack.
+          POSTGRES_PASSWORD: x
+          JWT_SECRET: x
+          ANON_KEY: x
+          SERVICE_ROLE_KEY: x
+          PG_META_CRYPTO_KEY: x
+
+  stack:
+    name: Deploy, two regions, alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: infra/supabase/tests/stack.test.sh
+
+  restore:
+    name: Backup and restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: infra/supabase/tests/backup-restore.test.sh

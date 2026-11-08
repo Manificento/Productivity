@@ -1,0 +1,97 @@
+# Kong declarative config (DB-less). `$SUPABASE_*` are substituted by the entrypoint in docker-compose.yml.
+# Only Auth and PostgREST are routed; Realtime, Storage, Edge Functions and the dashboard are not part of the stack.
+_format_version: '3.0'
+_transform: true
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+services:
+  ## Open Auth routes: links from e-mails and OAuth redirects come without an API key.
+  - name: auth-v1-open
+    url: http://auth:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths: [/auth/v1/verify]
+    plugins:
+      - name: cors
+  - name: auth-v1-open-callback
+    url: http://auth:9999/callback
+    routes:
+      - name: auth-v1-open-callback
+        strip_path: true
+        paths: [/auth/v1/callback]
+    plugins:
+      - name: cors
+  - name: auth-v1-open-authorize
+    url: http://auth:9999/authorize
+    routes:
+      - name: auth-v1-open-authorize
+        strip_path: true
+        paths: [/auth/v1/authorize]
+    plugins:
+      - name: cors
+
+  ## Auth: /auth/v1/* -> http://auth:9999/*
+  - name: auth-v1
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths: [/auth/v1/]
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin, anon]
+
+  ## PostgREST OpenAPI root (lists every table): service role only.
+  - name: rest-v1-openapi
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-openapi-root
+        strip_path: true
+        paths: ['~/rest/v1/$']
+        regex_priority: 10
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin]
+
+  ## PostgREST: /rest/v1/* -> http://rest:3000/*
+  - name: rest-v1
+    url: http://rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths: [/rest/v1/]
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin, anon]

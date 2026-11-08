@@ -30,3 +30,6 @@ test-results
 
 # Local Claude Code state
 .claude/*.local.*
+
+# Settings of the self-hosted backend hold real secrets (infra/supabase/README.md); only env.example is tracked.
+infra/supabase/.env*
