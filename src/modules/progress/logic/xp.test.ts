@@ -5,6 +5,7 @@ import { newRecord } from '../../../core/ids';
 import {
   DAILY_XP_CAP,
   XP_RULES,
+  isImportedNight,
   levelFromXp,
   skillLevels,
   summarize,
@@ -259,5 +260,42 @@ describe('опыт от импортированной истории (#224)', (
     const by = Object.fromEntries(skillLevels({ ...empty, tasks, workoutLogs }).map((l) => [l.id, l.xp]));
     expect(by.body).toBeGreaterThan(0);
     expect((by.body ?? 0) + (by.tasks ?? 0)).toBe(DAILY_XP_CAP);
+  });
+});
+
+describe('импортированные ночи (#236)', () => {
+  const night = (createdAt: number, sourceId?: string) =>
+    newRecord(
+      {
+        date: '2026-11-03',
+        bedtime: atLocalTime('2026-11-02', '23:00'),
+        wakeTime: atLocalTime('2026-11-03', '07:00'),
+        quality: 3,
+        ...(sourceId === undefined ? {} : { sourceId }),
+      },
+      createdAt,
+    );
+  // end of the night's day (midnight after 2026-11-03) + 24 h
+  const dayEnd = atLocalTime('2026-11-04', '00:00');
+  const gainOf = (l: ReturnType<typeof night>) => xpEventsFrom({ ...empty, sleepLogs: [l] })[0];
+
+  it('Given ночь с sourceId, записанная больше чем через сутки после своего дня When считается опыт Then она помечена imported', () => {
+    const l = night(dayEnd + 24 * 3_600_000 + 1, 'sleepcycle');
+    expect(isImportedNight(l)).toBe(true);
+    expect(gainOf(l)).toEqual({ date: '2026-11-03', skill: 'sleep', amount: XP_RULES.sleep, imported: true });
+  });
+
+  it('Given ночь с sourceId, записанная в тот же или на следующий день When считается опыт Then как у ночи, введённой вручную', () => {
+    for (const at of [dayEnd - 1, dayEnd + 24 * 3_600_000]) {
+      const l = night(at, 'healthconnect');
+      expect(isImportedNight(l)).toBe(false);
+      expect(gainOf(l)).toEqual({ date: '2026-11-03', skill: 'sleep', amount: XP_RULES.sleep });
+    }
+  });
+
+  it('Given ночь, введённая в LifeOS (без sourceId) When считается опыт Then как сейчас, даже если записана поздно', () => {
+    const l = night(dayEnd + 30 * 24 * 3_600_000);
+    expect(isImportedNight(l)).toBe(false);
+    expect(gainOf(l)).toEqual({ date: '2026-11-03', skill: 'sleep', amount: XP_RULES.sleep });
   });
 });

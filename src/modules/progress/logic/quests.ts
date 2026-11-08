@@ -3,7 +3,7 @@ import { shiftDateKey } from '../../../core/dates';
 import { doneDays, isDue } from '../../../core/habitSchedule';
 import { atLocalTime } from '../../../core/logging/sleepTime';
 import type { Habit, HabitLog, MeditationSession, SleepLog, Task, TimeEntry } from '../../../core/types';
-import { MIN_FOCUS_MS, XP_RULES } from './xp';
+import { isImportedNight, MIN_FOCUS_MS, XP_RULES } from './xp';
 
 export const QUEST_BONUS_XP = XP_RULES.quest;
 /** The breathing quest of an event day. */
@@ -70,7 +70,8 @@ function bedtimeDone(targets: DailyTargets, data: QuestData): boolean {
   // a target after midnight («01:00») belongs to the next calendar day
   const limit = atLocalTime(Number(h) < 12 ? shiftDateKey(targets.date, 1) : targets.date, targets.bedtime);
   const log = data.sleepLogs.find((l) => l.date === shiftDateKey(targets.date, 1));
-  return log !== undefined && log.bedtime <= limit;
+  // transferred history never earns the quest retroactively (#236)
+  return log !== undefined && !isImportedNight(log) && log.bedtime <= limit;
 }
 
 function meditationMinutes(targets: DailyTargets, data: QuestData, breathingOnly: boolean): number {

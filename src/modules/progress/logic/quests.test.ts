@@ -103,6 +103,26 @@ describe('квесты дня', () => {
     expect(bedtimeDone(log('00:30', '2026-11-07'))).toBe(false);
   });
 
+  it('Given ночь — перенесённая история When считаются квесты Then квест bedtime за неё не начисляется', () => {
+    const dayEnd = atLocalTime('2026-11-08', '00:00');
+    const log = (createdAt: number, sourceId?: string) =>
+      newRecord(
+        {
+          date: '2026-11-07',
+          bedtime: atLocalTime(DAY, '22:00'),
+          wakeTime: atLocalTime('2026-11-07', '07:00'),
+          quality: 3,
+          ...(sourceId === undefined ? {} : { sourceId }),
+        },
+        createdAt,
+      );
+    const bedtimeDone = (l: ReturnType<typeof log>) =>
+      questsFor(targets(), { ...empty, sleepLogs: [l] }).find((x) => x.id === 'bedtime')?.done;
+    expect(bedtimeDone(log(dayEnd + 25 * 3_600_000, 'sleepcycle'))).toBe(false);
+    expect(bedtimeDone(log(dayEnd + 2 * 3_600_000, 'healthconnect'))).toBe(true);
+    expect(bedtimeDone(log(dayEnd + 25 * 3_600_000))).toBe(true);
+  });
+
   it('Given медитация When завершённые сессии дня набрали минуты Then квест выполнен; прерванные не считаются', () => {
     const d = (sessions: QuestData['meditationSessions']) =>
       questsFor(targets(), { ...empty, meditationSessions: sessions }).find((x) => x.id === 'meditation')?.done;
