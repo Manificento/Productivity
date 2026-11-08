@@ -27,17 +27,19 @@ export function NotesPage() {
   const [dayId, setDayId] = useState('');
   const [error, setError] = useState('');
 
+  const days = useMemo(
+    () => [...new Set((notes ?? []).flatMap((n) => n.linkIds.filter(isDayKey)))].sort().reverse(),
+    [notes],
+  );
+  // A day nobody is linked to any more must not keep filtering invisibly.
+  const activeDay = days.includes(dayId) ? dayId : '';
   const shown = useMemo(
     () =>
       filterNotes(notes ?? [], {
         query,
-        linkIds: [projectId, eventId, dayId].filter(Boolean),
+        linkIds: [projectId, eventId, activeDay].filter(Boolean),
       }),
-    [notes, query, projectId, eventId, dayId],
-  );
-  const days = useMemo(
-    () => [...new Set((notes ?? []).flatMap((n) => n.linkIds.filter(isDayKey)))].sort().reverse(),
-    [notes],
+    [notes, query, projectId, eventId, activeDay],
   );
   // Upcoming events without a page of their own yet get a «подготовка» suggestion.
   const today = useTodayKey();
@@ -163,7 +165,7 @@ export function NotesPage() {
             {days.length > 0 && (
               <Field label="По дню">
                 {(id) => (
-                  <Select id={id} value={dayId} onChange={(e) => setDayId(e.target.value)}>
+                  <Select id={id} value={activeDay} onChange={(e) => setDayId(e.target.value)}>
                     <option value="">Все дни</option>
                     {days.map((d) => (
                       <option key={d} value={d}>

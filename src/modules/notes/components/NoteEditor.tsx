@@ -134,7 +134,7 @@ export function NoteEditor({
       )}
       <fieldset className="mb-3">
         <legend className="mb-1 text-sm font-medium">Привязки</legend>
-        {targets && targets.projects.length + targets.events.length === 0 && (
+        {targets && targets.projects.filter((p) => !p.archived).length + targets.events.length === 0 && (
           <p className="text-sm text-zinc-500">Нет проектов и событий для привязки — можно привязать день.</p>
         )}
         {projectsForPicker(targets?.projects ?? []).map((p) => (

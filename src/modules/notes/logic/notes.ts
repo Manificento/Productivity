@@ -5,9 +5,7 @@ import type { DateKey, LifeEvent, Note, Project } from '../../../core/types';
 
 export interface NoteFilter {
   query?: string;
-  /** Project id, event id or DateKey the note must be linked to. */
-  linkId?: string;
-  /** More ids the note must be linked to as well (all of them, plus `linkId`). */
+  /** Project ids, event ids or DateKeys the note must be linked to (all of them). */
   linkIds?: string[];
 }
 
@@ -16,13 +14,12 @@ export function noteTitle(note: Pick<Note, 'title'>): string {
 }
 
 /** Case-insensitive search in title and body, optional link filter; most recently edited first. */
-export function filterNotes(notes: Note[], { query, linkId, linkIds = [] }: NoteFilter): Note[] {
+export function filterNotes(notes: Note[], { query, linkIds = [] }: NoteFilter): Note[] {
   const q = query?.trim().toLocaleLowerCase('ru') ?? '';
-  const required = linkId ? [linkId, ...linkIds] : linkIds;
   return notes
     .filter(
       (n) =>
-        required.every((id) => n.linkIds.includes(id)) &&
+        linkIds.every((id) => n.linkIds.includes(id)) &&
         (!q || `${n.title}\n${n.body}`.toLocaleLowerCase('ru').includes(q)),
     )
     .sort((x, y) => y.updatedAt - x.updatedAt);
@@ -47,6 +44,7 @@ export function dayTitle(date: DateKey): string {
 /** Day in short Russian form: «7 ноя 2026». */
 export function formatDay(date: DateKey): string {
   const d = fromDateKey(date);
+  // date-fns ru gives «нояб.», «сент.»: drop the dot and keep three letters («ноя», «сен»).
   const month = format(d, 'MMM', { locale: ru }).replace('.', '').slice(0, 3);
   return `${format(d, 'd')} ${month} ${format(d, 'yyyy')}`;
 }

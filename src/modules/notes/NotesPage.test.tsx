@@ -232,4 +232,24 @@ describe('NotesPage', () => {
     expect(done).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'билет' })).toBeDisabled();
   });
+
+  it('Given привязки к дню When открываю фильтр «По дню» Then дни по-русски, выбор фильтрует, а исчезнувший день не фильтрует скрыто', async () => {
+    const user = userEvent.setup();
+    await db.notes.bulkAdd([note('Дневник', ['2026-11-07'], 1), note('Идеи', [], 2)]);
+    renderNotes();
+    const filter = await screen.findByLabelText('По дню');
+    expect(
+      within(filter)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Все дни', '7 ноя 2026']);
+    await user.selectOptions(filter, '2026-11-07');
+    expect(screen.getByText('Дневник')).toBeInTheDocument();
+    expect(screen.queryByText('Идеи')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Дневник/ }));
+    await user.click(await screen.findByRole('button', { name: 'Убрать день 7 ноя 2026' }));
+    await user.click(screen.getByRole('button', { name: 'Готово' }));
+    expect(await screen.findByText('Идеи')).toBeInTheDocument();
+    expect(screen.getByText('Дневник')).toBeInTheDocument();
+  });
 });

@@ -23,8 +23,8 @@ describe('filterNotes', () => {
   });
 
   it('Given заметки со ссылками When фильтрую по проекту или событию Then остаются привязанные; новые сверху', () => {
-    expect(filterNotes([a, b, c], { linkId: 'p1' }).map((n) => n.id)).toEqual(['b', 'a']);
-    expect(filterNotes([a, b, c], { linkId: 'e1' }).map((n) => n.id)).toEqual(['b']);
+    expect(filterNotes([a, b, c], { linkIds: ['p1'] }).map((n) => n.id)).toEqual(['b', 'a']);
+    expect(filterNotes([a, b, c], { linkIds: ['e1'] }).map((n) => n.id)).toEqual(['b']);
     expect(filterNotes([a, b, c], {}).map((n) => n.id)).toEqual(['b', 'c', 'a']);
   });
 });
@@ -44,17 +44,17 @@ describe('toggleLink', () => {
 });
 
 describe('filterNotes — один проход', () => {
-  it('Given 500 заметок When ввожу текст в поиск и фильтр привязки Then список проходится одним filter', () => {
+  it('Given 500 заметок When я ввожу текст в поиск Then filterNotes проходит список один раз', () => {
     const notes = Array.from({ length: 500 }, (_, i) =>
       note({ id: `n${i}`, title: `Заметка ${i}`, linkIds: i % 2 ? ['p1', 'e1'] : ['p1'], updatedAt: i }),
     );
     const spy = vi.spyOn(Array.prototype, 'filter');
-    const result = filterNotes(notes, { query: 'заметка 4', linkId: 'p1', linkIds: ['e1'] });
-    const passes = spy.mock.instances.filter((x) => x === notes).length;
+    const result = filterNotes(notes, { query: 'заметка 4', linkIds: ['p1', 'e1'] });
+    const calls = spy.mock.calls.length;
     spy.mockRestore();
-    expect(passes).toBe(1);
-    expect(result.every((n) => n.linkIds.includes('e1') && n.title.includes('4'))).toBe(true);
+    expect(calls).toBe(1);
     expect(result.length).toBeGreaterThan(0);
+    expect(result.every((n) => n.linkIds.includes('e1') && n.title.includes('4'))).toBe(true);
   });
 });
 
@@ -63,6 +63,21 @@ describe('даты и метки привязок', () => {
     expect(formatDay('2026-11-07')).toBe('7 ноя 2026');
     expect(formatDay('2026-05-01')).toBe('1 мая 2026');
     expect(formatDay('2026-09-30')).toBe('30 сен 2026');
+    const months = Array.from({ length: 12 }, (_, m) => formatDay(`2026-${String(m + 1).padStart(2, '0')}-15`));
+    expect(months.map((x) => x.split(' ')[1])).toEqual([
+      'янв',
+      'фев',
+      'мар',
+      'апр',
+      'мая',
+      'июн',
+      'июл',
+      'авг',
+      'сен',
+      'окт',
+      'ноя',
+      'дек',
+    ]);
   });
 
   it('Given проект в архиве When строю выбор привязки Then он в конце списка с пометкой «в архиве»', () => {

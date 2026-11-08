@@ -58,7 +58,7 @@ function block(b: Block, key: number): ReactNode {
               checked={item.checked}
               disabled
               readOnly
-              aria-label={item.inlines.map((i) => i.text).join('')}
+              aria-label={item.inlines.map((i) => i.text).join('') || 'Пункт списка'}
               className="mr-2"
             />
           )}
