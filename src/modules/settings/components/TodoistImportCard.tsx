@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button, Card, Sheet } from '../../../ui';
-import { importTodoist } from '../data/todoistImport';
+import { countCompletedInApp, importTodoist } from '../data/todoistImport';
 import { NOT_UTF8_ERROR, decodeUtf8, parseTodoistCsv, type TodoistPreview } from '../logic/todoistCsv';
 
 function plural(n: number, one: string, few: string, many: string): string {
@@ -15,6 +15,8 @@ function plural(n: number, one: string, few: string, many: string): string {
 export function TodoistImportCard() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<TodoistPreview>();
+  /** Задач файла, уже выполненных в LifeOS: повторный импорт оставит их выполненными. */
+  const [doneInApp, setDoneInApp] = useState(0);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
@@ -27,6 +29,7 @@ export function TodoistImportCard() {
       if (text === null) return setError(NOT_UTF8_ERROR);
       const r = parseTodoistCsv(text, file.name);
       if (!r.ok) return setError(r.error);
+      setDoneInApp(await countCompletedInApp(r.preview));
       setPreview(r.preview);
     } catch {
       setError('Не удалось прочитать файл. Данные не изменены.');
@@ -87,6 +90,12 @@ export function TodoistImportCard() {
             {preview.durations > 0 && (
               <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
                 Длительности распознаны: {preview.durations}
+              </p>
+            )}
+            {doneInApp > 0 && (
+              <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
+                {doneInApp} {plural(doneInApp, 'уже выполнена', 'уже выполнены', 'уже выполнены')} в LifeOS,{' '}
+                {plural(doneInApp, 'останется выполненной', 'останутся выполненными', 'останутся выполненными')}
               </p>
             )}
             {preview.unrecognizedDates > 0 && (

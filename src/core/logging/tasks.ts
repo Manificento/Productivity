@@ -86,18 +86,13 @@ export interface ImportTasksResult {
 
 type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
 
-/** Fields the import owns: re-import rewrites exactly these and keeps the rest (e.g. `recurrence`). */
-const IMPORT_OWNED = [
-  'title',
-  'notes',
-  'projectId',
-  'priority',
-  'dueDate',
-  'dueTime',
-  'estimateMin',
-  'completedAt',
-  'tags',
-] as const;
+/**
+ * Fields the import owns: re-import rewrites exactly these and keeps the rest (e.g. `recurrence`).
+ * `completedAt` is NOT owned (#194): a Todoist export has no completed tasks, so a row without
+ * `completedAt` says nothing about completion — a task done in LifeOS stays done. A row that does
+ * carry `completedAt` still sets it. A completed task still receives the owned fields above (title, due …).
+ */
+const IMPORT_OWNED = ['title', 'notes', 'projectId', 'priority', 'dueDate', 'dueTime', 'estimateMin', 'tags'] as const;
 
 /** First zod issue as «Задача 3: сообщение (поле)» — the row number helps to fix the source file. */
 function rowError(kind: 'Проект' | 'Задача', row: number, error: z.ZodError): Error {
