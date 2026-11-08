@@ -52,6 +52,23 @@ describe('Todoist import card', () => {
     expect(await db.projects.count()).toBe(1);
   });
 
+  it('Given tasks of the file already completed in LifeOS When I upload it again Then the preview says «N уже выполнены в LifeOS, останутся выполненными» and they stay completed', async () => {
+    render(<TodoistImportCard />);
+    upload(new Uint8Array(SAMPLE));
+    fireEvent.click(await screen.findByRole('button', { name: 'Импортировать' }));
+    await waitFor(async () => expect(await db.tasks.count()).toBe(4));
+    await screen.findByRole('status');
+    expect(screen.queryByText(/уже выполнен/)).toBeNull();
+    const done = (await db.tasks.toArray()).slice(0, 2).map((t) => t.id);
+    await Promise.all(done.map((id) => db.tasks.update(id, { completedAt: 1 })));
+
+    upload(new Uint8Array(SAMPLE));
+    expect(await screen.findByText('2 уже выполнены в LifeOS, останутся выполненными')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Импортировать' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await db.tasks.bulkGet(done)).map((t) => t?.completedAt)).toEqual([1, 1]);
+  });
+
   it('Given a wrong format or non-UTF-8 file When I upload it Then a clear error is shown and data is unchanged', async () => {
     await db.tasks.put({ id: 'mine', createdAt: 0, updatedAt: 0, title: 'Моя', priority: 4, tags: [] });
     render(<TodoistImportCard />);
