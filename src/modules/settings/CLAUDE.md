@@ -4,7 +4,7 @@
 
 - **Пишет в таблицы:** `settings` (кроме ключей `adaptation.*`, `time.*` и `nutrition.*` — они принадлежат модулям today, time и nutrition); импорт заменяет все таблицы через `core/backup`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
 - **Суть модуля:** настройки, резервная копия, тема, демо-данные, установка PWA, импорт истории (#43).
-- **Импорт истории (Todoist CSV — `logic/todoistCsv.ts`, `components/TodoistImportCard`; длительность из CSV пока не сохраняется: `importTasks` не принимает `estimateMin`):** задачи и проекты из Todoist — ТОЛЬКО через `importTasks({ projects, tasks }, { source: 'todoist' })` из
+- **Импорт истории (Todoist CSV — `logic/todoistCsv.ts`, `components/TodoistImportCard`; длительность из CSV (`DURATION`) уходит в `estimateMin`, если это целое 1–1440 минут):** задачи и проекты из Todoist — ТОЛЬКО через `importTasks({ projects, tasks }, { source: 'todoist' })` из
   `src/core/logging/tasks.ts` (парсер CSV — чистая функция в `logic/`, выдаёт `ImportTask[]` с `row` для сообщений об ошибках);
   ночи из Sleep Cycle — через `saveSleep()`. В `tasks` и `projects` напрямую не писать.
 - **Демо-данные:** `logic/demo.ts` (чистая сборка 14 дней всех блоков + IELTS через 5 дней) → `data/demo.ts` загружает их через `importAll`, сохраняя строки `settings` пользователя. Таблицы каркасов SPEC 0.3 (`weightLogs`, `programs`, …) демо пока не заполняет — они очищаются; наполнять их — отдельные issues этой дорожки по мере роста блоков.

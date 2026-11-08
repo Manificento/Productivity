@@ -15,7 +15,7 @@ export interface TodoistPreview {
   tasks: ImportTask[];
   /** Длительность каждой задачи в минутах (как в `tasks`), undefined — не указана. */
   durationsMin: (number | undefined)[];
-  /** Задач с распознанной длительностью (30 мин, 2 ч …). */
+  /** Задач, чья длительность (30 мин, 2 ч …) станет оценкой `estimateMin`. */
   durations: number;
   /** Задач, у которых DATE написан словами и срок не перенесён. */
   unrecognizedDates: number;
@@ -187,7 +187,10 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
     }
 
     const priority = Number(cell(r, idx.priority));
-    durationsMin.push(durationMinutes(cell(r, idx.duration), cell(r, idx.unit)));
+    const minutes = durationMinutes(cell(r, idx.duration), cell(r, idx.unit));
+    durationsMin.push(minutes);
+    const rounded = minutes === undefined ? undefined : Math.round(minutes);
+    const estimateMin = rounded !== undefined && rounded >= 1 && rounded <= 1440 ? rounded : undefined;
     const occurrence = (seen.get(content) ?? 0) + 1;
     seen.set(content, occurrence);
 
@@ -199,6 +202,8 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
       ...(notes.length > 0 && { notes: notes.join('\n') }),
       ...([1, 2, 3, 4].includes(priority) && { priority: priority as 1 | 2 | 3 | 4 }),
       ...(due ?? {}),
+      // Контракт `importTasks`: целое 1–1440 — минуты округляем, длительность дольше суток не переносим.
+      ...(estimateMin !== undefined && { estimateMin }),
       ...(section && { tags: [section] }),
     };
     tasks.push(task);
@@ -211,7 +216,7 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
       project: { name: projectName },
       tasks,
       durationsMin,
-      durations: durationsMin.filter((m) => m !== undefined).length,
+      durations: tasks.filter((t) => t.estimateMin !== undefined).length,
       unrecognizedDates,
     },
   };

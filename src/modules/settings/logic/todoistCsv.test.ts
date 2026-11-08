@@ -21,6 +21,24 @@ describe('Todoist CSV: parser', () => {
     expect(p.durationsMin).toEqual([30, undefined, 120, undefined]);
   });
 
+  it('Given DURATION in minutes When the import runs Then they go to estimateMin, rounded to whole minutes; a duration over a day is not passed and not counted', () => {
+    expect(preview(SAMPLE).tasks.map((t) => t.estimateMin)).toEqual([30, undefined, 120, undefined]);
+    const p = preview(
+      [
+        HEADER,
+        'task,Час,,4,1,,,,,,1,hour,,',
+        'task,Сутки,,4,1,,,,,,1,day,,',
+        'task,Двое суток,,4,1,,,,,,2,day,,',
+        'task,Двадцать с половиной минут,,4,1,,,,,,20.5,minute,,',
+        'task,Полтора часа,,4,1,,,,,,1.5,hour,,',
+        'task,Четверть минуты,,4,1,,,,,,0.25,minute,,',
+      ].join('\n'),
+    );
+    expect(p.tasks.map((t) => t.estimateMin)).toEqual([60, 1440, undefined, 21, 90, undefined]);
+    // The preview promises only the estimates that will be saved.
+    expect(p.durations).toBe(4);
+  });
+
   it('Given note, section, INDENT>=2, meta and empty rows Then note joins the task above, section becomes a tag, nested is a separate task, meta and empty are skipped', () => {
     const p = preview(
       `${HEADER}\nmeta,view_style=list,,,,,,,,,,,,\n,,,,,,,,,,,,,\nsection,Дом,,,,,,,,,,,,\ntask,Уборка,,4,1,,,,,,,,,\nnote,Пылесос внизу,,,,,,,,,,,,\ntask,Окна,,4,2,,,,,,,,,\n`,

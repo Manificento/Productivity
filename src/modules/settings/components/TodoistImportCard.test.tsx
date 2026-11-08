@@ -31,6 +31,15 @@ describe('Todoist import card', () => {
     expect(await db.projects.count()).toBe(1);
   });
 
+  it('Given durations in the CSV When I confirm the import Then they are saved as the tasks’ estimateMin', async () => {
+    render(<TodoistImportCard />);
+    upload(new Uint8Array(SAMPLE));
+    fireEvent.click(await screen.findByRole('button', { name: 'Импортировать' }));
+    await waitFor(async () => expect(await db.tasks.count()).toBe(4));
+    const estimates = (await db.tasks.toArray()).map((t) => t.estimateMin).filter((m) => m !== undefined);
+    expect(estimates.sort((a, b) => a - b)).toEqual([30, 120]);
+  });
+
   it('Given the same file twice When I confirm Then there are no duplicates', async () => {
     render(<TodoistImportCard />);
     for (let i = 0; i < 2; i++) {

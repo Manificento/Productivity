@@ -92,10 +92,10 @@ describe('importTasks — the one write path for imported tasks and projects (AD
       id,
       title: 'Отчёт v2',
       recurrence: { kind: 'weekly', weekdays: [1] },
-      estimateMin: 30,
     });
-    // A field the import owns and the file no longer has is cleared.
+    // Fields the import owns (estimateMin too, #193) that the file no longer has are cleared.
     expect(task.dueDate).toBeUndefined();
+    expect(task.estimateMin).toBeUndefined();
   });
 
   it('when several tasks share source + externalId (a repeat copy made in the app), the open one is updated and nothing is duplicated', async () => {
@@ -223,6 +223,45 @@ describe('importTasks — the one write path for imported tasks and projects (AD
     await expect(bad({ dueTime: '09:05' })).rejects.toThrow(/Задача 1: .*дат/i);
     await expect(bad({ dueAt: NOW, dueDate: '2026-11-10' })).rejects.toThrow(/Задача 1: .*либо/i);
     expect(await db.tasks.count()).toBe(0);
+  });
+
+  it('Given импорт задачи с estimateMin When вызывается importTasks() Then Task.estimateMin записан; повторный импорт обновляет его', async () => {
+    await importTasks({ projects: [], tasks: [{ title: 'Отчёт', externalId: '7', estimateMin: 30 }] }, TODOIST, NOW);
+    expect((await db.tasks.toArray())[0].estimateMin).toBe(30);
+
+    await importTasks(
+      { projects: [], tasks: [{ title: 'Отчёт', externalId: '7', estimateMin: 90 }] },
+      TODOIST,
+      NOW + 1,
+    );
+    expect((await db.tasks.toArray()).map((t) => t.estimateMin)).toEqual([90]);
+
+    // estimateMin is import-owned: a re-import without a duration clears the old one.
+    await importTasks({ projects: [], tasks: [{ title: 'Отчёт', externalId: '7' }] }, TODOIST, NOW + 2);
+    const [task] = await db.tasks.toArray();
+    expect(task.estimateMin).toBeUndefined();
+    expect('estimateMin' in task).toBe(false);
+  });
+
+  it('Given estimateMin не целое или вне 1–1440 When вызывается importTasks() Then отказ с номером строки, ничего не записано', async () => {
+    const bad = (estimateMin: unknown) =>
+      importTasks({ projects: [], tasks: [{ title: 'x', estimateMin } as never] }, TODOIST, NOW);
+    for (const value of [0, -5, 1441, 2.5, '30', Number.NaN]) {
+      await expect(bad(value)).rejects.toThrow(/Задача 1: Оценка времени.*\(estimateMin\)/);
+    }
+    expect(await db.tasks.count()).toBe(0);
+    await importTasks(
+      {
+        projects: [],
+        tasks: [
+          { title: 'Мин', estimateMin: 1 },
+          { title: 'Макс', estimateMin: 1440 },
+        ],
+      },
+      TODOIST,
+      NOW,
+    );
+    expect((await db.tasks.toArray()).map((t) => t.estimateMin).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([1, 1440]);
   });
 
   it('every validation message is in Russian and names the field', async () => {
