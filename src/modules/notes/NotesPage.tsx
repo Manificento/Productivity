@@ -5,7 +5,15 @@ import { db } from '../../core/db';
 import { useTodayKey } from '../../core/dates';
 import { addNote, createPrepNote, deleteNote, openDayNote, useLinkTargets, useNotes } from './data/notes';
 import type { LifeEvent } from '../../core/types';
-import { filterNotes, noteTitle } from './logic/notes';
+import {
+  filterNotes,
+  formatDay,
+  isDayKey,
+  linkLabels,
+  noteTitle,
+  projectLabel,
+  projectsForPicker,
+} from './logic/notes';
 import { prepTitle } from './logic/template';
 
 /** `/notes` — markdown notes linked to projects, events and days, with search and link filters. */
@@ -16,14 +24,20 @@ export function NotesPage() {
   const [query, setQuery] = useState('');
   const [projectId, setProjectId] = useState('');
   const [eventId, setEventId] = useState('');
+  const [dayId, setDayId] = useState('');
   const [error, setError] = useState('');
 
   const shown = useMemo(
     () =>
-      filterNotes(filterNotes(notes ?? [], { query, linkId: projectId || undefined }), {
-        linkId: eventId || undefined,
+      filterNotes(notes ?? [], {
+        query,
+        linkIds: [projectId, eventId, dayId].filter(Boolean),
       }),
-    [notes, query, projectId, eventId],
+    [notes, query, projectId, eventId, dayId],
+  );
+  const days = useMemo(
+    () => [...new Set((notes ?? []).flatMap((n) => n.linkIds.filter(isDayKey)))].sort().reverse(),
+    [notes],
   );
   // Upcoming events without a page of their own yet get a «подготовка» suggestion.
   const today = useTodayKey();
@@ -126,9 +140,9 @@ export function NotesPage() {
               {(id) => (
                 <Select id={id} value={projectId} onChange={(e) => setProjectId(e.target.value)}>
                   <option value="">Все проекты</option>
-                  {targets?.projects.map((p) => (
+                  {projectsForPicker(targets?.projects ?? []).map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {projectLabel(p)}
                     </option>
                   ))}
                 </Select>
@@ -146,6 +160,20 @@ export function NotesPage() {
                 </Select>
               )}
             </Field>
+            {days.length > 0 && (
+              <Field label="По дню">
+                {(id) => (
+                  <Select id={id} value={dayId} onChange={(e) => setDayId(e.target.value)}>
+                    <option value="">Все дни</option>
+                    {days.map((d) => (
+                      <option key={d} value={d}>
+                        {formatDay(d)}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            )}
           </Card>
           <Card>
             {shown.length === 0 ? (
@@ -163,6 +191,11 @@ export function NotesPage() {
                       <span className="block truncate text-xs font-normal text-zinc-500 dark:text-zinc-400">
                         {n.body.slice(0, 80)}
                       </span>
+                      {n.linkIds.length > 0 && targets && (
+                        <span className="block truncate text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                          {linkLabels(n.linkIds, targets).join(' · ')}
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}

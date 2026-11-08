@@ -30,12 +30,12 @@ export function useNotes(): Note[] | undefined {
   return useLiveQuery(() => db.notes.toArray(), []);
 }
 
-/** Projects and events a note can be linked to (read-only). */
+/** Projects (archived ones included, marked by the UI) and events a note can be linked to (read-only). */
 export function useLinkTargets(): { projects: Project[]; events: LifeEvent[] } | undefined {
   return useLiveQuery(async () => {
     const [projects, events] = await Promise.all([db.projects.toArray(), db.lifeEvents.toArray()]);
     return {
-      projects: projects.filter((p) => !p.archived),
+      projects,
       events: events.sort((a, b) => a.date.localeCompare(b.date)),
     };
   }, []);

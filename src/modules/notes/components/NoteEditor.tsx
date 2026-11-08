@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Card, Field, Input, Sheet, Textarea } from '../../../ui';
 import type { Note } from '../../../core/types';
-import { noteTitle, relatedNotes, toggleLink } from '../logic/notes';
+import {
+  formatDay,
+  isDayKey,
+  noteTitle,
+  projectLabel,
+  projectsForPicker,
+  relatedNotes,
+  toggleLink,
+} from '../logic/notes';
 import { deleteNote, saveNote, useLinkTargets, useNotes } from '../data/notes';
 import { Markdown } from './Markdown';
 
@@ -78,7 +86,7 @@ export function NoteEditor({
     void flush();
   };
   const related = relatedNotes(allNotes ?? [], { id: note.id, linkIds });
-  const dayKeys = linkIds.filter((id) => /^\d{4}-\d{2}-\d{2}$/.test(id));
+  const dayKeys = linkIds.filter(isDayKey);
 
   return (
     <Card>
@@ -113,6 +121,7 @@ export function NoteEditor({
             <Textarea
               id={id}
               rows={10}
+              className="[overflow-wrap:anywhere]"
               value={body}
               onChange={(e) => {
                 setBody(e.target.value);
@@ -128,10 +137,10 @@ export function NoteEditor({
         {targets && targets.projects.length + targets.events.length === 0 && (
           <p className="text-sm text-zinc-500">Нет проектов и событий для привязки — можно привязать день.</p>
         )}
-        {targets?.projects.map((p) => (
+        {projectsForPicker(targets?.projects ?? []).map((p) => (
           <LinkBox
             key={p.id}
-            label={`Проект: ${p.name}`}
+            label={`Проект: ${projectLabel(p)}`}
             checked={linkIds.includes(p.id)}
             onChange={() => setLinks(toggleLink(linkIds, p.id))}
           />
@@ -149,10 +158,10 @@ export function NoteEditor({
             <Button
               key={d}
               variant="secondary"
-              aria-label={`Убрать день ${d}`}
+              aria-label={`Убрать день ${formatDay(d)}`}
               onClick={() => setLinks(toggleLink(linkIds, d))}
             >
-              День {d} ✕
+              День {formatDay(d)} ✕
             </Button>
           ))}
         </div>

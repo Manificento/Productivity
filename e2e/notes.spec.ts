@@ -30,3 +30,18 @@ test('Given сегодняшний день When я нажимаю «Сегод�
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('Given длинная строка без пробелов When я пишу её в заметку на 360 px Then горизонтальной прокрутки нет', async ({
+  page,
+}) => {
+  await skipOnboarding(page);
+  await page.goto('/#/notes');
+  await page.getByRole('button', { name: 'Новая заметка' }).click();
+  await page.getByLabel('Название').fill('Длинное');
+  await page.getByLabel('Текст заметки').fill('x'.repeat(300));
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await page.getByRole('button', { name: 'Предпросмотр' }).click();
+  const previewOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(previewOverflow).toBeLessThanOrEqual(0);
+});
