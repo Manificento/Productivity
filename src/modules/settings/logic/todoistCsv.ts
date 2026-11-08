@@ -187,7 +187,8 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
     }
 
     const priority = Number(cell(r, idx.priority));
-    durationsMin.push(durationMinutes(cell(r, idx.duration), cell(r, idx.unit)));
+    const minutes = durationMinutes(cell(r, idx.duration), cell(r, idx.unit));
+    durationsMin.push(minutes);
     const occurrence = (seen.get(content) ?? 0) + 1;
     seen.set(content, occurrence);
 
@@ -199,6 +200,8 @@ export function parseTodoistCsv(text: string, fileName?: string): TodoistParseRe
       ...(notes.length > 0 && { notes: notes.join('\n') }),
       ...([1, 2, 3, 4].includes(priority) && { priority: priority as 1 | 2 | 3 | 4 }),
       ...(due ?? {}),
+      // Контракт `importTasks`: целое 1–1440 — длительность дольше суток или дробь минуты не переносим.
+      ...(minutes !== undefined && Number.isInteger(minutes) && minutes <= 1440 && { estimateMin: minutes }),
       ...(section && { tags: [section] }),
     };
     tasks.push(task);
