@@ -14,7 +14,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: infra-${{ github.ref }}
+  # A push to main must not cancel the weekly restore drill.
+  group: infra-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

@@ -14,6 +14,8 @@ threshold=${DISK_ALERT_PERCENT:-85}
 state_file=${HEALTH_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/lifeos/health-$REGION}
 
 problems=()
+# Facts that change from run to run (disk percent) go into the message but not into the state compared between runs.
+details=()
 
 # Every service of the default profile must be running and not unhealthy.
 declare -A seen=()
@@ -38,28 +40,11 @@ fi
 for path in ${DISK_PATHS:-/}; do
   [[ -e $path ]] || continue
   used=$(df -P "$path" | awk 'NR == 2 { sub("%", "", $5); print $5 }')
-  ((used >= threshold)) && problems+=("диск $path заполнен на $used% (порог $threshold%)")
-done
-
-json_escape() {
-  local s=$1
-  s=${s//\\/\\\\}
-  s=${s//\"/\\\"}
-  s=${s//$'\n'/\\n}
-  s=${s//$'\t'/\\t}
-  printf '%s' "$s"
-}
-
-notify() {
-  local text=$1
-  log "$text"
-  if [[ -z ${ALERT_WEBHOOK_URL:-} ]]; then
-    log "ALERT_WEBHOOK_URL не задан — уведомление не отправлено"
-    return 1
+  if ((used >= threshold)); then
+    problems+=("диск $path заполнен выше порога $threshold%")
+    details+=("диск $path: занято $used%")
   fi
-  curl -fsS -m 15 -X POST -H 'Content-Type: application/json' \
-    --data "{\"text\": \"$(json_escape "$text")\"}" "$ALERT_WEBHOOK_URL" > /dev/null
-}
+done
 
 current=''
 ((${#problems[@]} > 0)) && current=$(printf '%s\n' "${problems[@]}")
@@ -68,7 +53,7 @@ host=$(hostname)
 
 if [[ $current != "$previous" ]]; then
   if [[ -n $current ]]; then
-    message="🔴 LifeOS [$REGION] $host: проблемы со стеком"$'\n'"$(printf -- '- %s\n' "${problems[@]}")"
+    message="🔴 LifeOS [$REGION] $host: проблемы со стеком"$'\n'"$(printf -- '- %s\n' "${problems[@]}" "${details[@]}")"
   else
     message="🟢 LifeOS [$REGION] $host: стек снова в порядке"
   fi

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { backendFor, DEFAULT_REGION, isRegion, REGIONS } from './config';
 
 const TWO_REGIONS = {
@@ -32,8 +32,16 @@ describe('backendFor', () => {
     expect(backendFor('', TWO_REGIONS)).toBeNull();
   });
 
-  it('reads the build environment by default and has nothing configured in tests', () => {
-    expect(backendFor('kz')).toBeNull();
+  it('reads the build environment by default', () => {
+    vi.stubEnv('VITE_SUPABASE_URL_KZ', 'https://api.kz.example');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY_KZ', 'anon-kz');
+    vi.stubEnv('VITE_SUPABASE_URL_EU', '');
+    try {
+      expect(backendFor('kz')).toEqual({ region: 'kz', url: 'https://api.kz.example', anonKey: 'anon-kz' });
+      expect(backendFor('eu')).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

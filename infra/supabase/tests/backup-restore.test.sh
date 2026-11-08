@@ -61,22 +61,45 @@ echo old > "$WORK/old.sql.gz"
 for day in $(seq -w 1 15); do
   s3 "$WORK" s3 cp --only-show-errors /work/old.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-202601${day}T030000Z.sql.gz"
 done
+today=$(date -u +%Y%m%d)
 check 'backup.sh завершается успешно' "$INFRA_DIR/backup.sh"
 mapfile -t kept < <(list_backups "$WORK")
 newest=${kept[-1]:-}
 check 'в бакете 14 копий' test "${#kept[@]}" == 14
-check 'самая новая — только что сделанная (сегодняшняя дата)' bash -c "[[ '$newest' == lifeos-kz-$(date -u +%Y%m%d)T* ]]"
+check 'самая новая — только что сделанная (сегодняшняя дата)' bash -c "[[ '$newest' == lifeos-kz-$today* || '$newest' == lifeos-kz-$(date -u +%Y%m%d)* ]]"
 check 'две самые старые удалены' bash -c "[[ '${kept[0]}' == lifeos-kz-20260103T030000Z.sql.gz ]]"
 s3 "$WORK" s3 cp --only-show-errors "s3://$S3_BUCKET/lifeos/kz/$newest" "/work/$newest"
 check 'копия — gzip' gzip -t "$WORK/$newest"
 check 'внутри — pg_dump с данными auth и public' \
   bash -c "gunzip -c '$WORK/$newest' | grep -q 'COPY auth.users' && gunzip -c '$WORK/$newest' | grep -q 'COPY public.synthetic_notes'"
 
+section 'backup.sh не смог сделать копию → уведомление в webhook (заглушка)'
+hooks="$WORK/hooks.log"
+: > "$hooks"
+python3 -I "$TESTS_DIR/webhook-stub.py" 9199 "$hooks" &
+cleanups+=("kill $!")
+sleep 1
+check 'копия в несуществующий бакет: код не 0' \
+  bash -c "! ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert S3_BUCKET=no-such-bucket '$INFRA_DIR/backup.sh' 2> /dev/null"
+check '…уведомление «резервная копия не создана» отправлено' grep -q 'резервная копия не создана' "$hooks"
+
 section 'restore.sh последней копии на пустом стеке восстанавливает синтетические данные'
-check 'restore.sh отказывается писать поверх данных' bash -c "! '$INFRA_DIR/restore.sh' 2> /dev/null"
+"$INFRA_DIR/restore.sh" > /dev/null 2> "$WORK/refused.log"
+refused=$?
+check 'restore.sh отказывается писать поверх данных' \
+  bash -c "(( $refused != 0 )) && grep -q 'стек не пустой' '$WORK/refused.log'"
+check '…и не трогает работающий стек: API отвечает' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
+check '…заметки на месте' test "$(notes "$token")" == 'первая,вторая,третья'
 compose down -v > /dev/null 2>&1
 SKIP_PULL=1 "$INFRA_DIR/deploy.sh" > /dev/null 2>&1
 check 'новый стек пуст: пользователь не входит' test -z "$(login)"
+# A broken copy (valid name, not SQL) must fail without leaving the stack half-restored or stopped.
+printf 'this is not a database dump;\n' | gzip > "$WORK/broken.sql.gz"
+s3 "$WORK" s3 cp --only-show-errors /work/broken.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20000101T000000Z.sql.gz"
+check 'битая копия: restore.sh завершается с ошибкой' \
+  bash -c "! '$INFRA_DIR/restore.sh' lifeos-kz-20000101T000000Z.sql.gz 2> /dev/null"
+check '…API снова отвечает' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
+check '…база осталась пустой' test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select count(*) from auth.users')" == 0
 check 'restore.sh завершается успешно' "$INFRA_DIR/restore.sh"
 token=$(login)
 check 'пользователь снова входит со старым паролем' test -n "$token"

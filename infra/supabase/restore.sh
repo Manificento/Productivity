@@ -43,6 +43,7 @@ if ! {
   gunzip -c "$work/$name"
 } | psql_admin -q --single-transaction -f - > /dev/null; then
   compose up -d --wait --wait-timeout "${DEPLOY_TIMEOUT:-300}" || true
+  wait_for_api || true
   die "копия $name не загрузилась — транзакция отменена, база осталась пустой, API снова запущен"
 fi
 compose up -d --wait --wait-timeout "${DEPLOY_TIMEOUT:-300}"

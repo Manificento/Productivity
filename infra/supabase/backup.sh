@@ -14,7 +14,15 @@ keep=${BACKUP_KEEP:-14}
 [[ $keep =~ ^[1-9][0-9]*$ ]] || die "BACKUP_KEEP должен быть положительным числом, а не «$keep»"
 
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# A failed nightly backup must not go unnoticed: any error alerts the webhook (if set) before the script exits.
+on_exit() {
+  local code=$?
+  rm -rf "$work"
+  if ((code != 0)); then
+    notify "🔴 LifeOS [$REGION] $(hostname): резервная копия не создана (код $code), см. журнал backup.sh" || true
+  fi
+}
+trap on_exit EXIT
 name="lifeos-$REGION-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
 target="s3://$S3_BUCKET/$(backup_prefix)"
 

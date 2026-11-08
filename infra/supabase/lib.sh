@@ -85,9 +85,37 @@ s3() {
     "$AWS_CLI_IMAGE" --endpoint-url "$S3_ENDPOINT" "$@"
 }
 
+# Alerts: POST {"text": "…"} to ALERT_WEBHOOK_URL (Slack/Mattermost webhook, Telegram sendMessage…).
+json_escape() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+
+# notify <text>: logs the text and sends it; fails when the webhook is not set or does not accept it.
+notify() {
+  local text=$1
+  log "$text"
+  if [[ -z ${ALERT_WEBHOOK_URL:-} ]]; then
+    log "ALERT_WEBHOOK_URL не задан — уведомление не отправлено"
+    return 1
+  fi
+  curl -fsS -m 15 -X POST -H 'Content-Type: application/json' \
+    --data "{\"text\": \"$(json_escape "$text")\"}" "$ALERT_WEBHOOK_URL" > /dev/null
+}
+
 # Names of this region's backups in the bucket, oldest first (the timestamp in the name sorts chronologically).
+# An S3 error (credentials, network) fails the call; only an empty prefix gives an empty list.
 list_backups() {
-  s3 "$1" s3 ls "s3://$S3_BUCKET/$(backup_prefix)/" | awk '{print $4}' | grep -E "$(backup_pattern)" | sort || true
+  local listing
+  listing=$(s3 "$1" s3 ls "s3://$S3_BUCKET/$(backup_prefix)/") || {
+    # `aws s3 ls` exits 1 for a prefix with no objects; any other failure is real.
+    [[ $? == 1 && -z $listing ]] || die "не удалось получить список копий в s3://$S3_BUCKET/$(backup_prefix)/"
+  }
+  awk '{print $4}' <<< "$listing" | { grep -E "$(backup_pattern)" || true; } | sort
 }
 
 # Prints the names to delete so that only the newest <keep> remain; reads names (any order) from stdin.
