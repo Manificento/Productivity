@@ -69,7 +69,19 @@ wait_for_api() {
 # Backups of a region live under s3://$S3_BUCKET/$S3_PREFIX/ (default prefix lifeos/<region>) — the bucket must be
 # in the region's own jurisdiction (ADR-0009).
 backup_prefix() { echo "${S3_PREFIX:-lifeos/$REGION}"; }
-backup_pattern() { echo "^lifeos-$REGION-[0-9]{8}T[0-9]{6}Z\\.sql\\.gz\$"; }
+backup_pattern() { echo "^lifeos-$REGION-[0-9]{8}T[0-9]{6}Z\\.sql\\.gz\\.enc\$"; }
+
+# Copies are encrypted before they leave the server (#265): AES-256 with a key derived by PBKDF2 from
+# BACKUP_ENCRYPTION_KEY (random, from gen-env.sh). Without the key no copy can be read, so it is kept in the password
+# manager apart from the bucket keys — a leak of the bucket alone discloses nothing.
+BACKUP_CIPHER=(-aes-256-cbc -pbkdf2 -iter 200000 -md sha256)
+require_backup_key() {
+  require BACKUP_ENCRYPTION_KEY
+  ((${#BACKUP_ENCRYPTION_KEY} >= 32)) || die "BACKUP_ENCRYPTION_KEY короче 32 символов — создайте новый: openssl rand -hex 32"
+}
+# stdin → stdout; the key is read from the environment, never from the command line (visible in `ps`).
+encrypt_backup() { openssl enc -e "${BACKUP_CIPHER[@]}" -salt -pass env:BACKUP_ENCRYPTION_KEY; }
+decrypt_backup() { openssl enc -d "${BACKUP_CIPHER[@]}" -pass env:BACKUP_ENCRYPTION_KEY; }
 
 require_s3() { require S3_ENDPOINT S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; }
 

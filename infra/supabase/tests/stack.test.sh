@@ -14,11 +14,12 @@ check 'в стеке только db, auth, rest, kong (+ meta и studio по п
   test "$services" == 'auth db kong meta rest studio '
 check 'нет образов Realtime, Storage, imgproxy, Edge Runtime' \
   bash -c "! grep -qE 'realtime|storage-api|imgproxy|edge-runtime' <<< '$images'"
-secret_lines=$(grep -E '^(POSTGRES_PASSWORD|JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY|PG_META_CRYPTO_KEY|SMTP_PASS|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|ALERT_WEBHOOK_URL)=' "$INFRA_DIR/env.example")
-check 'в env.example все 9 секретов перечислены и пустые' \
-  bash -c "[[ \$(wc -l <<< '$secret_lines') == 9 ]] && ! grep -qvE '=$' <<< '$secret_lines'"
+secret_lines=$(grep -E '^(POSTGRES_PASSWORD|JWT_SECRET|ANON_KEY|SERVICE_ROLE_KEY|PG_META_CRYPTO_KEY|SMTP_PASS|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|ALERT_WEBHOOK_URL|BACKUP_ENCRYPTION_KEY)=' "$INFRA_DIR/env.example")
+check 'в env.example все 10 секретов перечислены и пустые' \
+  bash -c "[[ \$(wc -l <<< '$secret_lines') == 10 ]] && ! grep -qvE '=$' <<< '$secret_lines'"
 check 'README с шагами разворота на VPS в РК' grep -q 'Разворот на VPS в Казахстане' "$INFRA_DIR/README.md"
 check 'gen-env.sh заполняет секреты' grep -qE '^JWT_SECRET=[0-9a-f]{64}$' "$ENV_FILE"
+check 'gen-env.sh создаёт ключ шифрования копий' grep -qE '^BACKUP_ENCRYPTION_KEY=[0-9a-f]{64}$' "$ENV_FILE"
 
 section 'deploy.sh против локального Docker: стек поднимается, health и REST отвечают, Postgres только внутри сети Docker'
 check 'deploy.sh завершается успешно' "$INFRA_DIR/deploy.sh"

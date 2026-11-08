@@ -55,11 +55,11 @@ for body in первая вторая третья; do
 done
 check 'синтетический пользователь видит свои 3 заметки' test "$(notes "$token")" == 'первая,вторая,третья'
 
-section 'backup.sh: pg_dump сжат и загружен в S3 (MinIO), хранятся 14 последних копий'
+section 'backup.sh: pg_dump сжат, зашифрован и загружен в S3 (MinIO), хранятся 14 последних копий'
 # 15 older copies already in the bucket: after one more backup the two oldest must go.
-echo old > "$WORK/old.sql.gz"
+echo old > "$WORK/old.sql.gz.enc"
 for day in $(seq -w 1 15); do
-  s3 "$WORK" s3 cp --only-show-errors /work/old.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-202601${day}T030000Z.sql.gz"
+  s3 "$WORK" s3 cp --only-show-errors /work/old.sql.gz.enc "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-202601${day}T030000Z.sql.gz.enc"
 done
 today=$(date -u +%Y%m%d)
 check 'backup.sh завершается успешно' "$INFRA_DIR/backup.sh"
@@ -67,11 +67,17 @@ mapfile -t kept < <(list_backups "$WORK")
 newest=${kept[-1]:-}
 check 'в бакете 14 копий' test "${#kept[@]}" == 14
 check 'самая новая — только что сделанная (сегодняшняя дата)' bash -c "[[ '$newest' == lifeos-kz-$today* || '$newest' == lifeos-kz-$(date -u +%Y%m%d)* ]]"
-check 'две самые старые удалены' bash -c "[[ '${kept[0]}' == lifeos-kz-20260103T030000Z.sql.gz ]]"
+check 'две самые старые удалены' bash -c "[[ '${kept[0]}' == lifeos-kz-20260103T030000Z.sql.gz.enc ]]"
 s3 "$WORK" s3 cp --only-show-errors "s3://$S3_BUCKET/lifeos/kz/$newest" "/work/$newest"
-check 'копия — gzip' gzip -t "$WORK/$newest"
+decrypt() { BACKUP_ENCRYPTION_KEY=$1 decrypt_backup < "$WORK/$newest"; }
+check 'в бакете только зашифрованный файл: это не gzip и не SQL' \
+  bash -c "! gzip -t '$WORK/$newest' 2> /dev/null && ! grep -qa 'COPY auth.users' '$WORK/$newest'"
+check 'без ключа (с чужим ключом) копию не распаковать' \
+  bash -c "! (BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32); . '$INFRA_DIR/lib.sh'; decrypt_backup < '$WORK/$newest' | gunzip -t) 2> /dev/null"
+decrypt "$BACKUP_ENCRYPTION_KEY" > "$WORK/plain.sql.gz"
+check 'с ключом — gzip' gzip -t "$WORK/plain.sql.gz"
 check 'внутри — pg_dump с данными auth и public' \
-  bash -c "gunzip -c '$WORK/$newest' | grep -q 'COPY auth.users' && gunzip -c '$WORK/$newest' | grep -q 'COPY public.synthetic_notes'"
+  bash -c "gunzip -c '$WORK/plain.sql.gz' | grep -q 'COPY auth.users' && gunzip -c '$WORK/plain.sql.gz' | grep -q 'COPY public.synthetic_notes'"
 
 section 'backup.sh не смог сделать копию → уведомление в webhook (заглушка)'
 hooks="$WORK/hooks.log"
@@ -82,8 +88,14 @@ sleep 1
 check 'копия в несуществующий бакет: код не 0' \
   bash -c "! ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert S3_BUCKET=no-such-bucket '$INFRA_DIR/backup.sh' 2> /dev/null"
 check '…уведомление «резервная копия не создана» отправлено' grep -q 'резервная копия не создана' "$hooks"
+: > "$hooks"
+before=$(list_backups "$WORK" | wc -l)
+check 'ключа шифрования нет: backup.sh отказывается работать' \
+  bash -c "! ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert BACKUP_ENCRYPTION_KEY= '$INFRA_DIR/backup.sh' 2> '$WORK/nokey.log' && grep -q BACKUP_ENCRYPTION_KEY '$WORK/nokey.log'"
+check '…копия в открытом виде не загружена' test "$(list_backups "$WORK" | wc -l)" == "$before"
+check '…уведомление отправлено' grep -q 'резервная копия не создана' "$hooks"
 
-section 'restore.sh последней копии на пустом стеке восстанавливает синтетические данные'
+section 'restore.sh последней (зашифрованной) копии на пустом стеке восстанавливает синтетические данные'
 "$INFRA_DIR/restore.sh" > /dev/null 2> "$WORK/refused.log"
 refused=$?
 check 'restore.sh отказывается писать поверх данных' \
@@ -94,10 +106,10 @@ compose down -v > /dev/null 2>&1
 SKIP_PULL=1 "$INFRA_DIR/deploy.sh" > /dev/null 2>&1
 check 'новый стек пуст: пользователь не входит' test -z "$(login)"
 # A broken copy (valid name, not SQL) must fail without leaving the stack half-restored or stopped.
-printf 'this is not a database dump;\n' | gzip > "$WORK/broken.sql.gz"
-s3 "$WORK" s3 cp --only-show-errors /work/broken.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20000101T000000Z.sql.gz"
+printf 'this is not a database dump;\n' | gzip | encrypt_backup > "$WORK/broken.sql.gz.enc"
+s3 "$WORK" s3 cp --only-show-errors /work/broken.sql.gz.enc "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20000101T000000Z.sql.gz.enc"
 check 'битая копия: restore.sh завершается с ошибкой' \
-  bash -c "! '$INFRA_DIR/restore.sh' lifeos-kz-20000101T000000Z.sql.gz 2> /dev/null"
+  bash -c "! '$INFRA_DIR/restore.sh' lifeos-kz-20000101T000000Z.sql.gz.enc 2> /dev/null"
 check '…API снова отвечает' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
 check '…база осталась пустой' test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select count(*) from auth.users')" == 0
 check 'restore.sh завершается успешно' "$INFRA_DIR/restore.sh"

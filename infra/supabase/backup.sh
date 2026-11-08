@@ -3,15 +3,12 @@
 #
 #   ENV_FILE=.env ./backup.sh          # daily from cron, see README
 #
-# The copy is `pg_dump` compressed with gzip: the app schema (`public`, structure and data) plus the data of
+# The copy is `pg_dump` compressed with gzip and encrypted with BACKUP_ENCRYPTION_KEY (lib.sh): the app schema (`public`, structure and data) plus the data of
 # `auth` (users, identities, sessions). Auth's own structure comes from GoTrue's migrations of the same image, so
 # restore.sh loads a copy into a freshly deployed, empty stack. S3_* and AWS_* come from the environment or ENV_FILE.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 load_env
-require_s3
-keep=${BACKUP_KEEP:-14}
-[[ $keep =~ ^[1-9][0-9]*$ ]] || die "BACKUP_KEEP должен быть положительным числом, а не «$keep»"
 
 work=$(mktemp -d)
 # A failed nightly backup must not go unnoticed: any error alerts the webhook (if set) before the script exits.
@@ -23,7 +20,13 @@ on_exit() {
   fi
 }
 trap on_exit EXIT
-name="lifeos-$REGION-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+
+require_s3
+# Never upload a copy in the clear: no key, no backup (and an alert).
+require_backup_key
+keep=${BACKUP_KEEP:-14}
+[[ $keep =~ ^[1-9][0-9]*$ ]] || die "BACKUP_KEEP должен быть положительным числом, а не «$keep»"
+name="lifeos-$REGION-$(date -u +%Y%m%dT%H%M%SZ).sql.gz.enc"
 target="s3://$S3_BUCKET/$(backup_prefix)"
 
 log "регион $REGION: pg_dump → $name"
@@ -32,8 +35,9 @@ compose exec -T db bash -c 'set -euo pipefail
   pg_dump -U supabase_admin -d postgres --schema-only --schema=public
   echo "SET session_replication_role = replica;"
   pg_dump -U supabase_admin -d postgres --data-only --schema=public --schema=auth \
-    --exclude-table=auth.schema_migrations' | gzip -9 > "$work/$name"
-gzip -t "$work/$name"
+    --exclude-table=auth.schema_migrations' | gzip -9 | encrypt_backup > "$work/$name"
+# The copy must decrypt with the same key before it is uploaded.
+decrypt_backup < "$work/$name" | gzip -t
 log "размер копии: $(du -h "$work/$name" | cut -f1)"
 
 s3 "$work" s3 cp --only-show-errors "/work/$name" "$target/$name"

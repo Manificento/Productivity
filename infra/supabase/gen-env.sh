@@ -4,7 +4,8 @@
 #   ./gen-env.sh > .env                                   # region kz, defaults
 #   ./gen-env.sh REGION=eu KONG_HTTP_PORT=8001 > .env.eu  # a second region on the same host
 #
-# Secrets left empty in env.example (POSTGRES_PASSWORD, JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, PG_META_CRYPTO_KEY)
+# Secrets left empty in env.example (POSTGRES_PASSWORD, JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, PG_META_CRYPTO_KEY,
+# BACKUP_ENCRYPTION_KEY)
 # are generated; ANON_KEY and SERVICE_ROLE_KEY are HS256 JWTs signed with JWT_SECRET, valid for 10 years.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -32,6 +33,7 @@ jwt() {
 : "${value[POSTGRES_PASSWORD]:=$(random_hex 24)}"
 : "${value[JWT_SECRET]:=$(random_hex 32)}"
 : "${value[PG_META_CRYPTO_KEY]:=$(random_hex 32)}"
+: "${value[BACKUP_ENCRYPTION_KEY]:=$(random_hex 32)}"
 : "${value[ANON_KEY]:=$(jwt anon "${value[JWT_SECRET]}")}"
 : "${value[SERVICE_ROLE_KEY]:=$(jwt service_role "${value[JWT_SECRET]}")}"
 
