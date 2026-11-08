@@ -1,10 +1,13 @@
 import { db } from '../../../core/db';
 import { importTasks, type ImportTasksResult } from '../../../core/logging/tasks';
+import type { TaskSource } from '../../../core/types';
 import type { TodoistPreview } from '../logic/todoistCsv';
+
+const SOURCE: TaskSource = 'todoist';
 
 /** Запись разобранного CSV Todoist — только через `importTasks()`. */
 export function importTodoist(preview: TodoistPreview): Promise<ImportTasksResult> {
-  return importTasks({ projects: [preview.project], tasks: preview.tasks }, { source: 'todoist' });
+  return importTasks({ projects: [preview.project], tasks: preview.tasks }, { source: SOURCE });
 }
 
 /**
@@ -17,7 +20,7 @@ export async function countCompletedInApp(preview: TodoistPreview): Promise<numb
   if (ids.length === 0) return 0;
   const found = await db.tasks
     .where('[source+externalId]')
-    .anyOf(ids.map((id) => ['todoist', id]))
+    .anyOf(ids.map((id) => [SOURCE, id]))
     .toArray();
   const open = new Map<string, boolean>();
   for (const t of found) {

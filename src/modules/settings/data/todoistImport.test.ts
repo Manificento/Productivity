@@ -46,4 +46,12 @@ describe('Todoist import: tasks already completed in LifeOS', () => {
     });
     expect(await countCompletedInApp(preview())).toBe(0);
   });
+
+  it('a key with an open copy is not counted: importTasks updates the open copy, so the task is not «already completed»', async () => {
+    await importTodoist(preview());
+    const [first] = await db.tasks.toArray();
+    await db.tasks.update(first.id, { completedAt: 1 });
+    await db.tasks.add({ ...first, id: 'open-copy', completedAt: undefined });
+    expect(await countCompletedInApp(preview())).toBe(0);
+  });
 });

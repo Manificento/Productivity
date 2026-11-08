@@ -90,7 +90,7 @@ type NewTask = Omit<Task, 'id' | 'createdAt' | 'updatedAt'>;
  * Fields the import owns: re-import rewrites exactly these and keeps the rest (e.g. `recurrence`).
  * `completedAt` is NOT owned (#194): a Todoist export has no completed tasks, so a row without
  * `completedAt` says nothing about completion — a task done in LifeOS stays done. A row that does
- * carry `completedAt` still sets it.
+ * carry `completedAt` still sets it. A completed task still receives the owned fields above (title, due …).
  */
 const IMPORT_OWNED = ['title', 'notes', 'projectId', 'priority', 'dueDate', 'dueTime', 'estimateMin', 'tags'] as const;
 

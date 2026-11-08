@@ -52,7 +52,7 @@ describe('Todoist import card', () => {
     expect(await db.projects.count()).toBe(1);
   });
 
-  it('Given tasks of the file already completed in LifeOS When I upload it again Then the preview says «N уже выполнены в LifeOS, останутся выполненными» and they stay completed', async () => {
+  it('Given предпросмотр импорта в settings When в файле есть задачи, уже выполненные в LifeOS Then предпросмотр показывает «N уже выполнены в LifeOS, останутся выполненными», и после импорта они выполнены', async () => {
     render(<TodoistImportCard />);
     upload(new Uint8Array(SAMPLE));
     fireEvent.click(await screen.findByRole('button', { name: 'Импортировать' }));
