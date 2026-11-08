@@ -70,8 +70,8 @@ check 'самая новая — только что сделанная (сег�
 check 'две самые старые удалены' bash -c "[[ '${kept[0]}' == lifeos-kz-20260103T030000Z.sql.gz.enc ]]"
 s3 "$WORK" s3 cp --only-show-errors "s3://$S3_BUCKET/lifeos/kz/$newest" "/work/$newest"
 decrypt() { BACKUP_ENCRYPTION_KEY=$1 decrypt_backup < "$WORK/$newest"; }
-check 'в бакете только зашифрованный файл: это не gzip и не SQL' \
-  bash -c "! gzip -t '$WORK/$newest' 2> /dev/null && ! grep -qa 'COPY auth.users' '$WORK/$newest'"
+check 'в бакете только зашифрованный файл (заголовок OpenSSL, не gzip)' \
+  bash -c "[[ \$(head -c 8 '$WORK/$newest') == Salted__ ]] && ! gzip -t '$WORK/$newest' 2> /dev/null"
 check 'без ключа (с чужим ключом) копию не распаковать' \
   bash -c "! (BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32); . '$INFRA_DIR/lib.sh'; decrypt_backup < '$WORK/$newest' | gunzip -t) 2> /dev/null"
 decrypt "$BACKUP_ENCRYPTION_KEY" > "$WORK/plain.sql.gz"
@@ -89,11 +89,16 @@ check 'копия в несуществующий бакет: код не 0' \
   bash -c "! ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert S3_BUCKET=no-such-bucket '$INFRA_DIR/backup.sh' 2> /dev/null"
 check '…уведомление «резервная копия не создана» отправлено' grep -q 'резервная копия не создана' "$hooks"
 : > "$hooks"
-before=$(list_backups "$WORK" | wc -l)
+# Every object under the prefix, whatever its name: a plaintext upload must not slip past under another suffix.
+all_objects() { s3 "$WORK" s3 ls "s3://$S3_BUCKET/lifeos/kz/" | wc -l; }
+before=$(all_objects)
 check 'ключа шифрования нет: backup.sh отказывается работать' \
   bash -c "! ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert BACKUP_ENCRYPTION_KEY= '$INFRA_DIR/backup.sh' 2> '$WORK/nokey.log' && grep -q BACKUP_ENCRYPTION_KEY '$WORK/nokey.log'"
-check '…копия в открытом виде не загружена' test "$(list_backups "$WORK" | wc -l)" == "$before"
+check '…копия в открытом виде не загружена' test "$(all_objects)" == "$before"
 check '…уведомление отправлено' grep -q 'резервная копия не создана' "$hooks"
+check 'ключ короче 32 символов: backup.sh отказывается работать' \
+  bash -c "! BACKUP_ENCRYPTION_KEY=short '$INFRA_DIR/backup.sh' 2> '$WORK/short.log' && grep -q 'короче 32' '$WORK/short.log'"
+check '…ничего не загружено' test "$(all_objects)" == "$before"
 
 section 'restore.sh последней (зашифрованной) копии на пустом стеке восстанавливает синтетические данные'
 "$INFRA_DIR/restore.sh" > /dev/null 2> "$WORK/refused.log"
@@ -111,6 +116,9 @@ s3 "$WORK" s3 cp --only-show-errors /work/broken.sql.gz.enc "s3://$S3_BUCKET/lif
 check 'битая копия: restore.sh завершается с ошибкой' \
   bash -c "! '$INFRA_DIR/restore.sh' lifeos-kz-20000101T000000Z.sql.gz.enc 2> /dev/null"
 check '…API снова отвечает' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
+check 'чужой ключ: restore.sh завершается с ошибкой «не расшифровать»' \
+  bash -c "! BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32) '$INFRA_DIR/restore.sh' 2> '$WORK/wrongkey.log' && grep -q 'не расшифровать' '$WORK/wrongkey.log'"
+check '…API отвечает' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
 check '…база осталась пустой' test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select count(*) from auth.users')" == 0
 check 'restore.sh завершается успешно' "$INFRA_DIR/restore.sh"
 token=$(login)

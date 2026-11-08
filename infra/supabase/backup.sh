@@ -3,8 +3,8 @@
 #
 #   ENV_FILE=.env ./backup.sh          # daily from cron, see README
 #
-# The copy is `pg_dump` compressed with gzip and encrypted with BACKUP_ENCRYPTION_KEY (lib.sh): the app schema (`public`, structure and data) plus the data of
-# `auth` (users, identities, sessions). Auth's own structure comes from GoTrue's migrations of the same image, so
+# The copy is `pg_dump` compressed with gzip and encrypted with BACKUP_ENCRYPTION_KEY (lib.sh): the app schema
+# (`public`, structure and data) plus the data of `auth` (users, identities, sessions). Auth's own structure comes from GoTrue's migrations of the same image, so
 # restore.sh loads a copy into a freshly deployed, empty stack. S3_* and AWS_* come from the environment or ENV_FILE.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"

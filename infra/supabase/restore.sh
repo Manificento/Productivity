@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Restores a backup made by backup.sh into the region's freshly deployed, empty stack.
 #
-#   ENV_FILE=.env ./deploy.sh && ENV_FILE=.env ./restore.sh                          # the latest copy
-#   ENV_FILE=.env ./restore.sh lifeos-kz-20261108T030000Z.sql.gz.enc                     # a specific copy
+#   ENV_FILE=.env ./deploy.sh && ENV_FILE=.env ./restore.sh                  # the latest copy
+#   ENV_FILE=.env ./restore.sh lifeos-kz-20261108T030000Z.sql.gz.enc         # a specific copy
 #
 # Refuses to run over data: the `public` schema must have no objects and `auth.users` no rows. The API (Kong, Auth,
 # REST) is stopped while the copy loads in one transaction, so a failed restore leaves the database as it was.
@@ -33,8 +33,9 @@ existing=$(psql_admin -tA -c "select
 
 log "регион $REGION: скачиваю $name"
 s3 "$work" s3 cp --only-show-errors "$source_dir/$name" "/work/$name"
-if ! decrypt_backup < "$work/$name" > "$work/plain.sql.gz" 2> /dev/null || ! gzip -t "$work/plain.sql.gz" 2> /dev/null; then
-  die "копию $name не расшифровать: другой BACKUP_ENCRYPTION_KEY или копия повреждена"
+if ! decrypt_backup < "$work/$name" > "$work/plain.sql.gz" 2> "$work/decrypt.err" ||
+  ! gzip -t "$work/plain.sql.gz" 2>> "$work/decrypt.err"; then
+  die "копию $name не расшифровать: другой BACKUP_ENCRYPTION_KEY или копия повреждена ($(tail -n 2 "$work/decrypt.err" | tr '\n' ' '))"
 fi
 
 # Kong goes too: no client writes during the restore, and it starts with fresh DNS for the restarted services.
