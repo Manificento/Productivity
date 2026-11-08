@@ -5,11 +5,11 @@ import { newRecord } from '../../../core/ids';
 import {
   DAILY_XP_CAP,
   XP_RULES,
+  isImportedNight,
   levelFromXp,
   skillLevels,
   summarize,
   totalXp,
-  isImportedNight,
   xpEventsFrom,
   xpForLevel,
   type XpSources,

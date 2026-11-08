@@ -72,6 +72,7 @@ export const MIN_FOCUS_MS = 10 * 60_000;
  */
 export const DAILY_XP_CAP = 100;
 
+/** A fixed 24 h, as the rule in #236 says (not calendar arithmetic: on a DST day it differs by an hour). */
 const DAY_MS = 24 * 3_600_000;
 
 /**
@@ -87,7 +88,7 @@ export interface XpGain {
   date: DateKey;
   skill: SkillId;
   amount: number;
-  /** Comes from a record imported from another app (`Task.source`, `WorkoutLog.sourceId`). */
+  /** Comes from a record imported from another app (`Task.source`, `WorkoutLog.sourceId`, a `SleepLog` flagged by `isImportedNight`, #236). */
   imported?: boolean;
   /** Quest bonus (`xpEvents`) — not capped and never granted retroactively by an import. */
   bonus?: boolean;
