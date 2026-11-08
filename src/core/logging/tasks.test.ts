@@ -176,6 +176,36 @@ describe('importTasks — the one write path for imported tasks and projects (AD
     expect(await db.tasks.filter((t) => t.title === 'Без id').count()).toBe(2);
   });
 
+  it('Given задача импортирована и затем выполнена в LifeOS (completedAt задан) When тот же файл импортируется повторно Then completedAt сохраняется, задача не переоткрывается', async () => {
+    const file = { projects: [], tasks: [{ title: 'Отчёт', externalId: '9', dueDate: '2026-11-10' }] };
+    await importTasks(file, TODOIST, NOW);
+    const id = (await db.tasks.toArray())[0].id;
+    await db.tasks.update(id, { completedAt: NOW + 5 });
+
+    const result = await importTasks(file, TODOIST, NOW + 10);
+    expect(result.tasks).toEqual({ created: 0, updated: 1 });
+    const tasks = await db.tasks.toArray();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ id, completedAt: NOW + 5, title: 'Отчёт', dueDate: '2026-11-10' });
+  });
+
+  it('Given задача импортирована и не выполнена When повторный импорт приносит изменённое название или срок Then эти поля обновляются', async () => {
+    await importTasks(
+      { projects: [], tasks: [{ title: 'Отчёт', externalId: '9', dueDate: '2026-11-10', dueTime: '09:00' }] },
+      TODOIST,
+      NOW,
+    );
+    await importTasks(
+      { projects: [], tasks: [{ title: 'Отчёт за неделю', externalId: '9', dueDate: '2026-11-12' }] },
+      TODOIST,
+      NOW + 10,
+    );
+    const [task] = await db.tasks.toArray();
+    expect(task).toMatchObject({ title: 'Отчёт за неделю', dueDate: '2026-11-12', updatedAt: NOW + 10 });
+    expect(task.dueTime).toBeUndefined();
+    expect(task.completedAt).toBeUndefined();
+  });
+
   it('the same externalId twice in one file is written once (last row wins)', async () => {
     const result = await importTasks(
       {
