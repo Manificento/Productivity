@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+# Infra checks of issue #284: the «Deploy KZ» workflow and deploy-remote.sh, the script it runs. There is no real
+# server in CI: the same script deploys over SSH to the runner itself (a private sshd on 127.0.0.1:2222, logged in as
+# the current user), with MinIO instead of the bucket and a webhook stub instead of the alert channel.
+# Needs Docker, sshd (openssh-server), crontab and yq. Run: infra/supabase/tests/deploy-remote.test.sh
+set -uo pipefail
+. "$(dirname "$0")/lib.sh"
+
+REPO_DIR=$(cd "$INFRA_DIR/../.." && pwd)
+WORKFLOW=$REPO_DIR/.github/workflows/deploy-kz.yml
+MINIO_IMAGE=pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+SSH_TEST_PORT=2222
+SERVER=$WORK/server # DEPLOY_DIR on the test "server"
+SERVER_ENV=$SERVER/kz.env
+SERVER_CODE=$SERVER/app/infra/supabase
+
+# The secrets of the production-kz environment, as the workflow passes them to deploy-remote.sh.
+SECRET_NAMES=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DOMAIN SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
+  SMTP_ADMIN_EMAIL S3_ENDPOINT S3_REGION S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY
+  ALERT_WEBHOOK_URL)
+
+fails() { ! "$@"; }
+
+section 'Deploy KZ: только ручной запуск, окружение production-kz, без секретов останавливается на первом шаге'
+check 'workflow «Deploy KZ» запускается только вручную: нет push, pull_request и расписания' \
+  test "$(yq -r '.on | keys | join(" ")' "$WORKFLOW")" == workflow_dispatch
+check 'единственная задача использует окружение production-kz' \
+  test "$(yq -r '[.jobs[].environment] | join(" ")' "$WORKFLOW")" == production-kz
+check 'первый шаг после checkout — проверка секретов (deploy-remote.sh check)' \
+  grep -q 'deploy-remote.sh check' <(yq -r '.jobs[].steps[1].run' "$WORKFLOW")
+missing_in_workflow=()
+for name in "${SECRET_NAMES[@]}"; do
+  grep -qE "^ +$name: \\$\\{\\{ secrets\\.$name \\}\\}\$" "$WORKFLOW" || missing_in_workflow+=("$name")
+done
+check "workflow передаёт скрипту все ${#SECRET_NAMES[@]} секретов окружения (не хватает: ${missing_in_workflow[*]:-—})" \
+  test "${#missing_in_workflow[@]}" == 0
+
+no_secrets_log=$WORK/no-secrets.log
+env -i PATH="$PATH" HOME="$HOME" DEPLOY_DIR="$SERVER" "$INFRA_DIR/deploy-remote.sh" check > "$no_secrets_log" 2>&1
+no_secrets_code=$?
+check 'секреты не заданы: deploy-remote.sh check завершается с ошибкой' test "$no_secrets_code" != 0
+listed=()
+for name in "${SECRET_NAMES[@]}"; do grep -qw "$name" "$no_secrets_log" && listed+=("$name"); done
+check '…и называет все недостающие секреты' test "${#listed[@]}" == "${#SECRET_NAMES[@]}"
+check '…сообщение об ошибке видно в GitHub (::error)' grep -q '^::error' "$no_secrets_log"
+env -i PATH="$PATH" HOME="$HOME" DEPLOY_DIR="$SERVER" "$INFRA_DIR/deploy-remote.sh" > /dev/null 2>&1
+check 'деплой без секретов тоже останавливается до подключения к серверу' \
+  bash -c "(( $? != 0 )) && [[ ! -e '$SERVER' ]]"
+
+section 'подготовка: тестовый «сервер» — этот же компьютер по SSH, MinIO вместо бакета, заглушка канала уведомлений'
+ssh_dir=$WORK/ssh
+mkdir -p "$ssh_dir"
+chmod 700 "$ssh_dir"
+ssh-keygen -q -t ed25519 -N '' -C lifeos-test-host -f "$ssh_dir/host_key" || exit 1
+ssh-keygen -q -t ed25519 -N '' -C lifeos-test-deploy -f "$ssh_dir/deploy_key" || exit 1
+cp "$ssh_dir/deploy_key.pub" "$ssh_dir/authorized_keys"
+cat > "$ssh_dir/sshd_config" << EOF
+Port $SSH_TEST_PORT
+ListenAddress 127.0.0.1
+HostKey $ssh_dir/host_key
+PidFile $ssh_dir/sshd.pid
+AuthorizedKeysFile $ssh_dir/authorized_keys
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+UsePAM no
+StrictModes no
+EOF
+# SKIP_PULL=1 (images already local, e.g. when Docker Hub limits pulls) reaches deploy.sh on the "server" too.
+[[ ${SKIP_PULL:-} != 1 ]] || echo 'SetEnv SKIP_PULL=1' >> "$ssh_dir/sshd_config"
+# sshd as root needs its privilege separation directory (a non-root sshd runs without one).
+((EUID != 0)) || mkdir -p /run/sshd
+/usr/sbin/sshd -f "$ssh_dir/sshd_config" -E "$ssh_dir/sshd.log" || {
+  cat "$ssh_dir/sshd.log"
+  exit 1
+}
+cleanups+=("kill \$(cat '$ssh_dir/sshd.pid')")
+
+export S3_ENDPOINT=http://127.0.0.1:9100 S3_BUCKET=lifeos-backups S3_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=ci-access-key AWS_SECRET_ACCESS_KEY=ci-secret-key-1234
+docker rm -f lifeos-test-minio > /dev/null 2>&1
+docker run -d --name lifeos-test-minio -p 127.0.0.1:9100:9000 \
+  -e MINIO_ROOT_USER="$AWS_ACCESS_KEY_ID" -e MINIO_ROOT_PASSWORD="$AWS_SECRET_ACCESS_KEY" \
+  "$MINIO_IMAGE" server /data > /dev/null || exit 1
+cleanups+=('docker rm -f lifeos-test-minio')
+for _ in $(seq 1 30); do curl -sf "$S3_ENDPOINT/minio/health/ready" > /dev/null && break; sleep 1; done
+s3 "$WORK" s3 mb "s3://$S3_BUCKET" > /dev/null || exit 1
+
+hooks=$WORK/hooks.log
+: > "$hooks"
+python3 -I "$TESTS_DIR/webhook-stub.py" 9199 "$hooks" &
+cleanups+=("kill $!")
+
+# The stack, the proxy and the schedule of the test server are removed on exit, whatever state the test left.
+remove_schedule() {
+  local rest
+  rest=$(crontab -l 2> /dev/null | awk '/^# >>> lifeos-kz /{skip=1} !skip{print} /^# <<< lifeos-kz/{skip=0}')
+  if [[ -n $rest ]]; then crontab - <<< "$rest"; else crontab -r 2> /dev/null || true; fi
+}
+cleanups+=(remove_schedule)
+cleanups+=("ENV_FILE='$SERVER_ENV' REGION=kz compose down -v --remove-orphans")
+docker compose -p lifeos-kz down -v --remove-orphans > /dev/null 2>&1
+
+# Every secret of production-kz, with test values. SMTP_PASS has characters a shell or Compose would expand.
+export SSH_HOST=127.0.0.1 SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS
+SSH_USER=$(id -un)
+SSH_PRIVATE_KEY=$(cat "$ssh_dir/deploy_key")
+SSH_KNOWN_HOSTS="[127.0.0.1]:$SSH_TEST_PORT $(cat "$ssh_dir/host_key.pub")"
+export DOMAIN=localhost SITE_URL=https://app.example.kz
+# shellcheck disable=SC2016 # literally: the password must reach the server unexpanded
+export SMTP_HOST=smtp.example.kz SMTP_USER=lifeos SMTP_PASS='p@ss $word"`x`' SMTP_ADMIN_EMAIL=admin@example.kz
+export BACKUP_ENCRYPTION_KEY
+BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32)
+export ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert
+# Not secrets: where the test server keeps the code and which ports its proxy takes (443/80 on a real server).
+export SSH_PORT=$SSH_TEST_PORT DEPLOY_DIR=$SERVER PROXY_HTTPS_PORT=8443 PROXY_HTTP_PORT=8088
+
+ALERT_WEBHOOK_URL='' "$INFRA_DIR/deploy-remote.sh" > "$WORK/missing-one.log" 2>&1
+names_only_webhook() { grep -qw ALERT_WEBHOOK_URL "$1" && ! grep -qw SMTP_PASS "$1"; }
+check 'не задан один секрет: деплой называет только его' names_only_webhook "$WORK/missing-one.log"
+check '…и ничего не меняет на сервере' test ! -e "$SERVER"
+
+section 'секреты заданы: код ревизии, файл настроек из секретов (600), deploy.sh, HTTPS-прокси, расписание'
+deploy_log=$WORK/deploy.log
+"$INFRA_DIR/deploy-remote.sh" > "$deploy_log" 2>&1
+deploy_code=$?
+check 'deploy-remote.sh по SSH завершается успешно' test "$deploy_code" == 0
+if ((deploy_code != 0)); then
+  tail -n 40 "$deploy_log"
+  finish
+fi
+check 'на сервере код выбранной ревизии' \
+  bash -c "[[ \$(cat '$SERVER/app/REVISION') == \$(git -C '$REPO_DIR' rev-parse HEAD) && -x '$SERVER_CODE/deploy.sh' ]]"
+check 'файл настроек региона: права 600' test "$(stat -c %a "$SERVER_ENV")" == 600
+declare -A server_env=()
+read_env_file "$SERVER_ENV" server_env
+check 'файл настроек собран из секретов: домен, SMTP, бакет, ключ копий, канал уведомлений' \
+  test "${server_env[SUPABASE_PUBLIC_URL]}|${server_env[SMTP_PASS]}|${server_env[S3_BUCKET]}|${server_env[BACKUP_ENCRYPTION_KEY]}|${server_env[ALERT_WEBHOOK_URL]}" == \
+  "https://localhost:8443|$SMTP_PASS|$S3_BUCKET|$BACKUP_ENCRYPTION_KEY|$ALERT_WEBHOOK_URL"
+check 'секреты базы созданы на сервере' bash -c "[[ '${server_env[JWT_SECRET]:-}' =~ ^[0-9a-f]{64}$ ]]"
+
+leaked=()
+for name in SSH_PRIVATE_KEY SMTP_PASS AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY ALERT_WEBHOOK_URL; do
+  # Every line of the value (the SSH key has several), except the key's BEGIN/END markers.
+  while IFS= read -r part; do
+    [[ -z $part || $part == -----* ]] && continue
+    if grep -qF -- "$part" "$deploy_log"; then
+      leaked+=("$name")
+      break
+    fi
+  done <<< "${!name}"
+done
+for name in POSTGRES_PASSWORD JWT_SECRET SERVICE_ROLE_KEY PG_META_CRYPTO_KEY; do
+  grep -qF -- "${server_env[$name]:-unset}" "$deploy_log" && leaked+=("$name")
+done
+check "значения секретов не попадают в журнал деплоя (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
+
+# From here on the lib.sh helpers (compose, api_status…) act on the test server's stack.
+use_server() {
+  local key
+  for key in "${!server_env[@]}"; do unset "$key"; done
+  export ENV_FILE=$SERVER_ENV
+  load_env
+}
+use_server
+container_env() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(compose ps -q "$1")"; }
+check 'Auth получил пароль SMTP без искажений (кавычки, $ и ` не раскрыты)' \
+  grep -qxF "GOTRUE_SMTP_PASS=$SMTP_PASS" <(container_env auth)
+
+check 'deploy.sh поднял стек с миграциями: схема Auth создана' \
+  test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select count(*) > 0 from auth.schema_migrations')" == t
+check 'в конце деплой проверил GET /auth/v1/health и GET /rest/v1/ по HTTPS' \
+  grep -q 'по HTTPS: GET /auth/v1/health и GET /rest/v1/ — 200' "$deploy_log"
+# Caddy issues the certificate for localhost from its own CA (a real domain gets one from Let's Encrypt).
+compose exec -T proxy cat /data/caddy/pki/authorities/local/root.crt > "$WORK/proxy-ca.crt"
+https_status() {
+  curl -s -o /dev/null -w '%{http_code}' -m 10 --cacert "$WORK/proxy-ca.crt" \
+    -H "apikey: $2" -H "Authorization: Bearer $2" "https://localhost:8443$1"
+}
+check 'обратный прокси отдаёт API по HTTPS для домена: GET /auth/v1/health → 200' \
+  test "$(https_status /auth/v1/health "$ANON_KEY")" == 200
+check '…GET /rest/v1/ с ключом service_role → 200' test "$(https_status /rest/v1/ "$SERVICE_ROLE_KEY")" == 200
+
+schedule=$(crontab -l 2> /dev/null)
+backup_line=$(grep -E '^0 22 \* \* \* .*\./backup\.sh' <<< "$schedule")
+health_line=$(grep -E '^\*/5 \* \* \* \* .*\./healthcheck\.sh' <<< "$schedule")
+check 'расписание: ночной backup.sh (22:00 UTC = 03:00 по Алматы)' test -n "$backup_line"
+check 'расписание: healthcheck.sh каждые 5 минут' test -n "$health_line"
+check '…время расписания — UTC' grep -qx 'CRON_TZ=UTC' <<< "$schedule"
+check '…задания берут код и настройки сервера' \
+  bash -c "[[ '$backup_line' == *'cd $SERVER_CODE && ENV_FILE=$SERVER_ENV ./backup.sh'* ]]"
+# A cron line without the schedule and the `2>&1 | logger …` tail: the command whose exit code matters.
+cron_command() {
+  local line=${1#* * * * * } tail=' 2>&1'
+  echo "${line%%"$tail"*}"
+}
+# Runs it the way cron does: a bare environment, everything else comes from the server's settings file.
+as_cron() { env -i PATH="$PATH" HOME="$HOME" "${@:2}" bash -c "$(cron_command "$1")"; }
+echo old > "$WORK/old.sql.gz.enc"
+for day in $(seq -w 1 14); do
+  s3 "$WORK" s3 cp --only-show-errors /work/old.sql.gz.enc "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-202601${day}T030000Z.sql.gz.enc"
+done
+check 'ночное задание backup.sh проходит: копия в MinIO' as_cron "$backup_line"
+mapfile -t kept < <(list_backups "$WORK")
+check '…хранятся 14 копий, самая новая — сегодняшняя' \
+  bash -c "[[ ${#kept[@]} == 14 && '${kept[-1]:-}' == lifeos-kz-$(date -u +%Y%m%d)* ]]"
+
+section 'повторный запуск: секреты базы не перевыпускаются, данные не теряются'
+compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
+  -c 'create table public.deploy_probe (body text)' -c "insert into public.deploy_probe values ('до повторного деплоя')"
+db_before=$(compose ps -q db)
+"$INFRA_DIR/deploy-remote.sh" > "$WORK/redeploy.log" 2>&1
+redeploy_code=$?
+check 'повторный deploy-remote.sh завершается успешно' test "$redeploy_code" == 0
+((redeploy_code == 0)) || tail -n 40 "$WORK/redeploy.log"
+declare -A again=()
+read_env_file "$SERVER_ENV" again
+same=1
+for name in POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY PG_META_CRYPTO_KEY; do
+  [[ ${again[$name]:-} == "${server_env[$name]:-unset}" ]] || same=0
+done
+check 'секреты базы (пароль, JWT, ключи anon/service) те же' test "$same" == 1
+check 'файл настроек по-прежнему 600' test "$(stat -c %a "$SERVER_ENV")" == 600
+check 'база не пересоздана: тот же контейнер db' test "$(compose ps -q db)" == "$db_before"
+check 'данные на месте' \
+  test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select body from public.deploy_probe')" == 'до повторного деплоя'
+check 'API отвечает с прежним ключом anon' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
+check 'задания в расписании не задвоились' test "$(crontab -l | grep -cE '\./(backup|healthcheck)\.sh')" == 2
+
+section 'контейнер упал → задание healthcheck.sh из расписания шлёт уведомление (заглушка канала)'
+compose stop rest > /dev/null 2>&1
+: > "$hooks"
+check 'задание healthcheck.sh: код не 0' \
+  fails as_cron "$health_line" HEALTH_STATE_FILE="$WORK/health-state" DISK_ALERT_PERCENT=100
+check '…уведомление о контейнере rest отправлено в ALERT_WEBHOOK_URL из секретов' grep -q 'контейнер rest' "$hooks"
+
+finish
