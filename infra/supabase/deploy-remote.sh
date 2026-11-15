@@ -4,12 +4,12 @@
 # and checks the API by HTTPS. Run by the «Deploy KZ» workflow; the Infra workflow runs the same script against a test
 # server (tests/deploy-remote.test.sh).
 #
-#   deploy-remote.sh check    # only checks that every secret is set: the first step of the workflow
 #   deploy-remote.sh          # deploys REVISION (default HEAD) of this repository
 #
 # Everything comes from the environment (the workflow maps the secrets of `production-<region>`; the table of secrets
 # is in README.md, «Что сделать владельцу»). Optional, not secret: REGION (kz), SSH_PORT (22), SMTP_PORT (587),
-# DEPLOY_DIR (/opt/lifeos), REVISION (HEAD), PROXY_HTTPS_PORT (443), PROXY_HTTP_PORT (80).
+# DEPLOY_DIR (/opt/lifeos), REVISION (HEAD), PROXY_HTTPS_PORT (443), PROXY_HTTP_PORT (80), MAIN_REF (origin/main).
+# Only a commit from the history of MAIN_REF is deployed: the code of an unreviewed branch would get every secret.
 # Secret values never reach the log: no tracing, and they travel to the server on SSH's stdin, not on a command line.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -28,8 +28,10 @@ SMTP_PORT=${SMTP_PORT:-587}
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/lifeos}
 PROXY_HTTPS_PORT=${PROXY_HTTPS_PORT:-443}
 PROXY_HTTP_PORT=${PROXY_HTTP_PORT:-80}
+MAIN_REF=${MAIN_REF:-origin/main}
 
-# Stops before anything is touched when a secret is missing, naming all of them at once.
+# Stops before anything is touched when a secret is missing, naming all of them at once. The workflow checks the same
+# list in its first step, before checkout; this is the guard for any other caller.
 check_secrets() {
   local name missing=()
   for name in "${REQUIRED_SECRETS[@]}"; do [[ -n ${!name:-} ]] || missing+=("$name"); done
@@ -75,8 +77,12 @@ deploy() {
   check_values
 
   local rev=${REVISION:-HEAD} sha
-  sha=$(git -C "$here" rev-parse --verify --quiet "$rev^{commit}" ||
-    git -C "$here" rev-parse --verify --quiet "origin/$rev^{commit}") || die "ревизия «$rev» не найдена"
+  sha=$(git -C "$here" rev-parse --verify --quiet "$rev^{commit}") || die "ревизия «$rev» не найдена"
+  # Its provision.sh runs on the server with every secret: only reviewed code, i.e. a commit of main, gets there.
+  git -C "$here" rev-parse --verify --quiet "$MAIN_REF^{commit}" > /dev/null ||
+    die "нет $MAIN_REF: нужна история main (checkout с fetch-depth: 0)"
+  git -C "$here" merge-base --is-ancestor "$sha" "$MAIN_REF" ||
+    die "ревизия $sha не из истории $MAIN_REF: развёртываются только коммиты main (SHA или тег), не ветки на ревью"
   git -C "$here" cat-file -e "$sha:infra/supabase/provision.sh" 2> /dev/null ||
     die "в ревизии $sha нет infra/supabase/provision.sh: развёртывать (и откатывать) можно ревизии начиная с #284"
 
@@ -103,10 +109,9 @@ deploy() {
 }
 
 case ${1:-} in
-  check) check_secrets ;;
   '') deploy ;;
   *)
-    echo "usage: $0 [check]" >&2
+    echo "usage: $0" >&2
     exit 2
     ;;
 esac

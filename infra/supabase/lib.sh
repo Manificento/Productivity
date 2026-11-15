@@ -60,10 +60,14 @@ compose() {
 local_api_url() { echo "http://127.0.0.1:${KONG_HTTP_PORT:-8000}"; }
 
 # HTTP status of GET <url> with the given API key (empty key = no key); more curl options (--cacert …) may follow.
+# The key goes to curl as a header file (printf is a builtin), not on its command line, where `ps` would show it.
 http_status() {
   local url=$1 key=${2:-} args=(-s -o /dev/null -w '%{http_code}' -m 10 "${@:3}")
-  [[ -n $key ]] && args+=(-H "apikey: $key" -H "Authorization: Bearer $key")
-  curl "${args[@]}" "$url" || true
+  if [[ -n $key ]]; then
+    curl "${args[@]}" -H @<(printf 'apikey: %s\nAuthorization: Bearer %s\n' "$key" "$key") "$url" || true
+  else
+    curl "${args[@]}" "$url" || true
+  fi
 }
 
 # HTTP status of GET <path> through the gateway, as seen from the server itself.

@@ -26,25 +26,39 @@ check 'workflow «Deploy KZ» запускается только вручную
   test "$(yq -r '.on | keys | join(" ")' "$WORKFLOW")" == workflow_dispatch
 check 'единственная задача использует окружение production-kz' \
   test "$(yq -r '[.jobs[].environment] | join(" ")' "$WORKFLOW")" == production-kz
-check 'первый шаг после checkout — проверка секретов (deploy-remote.sh check)' \
-  grep -q 'deploy-remote.sh check' <(yq -r '.jobs[].steps[1].run' "$WORKFLOW")
+check 'первый шаг — проверка секретов, ещё до checkout' \
+  test "$(yq -r '.jobs[].steps[0] | has("uses")' "$WORKFLOW")" == false
+check '…ему передаются ровно обязательные секреты' \
+  test "$(yq -r '.jobs[].steps[0].env | keys | sort | join(" ")' "$WORKFLOW")" == \
+  "$(printf '%s\n' "${SECRET_NAMES[@]}" | sort | paste -sd ' ')"
+check 'секреты не заданы на уровне задачи: сторонние шаги (checkout) их не видят' \
+  bash -c "! yq -r '.jobs[].env // {} | .[]' '$WORKFLOW' | grep -q 'secrets\.'"
+check 'сторонние действия закреплены на SHA коммита' \
+  bash -c "! yq -r '.jobs[].steps[].uses // \"\"' '$WORKFLOW' | grep -v '^\$' | grep -vqE '@[0-9a-f]{40}\$'"
 missing_in_workflow=()
-for name in "${SECRET_NAMES[@]}"; do
-  grep -qE "^ +$name: \\$\\{\\{ secrets\\.$name \\}\\}\$" "$WORKFLOW" || missing_in_workflow+=("$name")
+for name in "${SECRET_NAMES[@]}" SSH_PORT SMTP_PORT; do
+  [[ $(yq -r ".jobs[].steps[-1].env.$name" "$WORKFLOW") == "\${{ secrets.$name }}" ]] || missing_in_workflow+=("$name")
 done
-check "workflow передаёт скрипту все ${#SECRET_NAMES[@]} секретов окружения (не хватает: ${missing_in_workflow[*]:-—})" \
+check "шаг деплоя получает все секреты окружения (не хватает: ${missing_in_workflow[*]:-—})" \
   test "${#missing_in_workflow[@]}" == 0
 
+# The first step exactly as GitHub runs it: `bash --noprofile --norc -eo pipefail`.
+first_step() { env -i PATH="$PATH" HOME="$HOME" "$@" bash --noprofile --norc -eo pipefail -c "$(yq -r '.jobs[].steps[0].run' "$WORKFLOW")"; }
 no_secrets_log=$WORK/no-secrets.log
-env -i PATH="$PATH" HOME="$HOME" DEPLOY_DIR="$SERVER" "$INFRA_DIR/deploy-remote.sh" check > "$no_secrets_log" 2>&1
+first_step GITHUB_REF=refs/heads/main > "$no_secrets_log" 2>&1
 no_secrets_code=$?
-check 'секреты не заданы: deploy-remote.sh check завершается с ошибкой' test "$no_secrets_code" != 0
+check 'секреты не заданы: первый шаг завершается с ошибкой' test "$no_secrets_code" != 0
 listed=()
 for name in "${SECRET_NAMES[@]}"; do grep -qw "$name" "$no_secrets_log" && listed+=("$name"); done
 check '…и называет все недостающие секреты' test "${#listed[@]}" == "${#SECRET_NAMES[@]}"
 check '…сообщение об ошибке видно в GitHub (::error)' grep -q '^::error' "$no_secrets_log"
+all_secrets=()
+for name in "${SECRET_NAMES[@]}"; do all_secrets+=("$name=x"); done
+check 'секреты заданы, запуск из main: первый шаг проходит' first_step GITHUB_REF=refs/heads/main "${all_secrets[@]}"
+check 'запуск не из ветки main: первый шаг останавливается' \
+  fails first_step GITHUB_REF=refs/heads/feat/999 "${all_secrets[@]}"
 env -i PATH="$PATH" HOME="$HOME" DEPLOY_DIR="$SERVER" "$INFRA_DIR/deploy-remote.sh" > /dev/null 2>&1
-check 'деплой без секретов тоже останавливается до подключения к серверу' \
+check 'деплой без секретов и сам останавливается до подключения к серверу' \
   bash -c "(( $? != 0 )) && [[ ! -e '$SERVER' ]]"
 
 section 'подготовка: тестовый «сервер» — этот же компьютер по SSH, MinIO вместо бакета, заглушка канала уведомлений'
@@ -114,10 +128,21 @@ BACKUP_ENCRYPTION_KEY=$(openssl rand -hex 32)
 export ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert
 # Not secrets: where the test server keeps the code and which ports its proxy takes (443/80 on a real server).
 export SSH_PORT=$SSH_TEST_PORT DEPLOY_DIR=$SERVER PROXY_HTTPS_PORT=8443 PROXY_HTTP_PORT=8088
+# The workflow deploys only commits of origin/main; the commit under test is not on main yet, so here «main» is HEAD.
+export MAIN_REF=HEAD
 
 ALERT_WEBHOOK_URL='' "$INFRA_DIR/deploy-remote.sh" > "$WORK/missing-one.log" 2>&1
 names_only_webhook() { grep -qw ALERT_WEBHOOK_URL "$1" && ! grep -qw SMTP_PASS "$1"; }
 check 'не задан один секрет: деплой называет только его' names_only_webhook "$WORK/missing-one.log"
+check '…и ничего не меняет на сервере' test ! -e "$SERVER"
+
+# A commit that is not in the history of «main» (an unreviewed branch): only an object, no ref is created or moved.
+foreign=$(GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.kz GIT_COMMITTER_NAME=test \
+  GIT_COMMITTER_EMAIL=test@example.kz git -C "$REPO_DIR" commit-tree 'HEAD^{tree}' -p HEAD -m 'не из main')
+REVISION=$foreign "$INFRA_DIR/deploy-remote.sh" > "$WORK/foreign.log" 2>&1
+foreign_code=$?
+check 'ревизия не из истории main: деплой отказывается' \
+  bash -c "(( $foreign_code != 0 )) && grep -q 'не из истории' '$WORK/foreign.log'"
 check '…и ничего не меняет на сервере' test ! -e "$SERVER"
 
 section 'секреты заданы: код ревизии, файл настроек из секретов (600), deploy.sh, HTTPS-прокси, расписание'
@@ -205,10 +230,17 @@ mapfile -t kept < <(list_backups "$WORK")
 check '…хранятся 14 копий, самая новая — сегодняшняя' \
   bash -c "[[ ${#kept[@]} == 14 && '${kept[-1]:-}' == lifeos-kz-$(date -u +%Y%m%d)* ]]"
 
-section 'повторный запуск: секреты базы не перевыпускаются, данные не теряются'
+section 'повторный запуск с изменённым секретом: секреты базы не перевыпускаются, данные не теряются'
 compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
   -c 'create table public.deploy_probe (body text)' -c "insert into public.deploy_probe values ('до повторного деплоя')"
+probe() { compose exec -T db psql -U supabase_admin -d postgres -tAc 'select body from public.deploy_probe'; }
 db_before=$(compose ps -q db)
+auth_before=$(compose ps -q auth)
+# The owner changed a setting on the server by hand (more copies kept); the deploy must not undo it.
+sed -i 's/^BACKUP_KEEP=.*/BACKUP_KEEP=30/' "$SERVER_ENV"
+# A rotated secret: Auth is recreated with it, the database is not.
+# shellcheck disable=SC2016 # literally
+export SMTP_PASS='новый p@ss $2'
 "$INFRA_DIR/deploy-remote.sh" > "$WORK/redeploy.log" 2>&1
 redeploy_code=$?
 check 'повторный deploy-remote.sh завершается успешно' test "$redeploy_code" == 0
@@ -220,12 +252,31 @@ for name in POSTGRES_PASSWORD JWT_SECRET ANON_KEY SERVICE_ROLE_KEY PG_META_CRYPT
   [[ ${again[$name]:-} == "${server_env[$name]:-unset}" ]] || same=0
 done
 check 'секреты базы (пароль, JWT, ключи anon/service) те же' test "$same" == 1
+check 'новый секрет записан в файл настроек' test "${again[SMTP_PASS]:-}" == "$SMTP_PASS"
+auth_recreated_with_new_pass() {
+  [[ $(compose ps -q auth) != "$auth_before" ]] && grep -qxF "GOTRUE_SMTP_PASS=$SMTP_PASS" <(container_env auth)
+}
+check '…и Auth пересоздан с ним' auth_recreated_with_new_pass
+check 'настройка, изменённая на сервере вручную (BACKUP_KEEP=30), сохранена' test "${again[BACKUP_KEEP]:-}" == 30
 check 'файл настроек по-прежнему 600' test "$(stat -c %a "$SERVER_ENV")" == 600
 check 'база не пересоздана: тот же контейнер db' test "$(compose ps -q db)" == "$db_before"
-check 'данные на месте' \
-  test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select body from public.deploy_probe')" == 'до повторного деплоя'
+check 'данные на месте' test "$(probe)" == 'до повторного деплоя'
 check 'API отвечает с прежним ключом anon' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
+check '…и с прежним ключом service_role' test "$(api_status /rest/v1/ "$SERVICE_ROLE_KEY")" == 200
 check 'задания в расписании не задвоились' test "$(crontab -l | grep -cE '\./(backup|healthcheck)\.sh')" == 2
+
+section 'файла настроек нет, а база уже есть: новые секреты не создаются'
+mv "$SERVER_ENV" "$WORK/kz.env.saved"
+"$INFRA_DIR/deploy-remote.sh" > "$WORK/lost-env.log" 2>&1
+lost_env_code=$?
+check 'деплой останавливается' test "$lost_env_code" != 0
+check '…и просит вернуть файл из менеджера паролей' grep -q 'менеджера паролей' "$WORK/lost-env.log"
+check '…новый файл настроек не создан' bash -c "! compgen -G '$SERVER/kz.env*' > /dev/null"
+mv "$WORK/kz.env.saved" "$SERVER_ENV"
+check 'база не тронута: тот же контейнер db' test "$(compose ps -q db)" == "$db_before"
+check '…данные на месте' test "$(probe)" == 'до повторного деплоя'
+check '…API отвечает с прежними ключами' \
+  test "$(api_status /auth/v1/health "$ANON_KEY")|$(api_status /rest/v1/ "$SERVICE_ROLE_KEY")" == '200|200'
 
 section 'контейнер упал → задание healthcheck.sh из расписания шлёт уведомление (заглушка канала)'
 compose stop rest > /dev/null 2>&1

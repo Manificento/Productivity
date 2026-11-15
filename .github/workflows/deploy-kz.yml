@@ -3,13 +3,14 @@ name: Deploy KZ
 # Deploys the Supabase stack of region kz to the owner's server in Kazakhstan (#284, the real run is #259).
 # Manual only: never on push or on a schedule. Every value comes from the secrets of the GitHub environment
 # `production-kz` (the table is in infra/supabase/README.md, «Что сделать владельцу»); without them the run stops at
-# the secrets check and touches nothing. The logic lives in infra/supabase/deploy-remote.sh, which the Infra workflow
-# checks over SSH against a test server on every change of infra/.
+# its first step and touches nothing. Only branch `main` deploys, and only commits from its history (deploy-remote.sh
+# checks the revision). The logic lives in infra/supabase/deploy-remote.sh, which the Infra workflow checks over SSH
+# against a test server on every change of infra/ or of this file.
 on:
   workflow_dispatch:
     inputs:
       revision:
-        description: 'Ревизия для развёртывания: SHA, тег или ветка (пусто — ветка запуска). Откат — прежний SHA.'
+        description: 'Ревизия из истории main: SHA или тег (пусто — последний коммит main). Откат — прежний SHA.'
         required: false
         default: ''
 
@@ -27,35 +28,72 @@ jobs:
     runs-on: ubuntu-latest
     environment: production-kz
     timeout-minutes: 30
+    # No secrets at the job level: each step gets only what it needs, third-party actions (checkout) get none.
     env:
       REGION: kz
       REVISION: ${{ inputs.revision }}
-      # Secrets reach the script only through the environment; GitHub masks their values in the log.
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_PORT: ${{ secrets.SSH_PORT }}
-      SSH_USER: ${{ secrets.SSH_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-      DOMAIN: ${{ secrets.DOMAIN }}
-      SITE_URL: ${{ secrets.SITE_URL }}
-      SMTP_HOST: ${{ secrets.SMTP_HOST }}
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      SMTP_USER: ${{ secrets.SMTP_USER }}
-      SMTP_PASS: ${{ secrets.SMTP_PASS }}
-      SMTP_ADMIN_EMAIL: ${{ secrets.SMTP_ADMIN_EMAIL }}
-      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-      S3_REGION: ${{ secrets.S3_REGION }}
-      S3_BUCKET: ${{ secrets.S3_BUCKET }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
-      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
     steps:
-      - uses: actions/checkout@v4
+      # Before anything else, checkout included: the list of every missing secret, and a run from another branch stops.
+      - name: Секреты окружения production-kz заданы, запуск из main
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_ADMIN_EMAIL: ${{ secrets.SMTP_ADMIN_EMAIL }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_REGION: ${{ secrets.S3_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        # The names of the required secrets are the keys of `env` above; values are never printed.
+        run: |
+          missing=()
+          for name in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DOMAIN SITE_URL SMTP_HOST SMTP_USER SMTP_PASS \
+            SMTP_ADMIN_EMAIL S3_ENDPOINT S3_REGION S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+            BACKUP_ENCRYPTION_KEY ALERT_WEBHOOK_URL; do
+            [ -n "${!name:-}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Не заданы секреты окружения production-kz::${missing[*]} — что это и где взять: infra/supabase/README.md, «Что сделать владельцу»"
+            exit 1
+          fi
+          if [ "${GITHUB_REF:-}" != refs/heads/main ]; then
+            echo "::error title=Запуск не из main::Deploy KZ запускается только из ветки main, а не из ${GITHUB_REF:-?}"
+            exit 1
+          fi
+          echo "секреты окружения production-kz заданы, запуск из main"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          # The whole history, so that any earlier revision can be deployed (rollback).
+          # The whole history and origin/main: any earlier revision of main can be deployed (rollback).
           fetch-depth: 0
-      - name: Секреты окружения production-kz заданы
-        run: infra/supabase/deploy-remote.sh check
+          persist-credentials: false
       - name: Развернуть на сервере
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_ADMIN_EMAIL: ${{ secrets.SMTP_ADMIN_EMAIL }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_REGION: ${{ secrets.S3_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: infra/supabase/deploy-remote.sh
