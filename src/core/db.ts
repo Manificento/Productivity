@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
+import { newId } from './ids';
 import { SCHEMA_VERSION } from './schemaVersion';
-import { isLocalOnlySetting } from './sync/localOnly';
+import { DEVICE_ID_KEY, isLocalOnlySetting } from './sync/localOnly';
 import { outboxMiddleware } from './sync/outbox';
 import { tombstoneMiddleware } from './sync/tombstones';
 import type {
@@ -117,10 +118,38 @@ export class LifeDB extends Dexie {
     if (this.verno !== SCHEMA_VERSION) {
       throw new Error(`SCHEMA_VERSION (${SCHEMA_VERSION}) must equal the newest Dexie version (${this.verno})`);
     }
+    // Every start: the installation has its id before the app's first query (first open and after an upgrade).
+    this.on('ready', (vip) => ensureDeviceId(vip as LifeDB));
   }
 }
 
+/** Reads `device.id`, creating it when missing. The second read under a write lock keeps two tabs on one id. */
+function ensureDeviceId(database: LifeDB): PromiseLike<string> {
+  const idOf = (row: Setting | undefined) => (typeof row?.value === 'string' && row.value ? row.value : undefined);
+  const { settings } = database;
+  return settings.get(DEVICE_ID_KEY).then(
+    (row) =>
+      idOf(row) ??
+      database.transaction('rw', settings, () =>
+        settings.get(DEVICE_ID_KEY).then((again) => {
+          const kept = idOf(again);
+          if (kept) return kept;
+          const id = newId();
+          return settings.put({ key: DEVICE_ID_KEY, value: id }).then(() => id);
+        }),
+      ),
+  );
+}
+
 export const db = new LifeDB();
+
+/**
+ * UUID of this installation (`settings` `device.id`) — the `updated_by` of what this device pushes (ADR-0009).
+ * Created when the database is first opened; device state: never synced, never exported, kept by `importAll`.
+ */
+export async function getDeviceId(): Promise<string> {
+  return ensureDeviceId(db);
+}
 
 /**
  * Deletes a record the way the sync needs it (ADR-0009, sync p. 2): the row stays with `deletedAt` (a tombstone)
