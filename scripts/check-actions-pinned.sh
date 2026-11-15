@@ -11,7 +11,8 @@
 # Two passes per file. 1) A line scan parses the one canonical form `- uses: <ref> # <version>` and checks the ref.
 # 2) A YAML parser (python3 + PyYAML, preinstalled on ubuntu-latest) resolves every mapping key — quotes, escapes, flow
 # syntax, explicit `?` keys, anchors and aliases — and every key that reads `uses` and was not checked by pass 1 is an
-# error naming the file:line of its value. No parser, or a file it cannot parse, is an error too: the check fails closed.
+# error naming the file:line of its value. No parser, a file that is not UTF-8 or not valid YAML, or a parser that fails
+# in any other way (an exception, a non-zero exit) is an error naming the file too: the check fails closed.
 # Usage: scripts/check-actions-pinned.sh [root]   (default: this repository). Exit 1 names every file:line.
 set -uo pipefail
 
@@ -51,11 +52,19 @@ hint="закрепите полным SHA коммита (40 символов) �
 SHA версии: git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<версия>*'"
 
 # uses_keys <file> — prints `<key line>\t<value line>\t<value>` for every mapping key that a YAML parser reads as
-# `uses` (aliases resolved), or `error\t<line>\t<message>` when the file is not valid YAML.
+# `uses` (aliases resolved). When the file cannot be read to the end — not UTF-8, not valid YAML, or any other parser
+# failure (e.g. RecursionError on deep nesting) — prints `error\t<line or empty>\t<message>` and exits 1.
 uses_keys() {
   python3 -I - "$1" << 'PY'
 import sys
 import yaml
+
+
+def fail(line, message):
+    # `-` = no line: `read` with IFS=tab would merge an empty field with the next one.
+    message = " ".join(str(message).split())
+    print(f"error\t{line or '-'}\t{message}")
+    sys.exit(1)
 
 
 def walk(node, seen):
@@ -75,15 +84,21 @@ def walk(node, seen):
             walk(item, seen)
 
 
+with open(sys.argv[1], "rb") as stream:
+    data = stream.read()
 try:
-    with open(sys.argv[1], encoding="utf-8") as stream:
-        for document in yaml.compose_all(stream, Loader=yaml.SafeLoader):
-            walk(document, set())
+    text = data.decode("utf-8", errors="strict")
+except UnicodeDecodeError as error:
+    fail(data.count(b"\n", 0, error.start) + 1, f"файл не в UTF-8 (байт 0x{data[error.start]:02x}): сохраните его в UTF-8")
+try:
+    for document in yaml.compose_all(text, Loader=yaml.SafeLoader):
+        walk(document, set())
 except yaml.YAMLError as error:
     mark = getattr(error, "problem_mark", None) or getattr(error, "context_mark", None)
-    line = mark.line + 1 if mark else ""
     problem = getattr(error, "problem", None) or str(error).splitlines()[0]
-    print(f"error\t{line}\t{problem}")
+    fail(mark.line + 1 if mark else "", f"файл не разбирается как YAML ({problem})")
+except Exception as error:  # fail closed: a parser that stopped early has not seen every `uses` key
+    fail("", f"YAML-парсер упал ({type(error).__name__}: {error})")
 PY
 }
 
@@ -92,6 +107,7 @@ form_error="ключ uses в форме, которую проверка не р
 
 check_file() {
   local file=$1 number=0 line value ref comment lines indent text_indent=-1 key_line value_line parsed
+  local records parser_status=0 parser_error=0
   local -A canonical=() flagged=()
   mapfile -t lines < "$file"
   for line in "${lines[@]}"; do
@@ -137,10 +153,15 @@ check_file() {
     fi
   done
 
-  # Pass 2: every `uses` key as the YAML parser reads it.
+  # Pass 2: every `uses` key as the YAML parser reads it. The parser's exit status is checked: a parser that stopped
+  # early without a record has not seen every key, so the file fails.
+  records=$(uses_keys "$file") || parser_status=$?
   while IFS=$'\t' read -r key_line value_line parsed; do
-    if [[ $key_line == error ]]; then
-      report "$file" "$value_line" "файл не разбирается как YAML ($parsed) — проверка не может прочитать шаги"
+    if [[ -z $key_line ]]; then
+      continue
+    elif [[ $key_line == error ]]; then
+      parser_error=1
+      report "$file" "${value_line#-}" "$parsed — проверка не может прочитать шаги"
     elif [[ -n ${canonical[$key_line]+x} && ${canonical[$key_line]} == "$parsed" ]]; then
       continue # checked by pass 1
     elif [[ -n ${canonical[$key_line]+x} ]]; then
@@ -149,7 +170,10 @@ check_file() {
       checked=$((checked + 1))
       report "$file" "$value_line" "$parsed — $form_error"
     fi
-  done < <(uses_keys "$file")
+  done <<< "$records"
+  if ((parser_status && !parser_error)); then
+    report "$file" "" "YAML-парсер упал (код $parser_status) — проверка не может прочитать шаги"
+  fi
 }
 
 if ! python3 -I -c 'import yaml' > /dev/null 2>&1; then

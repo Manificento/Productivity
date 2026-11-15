@@ -142,6 +142,42 @@ test_unparsable_yaml_fails() {
   check "сказано, что YAML не разбирается" "$(says 'YAML')" "$output"
 }
 
+test_non_utf8_byte_with_alias_key_fails() {
+  workflow ci.yml \
+    "      - name: &k uses" \
+    "        run: echo" \
+    "      - *k : actions/checkout@v4" \
+    "# caf"$'\xe9'
+  run_check
+  check "код выхода ≠ 0, назван файл" "$(fails_naming '.github/workflows/ci.yml')" "$output"
+  check "сказано, что файл не в UTF-8" "$(says 'UTF-8')" "$output"
+  check "не сказано, что всё закреплено" "$(silent_on 'закреплены по SHA')" "$output"
+}
+
+test_deeply_nested_yaml_fails() {
+  local depth=3000
+  workflow ci.yml "      - uses: actions/checkout@$SHA # v4.4.0" \
+    "      - run: $(printf '[%.0s' $(seq $depth))$(printf ']%.0s' $(seq $depth))"
+  run_check
+  check "код выхода ≠ 0, назван файл" "$(fails_naming '.github/workflows/ci.yml')" "$output"
+  check "сказано, почему упал парсер" \
+    "$(says '.github/workflows/ci.yml: YAML-парсер упал (RecursionError: maximum recursion depth exceeded) —')" \
+    "$output"
+  check "не сказано, что всё закреплено" "$(silent_on 'закреплены по SHA')" "$output"
+}
+
+test_parser_crash_fails() {
+  workflow ci.yml "      - uses: actions/checkout@$SHA # v4.4.0"
+  mkdir -p "$SANDBOX/bin"
+  # `import yaml` succeeds, the parser script itself dies without printing a record.
+  printf '#!/bin/sh\ncase "$2" in -c) exit 0 ;; esac\necho "Traceback: boom" >&2\nexit 1\n' > "$SANDBOX/bin/python3"
+  chmod +x "$SANDBOX/bin/python3"
+  output=$(env -u GITHUB_ACTIONS PATH="$SANDBOX/bin:$PATH" "$CHECK" "$SANDBOX" 2>&1)
+  status=$?
+  check "код выхода ≠ 0, назван файл" "$(fails_naming '.github/workflows/ci.yml')" "$output"
+  check "сказано, что YAML-парсер упал" "$(says 'YAML-парсер упал')" "$output"
+}
+
 test_without_yaml_parser_fails() {
   workflow ci.yml "      - uses: actions/checkout@$SHA # v4.4.0"
   mkdir -p "$SANDBOX/bin"
@@ -255,6 +291,12 @@ run_test "Given явный ключ ? uses во flow-mapping на двух ст�
 строку" test_flow_explicit_key_fails
 run_test "Given workflow не разбирается как YAML When проверка Then она падает и называет файл" \
   test_unparsable_yaml_fails
+run_test "Given workflow с байтом не в UTF-8 и ключом uses через алиас When проверка Then она падает и называет файл" \
+  test_non_utf8_byte_with_alias_key_fails
+run_test "Given workflow с вложенностью глубже стека парсера When проверка Then она падает и называет файл" \
+  test_deeply_nested_yaml_fails
+run_test "Given YAML-парсер упал не с ошибкой YAML When проверка Then она падает и называет файл" \
+  test_parser_crash_fails
 run_test "Given нет python3 с PyYAML When проверка Then она падает, а не проходит молча" \
   test_without_yaml_parser_fails
 run_test "Given блочный скаляр закончился When следом действие по тегу Then проверка падает и называет файл и строку" \
