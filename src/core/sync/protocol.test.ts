@@ -88,6 +88,12 @@ describe('merge(localRow, remoteRow) — правила ADR-0009', () => {
   it('слитый приём пищи — новая версия этого устройства, позже обеих: сервер примет её поверх своей', () => {
     const merged = merge(meal(100, A, [item('a', 100)]), meal(200, B, [item('b', 200)]));
     expect(merged).toMatchObject({ updatedAt: 201, updatedBy: A });
+    // A version of its own: nothing of the server's row (its `rev`) is carried over.
+    const fromServer = merge(meal(100, A, [item('a', 100)]), {
+      ...meal(200, B, [item('b', 200)]),
+      rev: 7,
+    } as SyncChange);
+    expect(Object.keys(fromServer).toSorted()).toEqual(['data', 'key', 'table', 'updatedAt', 'updatedBy']);
   });
 
   it('правка элемента — LWW по updatedAt элемента, даже если сама запись старше', () => {
@@ -209,6 +215,13 @@ describe('applyPull(changes, local)', () => {
       conflicts: [],
       cursor: 5,
     });
+  });
+
+  it('своё удаление в очереди проиграло более позднему удалению с сервера — tombstone остаётся, запись очереди снята', () => {
+    const queued = entry('tasks', 't1', 200);
+    const mine = task({ updatedAt: 200, deletedAt: 200, title: undefined });
+    const remote = { ...tombstone({ updatedAt: 300, updatedBy: B }), rev: 4 };
+    expect(applyPull([remote], local([mine], [queued]))).toMatchObject({ put: [], remove: [], settled: [queued] });
   });
 
   it('локальная правка в очереди позже серверной — остаётся и ждёт отправки', () => {

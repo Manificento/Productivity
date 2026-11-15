@@ -68,6 +68,7 @@ export class SyncRequestError extends Error {
 }
 
 const MAX_RETRY_DELAY_MS = 60_000;
+const NOT_THE_PROTOCOL = 'Сервер синхронизации ответил не по протоколу';
 const RETRIABLE_STATUSES = new Set([408, 429]);
 
 /** A row of `changes_since` and of `sync_push`: absent fields come as `null`. */
@@ -134,7 +135,7 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
       try {
         const parsed = schema.safeParse(await attempt(method, path, body));
         if (parsed.success) return parsed.data;
-        throw new SyncRequestError('Сервер синхронизации ответил не по протоколу', { retriable: false });
+        throw new SyncRequestError(NOT_THE_PROTOCOL, { retriable: false });
       } catch (error) {
         if (!(error instanceof SyncRequestError) || !error.retriable || retry >= maxRetries) throw error;
         await sleep(Math.min(retryDelayMs * 2 ** retry, MAX_RETRY_DELAY_MS));
@@ -160,7 +161,10 @@ export function createSyncClient(options: SyncClientOptions): SyncClient {
         );
         if (rows.length > 0) yield rows.map(toPulledChange);
         if (rows.length < pageSize) return;
-        cursor = Math.max(cursor, ...rows.map((row) => row.rev));
+        const next = Math.max(...rows.map((row) => row.rev));
+        // A full page that does not move the cursor would be asked for again forever.
+        if (next <= cursor) throw new SyncRequestError(NOT_THE_PROTOCOL, { retriable: false });
+        cursor = next;
       }
     },
   };

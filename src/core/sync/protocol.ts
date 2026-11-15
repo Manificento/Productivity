@@ -154,7 +154,8 @@ export function merge(localRow: SyncChange, remoteRow: SyncChange): SyncChange {
   const items = uniteItems(itemsOf(winner), itemsOf(loser));
   if (hasSameItems(items, itemsOf(winner))) return winner;
   return {
-    ...winner,
+    table: winner.table,
+    key: winner.key,
     updatedAt: winner.updatedAt + 1,
     updatedBy: localRow.updatedBy,
     data: { ...winner.data, items },
@@ -229,8 +230,9 @@ function localVersion(row: LocalRow | undefined, entry: SyncOutboxEntry, deviceI
  * What to do with changes pulled from the server (ADR-0009, sync p. 4–5). `local.rows` — the stored rows of the
  * changed keys (tombstones included), `local.outbox` — the queue.
  *
- * - A row without a queue entry has no local change: the server's version replaces it; a server tombstone removes
- *   the row (a tombstone this device made itself stays until its own clean-up).
+ * - A row without a queue entry has no local change: the server's version replaces it. A server tombstone removes
+ *   a live row physically; a tombstone this device made itself (`softDelete`) is left for the engine's clean-up
+ *   (ADR-0010: not before the server's tombstone has expired).
  * - A row with a queue entry is resolved by `merge`: the local version stays queued; or the server's replaces it
  *   — the entry is settled and, unless both are the same version (the echo of this device's own push), the lost
  *   local version is reported in `conflicts`; or a merged meal is written and stays queued.
@@ -265,7 +267,7 @@ export function applyPull(changes: readonly PulledChange[], local: LocalState): 
       const row = toLocalRow(version);
       rows.set(id, row);
       writes.set(id, { put: row });
-    } else if (stored && (queued || !isTime(stored.row.deletedAt))) {
+    } else if (stored && !isTime(stored.row.deletedAt)) {
       rows.delete(id);
       writes.set(id, { remove: { table: remote.table, key: remote.key } });
     }

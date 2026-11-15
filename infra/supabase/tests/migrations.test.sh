@@ -135,8 +135,15 @@ annas="[$(change tasks t1 1000 dev-anna '{"title":"задача Анны"}'),
   $(change settings time.pomodoro 1000 dev-anna '{"value":{"focusMin":25}}')]"
 same 'Анна отправляет три строки: sync_push → 200' "$(push "$anna" "$annas")" 200
 same '…все приняты' "$(body 'map(.applied)')" '[true,true,true]'
+# The shape src/core/sync/client.ts parses: these names and types are the wire contract.
+same '…строка ответа sync_push — поля протокола (PushResult), числа — числами' \
+  "$(body '.[0] | [keys, (.rev | type), (.updatedAt | type), .data, .deletedAt]')" \
+  '[["applied","data","deletedAt","key","rev","table","updatedAt","updatedBy"],"number","number",null,null]'
 same 'Анна получает свои строки: changes_since(0)' "$(pull "$anna" && body 'map(.key) | sort')" \
   '200["sleep:2026-11-05","t1","time.pomodoro"]'
+same '…строка changes_since — поля протокола (PulledChange)' \
+  "$(body 'map(select(.key == "t1")) | .[0] | del(.rev)')" \
+  '{"table":"tasks","key":"t1","updatedAt":1000,"updatedBy":"dev-anna","deletedAt":null,"data":{"title":"задача Анны"}}'
 same 'Борис не получает чужих строк: changes_since(0) пуст' "$(pull "$boris" && body)" '200[]'
 same 'Борис не видит чужих строк через API: sync_rows пуста' \
   "$(call "$boris" GET '/rest/v1/sync_rows?select=id' && body)" '200[]'

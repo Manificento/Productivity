@@ -159,6 +159,13 @@ describe('createSyncClient — тонкий транспорт синхрони�
     expect(pages[0][0]).toEqual({ ...tombstone, key: 'a', rev: 5, deletedAt: undefined, data: { title: 'a' } });
   });
 
+  it('pull: полная страница, которая не двигает курсор, — ошибка, а не бесконечный цикл', async () => {
+    const { client, fetch } = setup([ok([row('a', 3), row('b', 4)])], { pageSize: 2 });
+    const error = await collect(client.pull(4)).catch((e: unknown) => e);
+    expect(error).toMatchObject({ retriable: false, message: 'Сервер синхронизации ответил не по протоколу' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('pull: на сервере ничего нового — ни одной страницы', async () => {
     const { client, fetch } = setup([ok([])]);
     expect(await collect(client.pull(40))).toEqual([]);
