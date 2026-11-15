@@ -15,6 +15,10 @@ ANDROID_KEYSTORE_PASSWORD=$(openssl rand -hex 24)
 # PKCS12 has one password for the store and the key.
 export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD" ANDROID_KEY_ALIAS=throwaway
 export LIFEOS_VERSION_CODE="${LIFEOS_VERSION_CODE:-1}"
+# Built as if from the tag v9.9.9-ci: the tag → versionName path (release-version.sh → Gradle → APK) runs on every PR,
+# and build-release.sh checks the APK carries versionName 9.9.9-ci.
+unset LIFEOS_VERSION_NAME
+export GITHUB_REF_TYPE=tag GITHUB_REF_NAME=v9.9.9-ci
 
 keytool -genkeypair -keystore "$ANDROID_KEYSTORE_FILE" -storetype PKCS12 -alias "$ANDROID_KEY_ALIAS" \
   -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=LifeOS CI throwaway key' \

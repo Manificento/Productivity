@@ -1,34 +1,57 @@
 #!/usr/bin/env bash
-# Gate of the signed release job of the «Android» workflow (#285). Writes ready=true|false to $GITHUB_OUTPUT.
+# Gate of the signed release of the «Android» workflow (#285). Writes ready=true|false to $GITHUB_OUTPUT.
 # - pull_request: never ready. A PR checks the signing path on a throwaway keystore; the app key never meets PR code.
-# - manual run or tag v*: ready when all four signing secrets are set; none set — a notice and the job is skipped
-#   (CI stays green until the owner adds them); some set — an error naming the missing ones.
-# Reads the secrets from the environment; prints only their names, never values.
+# - otherwise only reviewed code may get the upload key: branch main, or a tag v* on a commit from the history of
+#   origin/main (run inside a checkout with fetch-depth 0). Any other ref — an error, nothing is built. The GitHub
+#   environment android-release enforces the same with its deployment rule; this is the second lock.
+# - then ready when all four signing secrets are set; none set — a notice and the release is skipped (CI stays green
+#   until the owner adds them); some set — an error naming the missing ones.
+# Reads only presence flags HAS_<NAME>=true|false (`secrets.X != ''` in the workflow), never the values.
 set -euo pipefail
 
 names=(ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD)
 output=${GITHUB_OUTPUT:?GITHUB_OUTPUT is not set}
+readme='README, «Подпись release-сборки Android»'
+
+not_ready() {
+  echo ready=false >> "$output"
+  exit "$1"
+}
 
 if [ "${GITHUB_EVENT_NAME:-}" = pull_request ]; then
-  echo '::notice title=Release-сборка пропущена::На PR подпись проверяется одноразовым keystore в задании «Android debug APK». Release с ключом приложения собирается при ручном запуске workflow «Android» или по тегу v*.'
-  echo ready=false >> "$output"
-  exit 0
+  echo '::notice title=Release-сборка пропущена::На PR подпись проверяется одноразовым keystore в задании «Android debug APK». Release с ключом приложения собирается при ручном запуске workflow «Android» из main или по тегу v*.'
+  not_ready 0
+fi
+
+ref=${GITHUB_REF:-}
+if [ "$ref" != refs/heads/main ]; then
+  if [[ $ref != refs/tags/v* ]]; then
+    echo "::error title=Release только из main или тега v*::Запуск из ${ref:-?}: ключ загрузки получает только проверенный код — ветка main или тег v* на коммите из её истории. См. $readme."
+    not_ready 1
+  fi
+  if ! git rev-parse --verify -q origin/main > /dev/null; then
+    echo '::error title=Нет origin/main::Шлюзу нужна история main (actions/checkout с fetch-depth: 0).'
+    not_ready 1
+  fi
+  if ! git merge-base --is-ancestor "${GITHUB_SHA:?GITHUB_SHA is not set}" origin/main; then
+    echo "::error title=Тег не из истории main::$ref указывает на коммит ${GITHUB_SHA}, которого нет в main: ключ загрузки получает только код, прошедший ревью и слитый в main."
+    not_ready 1
+  fi
 fi
 
 missing=()
 for name in "${names[@]}"; do
-  [ -n "${!name:-}" ] || missing+=("$name")
+  flag="HAS_$name"
+  [ "${!flag:-false}" = true ] || missing+=("$name")
 done
 
 if [ "${#missing[@]}" -eq "${#names[@]}" ]; then
-  echo "::notice title=Секретов подписи нет::Release-задание пропущено. Нужны секреты ${names[*]} — как создать ключ и куда их положить: README, «Подпись release-сборки Android»."
-  echo ready=false >> "$output"
-  exit 0
+  echo "::notice title=Секретов подписи нет::Release-задание пропущено. Нужны секреты ${names[*]} в окружении android-release — как создать ключ и куда их положить: $readme."
+  not_ready 0
 fi
 if [ "${#missing[@]}" -gt 0 ]; then
-  echo "::error title=Заданы не все секреты подписи::Не хватает: ${missing[*]}. Что положить в каждый — README, «Подпись release-сборки Android»."
-  echo ready=false >> "$output"
-  exit 1
+  echo "::error title=Заданы не все секреты подписи::Не хватает в окружении android-release: ${missing[*]}. Что положить в каждый — $readme."
+  not_ready 1
 fi
-echo 'секреты подписи заданы: собираю подписанный release'
+echo "секреты подписи заданы, запуск из $ref: собираю подписанный release"
 echo ready=true >> "$output"

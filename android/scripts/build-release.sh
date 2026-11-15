@@ -25,10 +25,10 @@ for name in ANDROID_KEYSTORE_FILE ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS AN
     exit 1
   fi
 done
-if [ -z "${LIFEOS_VERSION_NAME:-}" ] && [ "${GITHUB_REF_TYPE:-}" = tag ] && [[ ${GITHUB_REF_NAME:-} == v* ]]; then
-  export LIFEOS_VERSION_NAME="${GITHUB_REF_NAME#v}"
-fi
-version_name=${LIFEOS_VERSION_NAME:-$(node -p "require('$repo/package.json').version")}
+# Gradle reads LIFEOS_VERSION_NAME; the badging check below compares the APK with the same value.
+LIFEOS_VERSION_NAME=$("$scripts/release-version.sh")
+export LIFEOS_VERSION_NAME
+version_name=$LIFEOS_VERSION_NAME
 
 # A wrong password or alias gives this message instead of a Gradle stack trace. keytool prints nothing secret.
 if ! keytool -list -keystore "$ANDROID_KEYSTORE_FILE" -storepass:env ANDROID_KEYSTORE_PASSWORD \
