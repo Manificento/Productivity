@@ -23,6 +23,8 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm run lint
+      # Every third-party action by full commit SHA (#296): fails naming file:line of a tag or branch.
+      - run: npm run lint:actions
       - run: npm run deps
       - run: npm run test:coverage
       - run: npm run test:scripts

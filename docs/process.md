@@ -61,6 +61,13 @@ flowchart LR
   PR не создаётся. У существующего PR заголовок не меняется. Тесты скрипта — `npm run test:scripts`
   (часть `npm run check`; нужен `jq`).
 - Слияние: только squash, только с зелёным CI.
+- Действия GitHub Actions — только по полному SHA коммита с комментарием версии
+  (`uses: actions/checkout@<40 символов> # v4.4.0`; #296): тег и ветку владелец чужого действия может передвинуть на
+  другой код, а он работает рядом с ключом подписи и секретами развёртывания. Проверка — `npm run lint:actions`
+  (`scripts/check-actions-pinned.sh`, часть `npm run check` и CI) падает и называет файл и строку; локальные
+  действия (`./…`) не проверяются, образ `docker://` — только с `@sha256:`. SHA версии —
+  `git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<версия>*'` (у аннотированного тега — строка `^{}`).
+  Новые SHA вместе с комментарием предлагает Dependabot (экосистема `github-actions` в `.github/dependabot.yml`).
 
 ## Команды агента (`scripts/agent.sh`)
 
