@@ -40,6 +40,9 @@ describe('health store import on «Сон» (#131)', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('ночей 2, тренировок 0');
     expect(await db.sleepLogs.count()).toBe(2);
     fireEvent.click(await screen.findByRole('button', { name: 'Обновить' }));
+    // The status already says «ночей 2» from the first import: wait until the re-import itself is over (the button
+    // is disabled while it runs), so the count below is taken after it and the run does not spill into the next test.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Обновить' })).toBeEnabled());
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('ночей 2'));
     expect(await db.sleepLogs.count()).toBe(2);
   });
