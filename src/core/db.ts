@@ -1,4 +1,5 @@
-import Dexie, { type EntityTable } from 'dexie';
+import Dexie, { type EntityTable, type Table } from 'dexie';
+import { outboxMiddleware } from './sync/outbox';
 import type {
   CheckIn,
   CognitiveTest,
@@ -15,6 +16,7 @@ import type {
   Project,
   Setting,
   SleepLog,
+  SyncOutboxEntry,
   Task,
   TimeCategory,
   TimeEntry,
@@ -53,9 +55,12 @@ export class LifeDB extends Dexie {
   mindSessions!: EntityTable<MindSession, 'id'>;
   notes!: EntityTable<Note, 'id'>;
   xpEvents!: EntityTable<XpEvent, 'id'>;
+  /** Outgoing sync queue — written only by the core middleware, read only by the sync layer (`core/sync/`). */
+  syncOutbox!: Table<SyncOutboxEntry, [table: string, key: string]>;
 
   constructor(name = 'lifeos') {
     super(name);
+    this.use(outboxMiddleware);
     this.version(1).stores({
       projects: 'id, archived',
       tasks: 'id, projectId, dueDate, priority, completedAt, *tags',
@@ -97,6 +102,10 @@ export class LifeDB extends Dexie {
     // v6 (contract #227): re-import of a night (Sleep Cycle, Health) finds it by source + external id.
     this.version(6).stores({
       sleepLogs: 'id, &date, [sourceId+externalId]',
+    });
+    // v7 (contract #274, ADR-0009): the outgoing sync queue, one entry per changed row; pushed oldest first.
+    this.version(7).stores({
+      syncOutbox: '[table+key], updatedAt',
     });
   }
 }

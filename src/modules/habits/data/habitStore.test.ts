@@ -51,3 +51,19 @@ describe('habitStore', () => {
     expect(await db.habits.get(id)).toMatchObject({ archived: true, updatedAt: 30 });
   });
 });
+
+describe('contract #274: транзакция модуля и syncOutbox', () => {
+  it('Given любая readwrite-транзакция модуля When она меняет строки Then DBCore-middleware ядра пишет {table, key, updatedAt} в новую таблицу syncOutbox в той же транзакции; модули не меняются', async () => {
+    await db.syncOutbox.clear();
+    // toggleHabit opens `db.transaction('rw', db.habitLogs, …)` — it knows nothing about the outbox.
+    await toggleHabit('h1', '2026-11-03', 1);
+    const [log] = await db.habitLogs.toArray();
+
+    const entries = await db.syncOutbox.toArray();
+    expect(entries).toEqual([{ table: 'habitLogs', key: log!.id, updatedAt: expect.any(Number) }]);
+
+    // A second change of the same row replaces its entry instead of adding one.
+    await toggleHabit('h1', '2026-11-03', 2);
+    expect(await db.syncOutbox.count()).toBe(1);
+  });
+});
