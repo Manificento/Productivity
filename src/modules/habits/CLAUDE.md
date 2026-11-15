@@ -3,6 +3,7 @@
 Метка дорожки: `area:habits`. Задачи: `scripts/agent.sh next habits`.
 
 - **Пишет в таблицы:** `habits`, `habitLogs`. Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
+- **Отметка привычки:** одна запись `habitLogs` на привычку и день, её `id` — `naturalId('habitLog', habitId, date)` из `src/core/ids.ts` (#275), не `newId()`.
 - **Суть модуля:** привычки с расписанием, отметки, серии, статистика.
 - **Цели дня:** `useDailyTargets(todayKey())` из `src/core/adaptation/useDailyTargets.ts` — только чтение.
 

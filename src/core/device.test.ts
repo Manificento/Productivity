@@ -133,7 +133,15 @@ describe('contract #274: резервная копия и синхронизац
   });
 
   it('строки с deletedAt в файле копии не импортируются: копия — только живые данные', async () => {
-    const night = { id: 's1', createdAt: 1, updatedAt: 1, date: '2026-11-04', bedtime: 1, wakeTime: 2, quality: 4 };
+    const night = {
+      id: 'sleep:2026-11-04',
+      createdAt: 1,
+      updatedAt: 1,
+      date: '2026-11-04',
+      bedtime: 1,
+      wakeTime: 2,
+      quality: 4,
+    };
     await importAll({
       format: 'lifeos-backup',
       version: SCHEMA_VERSION,
@@ -145,10 +153,19 @@ describe('contract #274: резервная копия и синхронизац
   });
 
   it('импорт заменяет и удалённые записи: tombstone не мешает строке из копии с тем же id или уникальным ключом', async () => {
-    const night = { id: 's1', createdAt: 1, updatedAt: 1, date: '2026-11-04', bedtime: 1, wakeTime: 2, quality: 4 };
+    const night = {
+      id: 'sleep:2026-11-04',
+      createdAt: 1,
+      updatedAt: 1,
+      date: '2026-11-04',
+      bedtime: 1,
+      wakeTime: 2,
+      quality: 4,
+    };
     await db.sleepLogs.add(night);
     const backup = await exportAll();
-    await softDelete(db.sleepLogs, 's1');
+    await softDelete(db.sleepLogs, night.id);
+    // A night of the same day under another id (as a pull could deliver one written before #275).
     await db.sleepLogs.add({ ...night, id: 's2' });
     await softDelete(db.sleepLogs, 's2');
 
@@ -156,6 +173,6 @@ describe('contract #274: резервная копия и синхронизац
     expect(await db.sleepLogs.toArray()).toEqual([night]);
     // Everything the import removed or wrote is queued: with an account, a restore replaces the cloud copy.
     const queued = (await db.syncOutbox.toArray()).filter((e) => e.table === 'sleepLogs').map((e) => e.key);
-    expect(queued.sort()).toEqual(['s1', 's2']);
+    expect(queued.sort()).toEqual(['s2', night.id]);
   });
 });

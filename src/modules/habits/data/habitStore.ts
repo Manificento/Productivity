@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, softDeleteMany } from '../../../core/db';
-import { newRecord, touch } from '../../../core/ids';
+import { naturalId, newRecord, touch } from '../../../core/ids';
 import type { DateKey, Habit, HabitLog, Id, Millis } from '../../../core/types';
 import type { HabitFields } from '../logic/habitForm';
 
@@ -33,13 +33,14 @@ export async function archiveHabit(id: Id, now: Millis = Date.now()): Promise<vo
 
 /**
  * Flips the mark of a habit on a day. Keeps one `HabitLog` per habit and day (`[habitId+date]`):
- * the first tap creates it with `done: true`, later taps flip `done`.
+ * the first tap creates it with `done: true`, later taps flip `done`. Its id is
+ * `naturalId('habitLog', habitId, date)` (#275): the same mark made on two devices is one record for the sync.
  */
 export async function toggleHabit(habitId: Id, date: DateKey, now: Millis = Date.now()): Promise<boolean> {
   return db.transaction('rw', db.habitLogs, async () => {
     const existing = await db.habitLogs.where('[habitId+date]').equals([habitId, date]).toArray();
     if (existing.length === 0) {
-      await db.habitLogs.add(newRecord({ habitId, date, done: true }, now));
+      await db.habitLogs.add(newRecord({ habitId, date, done: true }, now, naturalId('habitLog', habitId, date)));
       return true;
     }
     // Same tie-break as doneDays (the later one wins), so the tap flips the mark that is shown.

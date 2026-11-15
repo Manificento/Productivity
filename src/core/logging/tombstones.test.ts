@@ -37,11 +37,11 @@ describe('contract #274: общие пути записи и удалённые 
     const again = await saveSleep({ ...night('2026-11-05', '22:00', '06:30'), quality: 5 }, 2_000);
     expect(await db.sleepLogs.toArray()).toEqual([again]);
     expect(again).toMatchObject({ date: '2026-11-05', quality: 5, createdAt: 2_000 });
-    // One night on the day in the store too (the tombstone has no `date`), and the old night's deletion is still
-    // queued for the sync.
-    expect((await storedRows<SleepLog>('sleepLogs')).filter((s) => s.date === '2026-11-05')).toEqual([again]);
-    expect(await db.syncOutbox.get(['sleepLogs', first.id])).toBeDefined();
-    expect(await db.syncOutbox.get(['sleepLogs', again.id])).toBeDefined();
+    // The day has one id (`sleep:<DateKey>`, #275): the new night replaced the tombstone in the store, and the
+    // sync gets one change of that id — the night as it is now — instead of a deletion plus a record with a new id.
+    expect(again.id).toBe(first.id);
+    expect(await storedRows<SleepLog>('sleepLogs')).toEqual([again]);
+    expect((await db.syncOutbox.toArray()).map((e) => [e.table, e.key])).toEqual([['sleepLogs', again.id]]);
 
     // The usual rule still holds afterwards: a second save for the day updates the same record.
     const edited = await saveSleep({ ...night('2026-11-05'), quality: 4 }, 3_000);
@@ -64,7 +64,8 @@ describe('contract #274: общие пути записи и удалённые 
     await deleteSleep(imported.id);
 
     const again = await saveSleep({ ...night('2026-11-05'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 2_000);
-    expect(again.id).not.toBe(imported.id);
+    // Same day — same id (#275): the re-import re-creates the record the deletion left a tombstone of.
+    expect(again.id).toBe(imported.id);
     expect(await db.sleepLogs.toArray()).toEqual([again]);
     expect(await db.sleepLogs.where('[sourceId+externalId]').equals([SC, 'sc-1']).count()).toBe(1);
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
+import { naturalId } from '../../../core/ids';
 import { sleepHours } from '../../../core/logging/sleepTime';
 import { loadRecentSleep, logSleep } from './sleep';
 
@@ -7,6 +8,14 @@ const TODAY = '2026-11-04';
 
 beforeEach(async () => {
   await db.sleepLogs.clear();
+});
+
+describe('contract #275: health writes nights through saveSleep — the id is the wake-up day', () => {
+  it('Given saveSleep, checkIns, habitLogs, mealLogs, weightLogs When создаётся запись Then её id — naturalId(...) — модуль health (logSleep)', async () => {
+    const r = await logSleep({ wakeDay: '2026-11-04', bedtime: '23:30', wake: '07:00', quality: 4 }, TODAY);
+    expect(r.ok && r.log.id).toBe(naturalId('sleep', '2026-11-04'));
+    expect((await db.sleepLogs.toArray()).map((s) => s.id)).toEqual(['sleep:2026-11-04']);
+  });
 });
 
 describe('logSleep', () => {

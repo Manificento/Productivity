@@ -2,6 +2,7 @@ import Dexie, { type EntityTable, type Table } from 'dexie';
 import { newId } from './ids';
 import { SCHEMA_VERSION } from './schemaVersion';
 import { DEVICE_ID_KEY, isLocalOnlySetting } from './sync/localOnly';
+import { migrateToNaturalIds } from './sync/naturalKeys';
 import { outboxMiddleware } from './sync/outbox';
 import { tombstoneMiddleware } from './sync/tombstones';
 import type {
@@ -113,6 +114,9 @@ export class LifeDB extends Dexie {
     this.version(7).stores({
       syncOutbox: '[table+key], updatedAt',
     });
+    // v8 (contract #275, ADR-0009 sync p. 5): records of the «one per day» tables move under `naturalId(…)`, meal
+    // items get `id` and `updatedAt`. Data only — the stores and indexes stay as they are.
+    this.version(8).upgrade((tx) => migrateToNaturalIds(tx));
     // Versions above stay literal (append-only: a constant there would silently renumber the last one).
     // SCHEMA_VERSION must name the newest of them — backups and the sync protocol speak this number.
     if (this.verno !== SCHEMA_VERSION) {

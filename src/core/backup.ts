@@ -1,6 +1,7 @@
 import { db, TABLE_NAMES, type TableName } from './db';
 import { SCHEMA_VERSION } from './schemaVersion';
 import { DEVICE_ID_KEY } from './sync/localOnly';
+import { isNaturalKeyTable, withNaturalIds } from './sync/naturalKeys';
 
 export const BACKUP_FORMAT = 'lifeos-backup';
 /**
@@ -61,6 +62,11 @@ export function isBackup(value: unknown): value is Backup {
  * device keeps its `device.id` — an id inside the file is ignored, as are rows marked `deletedAt` (a backup is
  * live data). The core middleware queues every removed and every restored row in `syncOutbox`: with an account, a
  * restore is «replace the data in the cloud» (sync p. 9).
+ *
+ * Natural ids (#275): a backup made before schema version 8 holds the «one per day» records under random ids and
+ * meal items without ids. Their rows go through the same `withNaturalIds` as the Dexie migration — whatever the
+ * version of the file says (it changes nothing in rows that are already right), so the database never holds such a
+ * record under another id.
  */
 export async function importAll(backup: unknown): Promise<void> {
   if (!isBackup(backup)) throw new Error('Файл не похож на резервную копию LifeOS');
@@ -76,9 +82,10 @@ export async function importAll(backup: unknown): Promise<void> {
         const table = db.table(name);
         await table.clear();
         const given: unknown = backup.tables[name];
-        const rows = Array.isArray(given)
+        const live = Array.isArray(given)
           ? given.filter((row) => !isDeviceId(name, row) && field(row, 'deletedAt') == null)
           : [];
+        const rows = isNaturalKeyTable(name) ? withNaturalIds(name, live) : live;
         if (rows.length) await table.bulkAdd(rows);
       }
       if (deviceId) await db.settings.put(deviceId);
