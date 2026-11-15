@@ -2,9 +2,10 @@ name: Android
 
 # Debug APK for PRs that touch the native shell (ADR-0008). iOS joins after the Apple account (owner, P2).
 # Signed release (#285, README «Подпись release-сборки Android»): every PR checks the signing path on a throwaway
-# keystore made inside the job; the release with the app's upload key is built only by a manual run from main or a tag
-# v* on a commit of main, with the secrets of the GitHub environment android-release. Without them the release is
-# skipped with a notice and the run stays green.
+# keystore made inside the job; the release with the app's upload key is built by a manual run from main or a tag v*,
+# with the secrets of the GitHub environment android-release. Without them the release is skipped with a notice and the
+# run stays green. A tag run executes this file from the tagged commit, so nothing in it can stop a hostile tag: the
+# lock is the environment's required reviewers plus a tag ruleset on v* (README, step 2).
 on:
   pull_request:
     paths:
@@ -82,7 +83,8 @@ jobs:
   release:
     name: Android signed release (AAB + APK)
     needs: [apk, signing-gate]
-    # Skipped on PRs. Elsewhere the environment's deployment rule (branch main, tags v*) and the gate below decide.
+    # Skipped on PRs. Elsewhere the environment decides: the owner's approval (required reviewers) and its deployment
+    # rule (branch main, tags v*). The gate below only catches mistakes: a hostile tag ships its own copy of it.
     if: github.event_name != 'pull_request'
     # The four secrets live in this environment, not in the repository: other jobs and other branches cannot read them.
     environment: android-release

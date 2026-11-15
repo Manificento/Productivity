@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Gate of the signed release of the «Android» workflow (#285). Writes ready=true|false to $GITHUB_OUTPUT.
 # - pull_request: never ready. A PR checks the signing path on a throwaway keystore; the app key never meets PR code.
-# - otherwise only reviewed code may get the upload key: branch main, or a tag v* on a commit from the history of
-#   origin/main (run inside a checkout with fetch-depth 0). Any other ref — an error, nothing is built. The GitHub
-#   environment android-release enforces the same with its deployment rule; this is the second lock.
+# - otherwise only branch main, or a tag v* on a commit from the history of origin/main (run inside a checkout with
+#   fetch-depth 0). Any other ref — an error, nothing is built. This guards against honest mistakes only: on a tag
+#   GitHub runs this script from the tagged commit, so whoever pushes the tag can edit it. The lock against unreviewed
+#   code is the GitHub settings (README step 2): required reviewers on the environment android-release, its deployment
+#   rule, and a tag ruleset that lets only the owner create or move v* tags.
 # - then ready when all four signing secrets are set; none set — a notice and the release is skipped (CI stays green
 #   until the owner adds them); some set — an error naming the missing ones.
 # Reads only presence flags HAS_<NAME>=true|false (`secrets.X != ''` in the workflow), never the values.
