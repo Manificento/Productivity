@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
-import { newRecord } from '../../../core/ids';
+import { naturalId, newRecord } from '../../../core/ids';
 import { doneDays } from '../../../core/habitSchedule';
 import { archiveHabit, createHabit, toggleHabit, updateHabit } from './habitStore';
 
@@ -49,6 +49,32 @@ describe('habitStore', () => {
     expect((await db.habits.get(id))?.schedule).not.toHaveProperty('weekdays');
     await archiveHabit(id, 30);
     expect(await db.habits.get(id)).toMatchObject({ archived: true, updatedAt: 30 });
+  });
+});
+
+describe('contract #275: habitLogs — the id is the habit and the day', () => {
+  it('Given saveSleep, checkIns, habitLogs, mealLogs, weightLogs When создаётся запись Then её id — naturalId(...) — habitLogs', async () => {
+    await toggleHabit('h1', '2026-11-03', 1);
+    await toggleHabit('h1', '2026-11-04', 2);
+    await toggleHabit('h2', '2026-11-03', 3);
+    expect((await db.habitLogs.toArray()).map((l) => l.id).sort()).toEqual([
+      naturalId('habitLog', 'h1', '2026-11-03'),
+      naturalId('habitLog', 'h1', '2026-11-04'),
+      naturalId('habitLog', 'h2', '2026-11-03'),
+    ]);
+    expect(await db.habitLogs.get('habitLog:h1:2026-11-03')).toEqual({
+      id: 'habitLog:h1:2026-11-03',
+      habitId: 'h1',
+      date: '2026-11-03',
+      done: true,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    // Later taps keep the record and its id.
+    await toggleHabit('h1', '2026-11-03', 5);
+    expect(await db.habitLogs.get('habitLog:h1:2026-11-03')).toMatchObject({ done: false, createdAt: 1, updatedAt: 5 });
+    expect(await db.habitLogs.count()).toBe(3);
   });
 });
 

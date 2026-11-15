@@ -1,10 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../../core/db';
-import { newRecord, touch } from '../../../core/ids';
+import { naturalId, newRecord, touch } from '../../../core/ids';
 import type { CheckIn, DateKey, Id } from '../../../core/types';
 import type { CheckInFields } from '../logic/checkIn';
 
-/** Creates the day's check-in or replaces the fields of the existing one (one record per day). */
+/**
+ * Creates the day's check-in or replaces the fields of the existing one (one record per day).
+ * Its id is `naturalId('checkIn', date)` (#275): the same day on two devices is one record for the sync.
+ */
 export async function saveCheckIn(date: DateKey, fields: CheckInFields, now: number = Date.now()): Promise<Id> {
   return db.transaction('rw', db.checkIns, async () => {
     const existing = await db.checkIns.where('date').equals(date).first();
@@ -12,7 +15,7 @@ export async function saveCheckIn(date: DateKey, fields: CheckInFields, now: num
       await db.checkIns.put({ ...touch(fields, now), id: existing.id, date, createdAt: existing.createdAt });
       return existing.id;
     }
-    const record = newRecord({ ...fields, date }, now);
+    const record = newRecord({ ...fields, date }, now, naturalId('checkIn', date));
     await db.checkIns.add(record);
     return record.id;
   });

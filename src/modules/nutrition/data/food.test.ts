@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../../core/db';
+import { naturalId } from '../../../core/ids';
 import { addMealItem, createFood, hasLoggedFood, loadRecentMeals, removeMealItem, setMealItemGrams } from './food';
 
 const TODAY = '2026-11-04';
@@ -7,6 +8,30 @@ const bread = { name: 'Хлеб', kcal: 250, protein: 10, fat: 5, carbs: 40 };
 
 beforeEach(async () => {
   await Promise.all([db.foods.clear(), db.mealLogs.clear()]);
+});
+
+describe('contract #275: mealLogs — the id is the day and the meal', () => {
+  it('Given saveSleep, checkIns, habitLogs, mealLogs, weightLogs When создаётся запись Then её id — naturalId(...) — mealLogs', async () => {
+    const lunch = await addMealItem(TODAY, 'lunch', { foodId: 'a', grams: 150 }, 1);
+    expect(lunch.id).toBe(naturalId('meal', TODAY, 'lunch'));
+    expect(lunch).toMatchObject({
+      id: 'meal:2026-11-04:lunch',
+      date: TODAY,
+      kind: 'lunch',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    // More food in the same meal goes to that record; another meal or day is another id.
+    expect((await addMealItem(TODAY, 'lunch', { foodId: 'b', grams: 50 }, 2)).id).toBe(lunch.id);
+    await addMealItem(TODAY, 'dinner', { foodId: 'a', grams: 100 }, 3);
+    await addMealItem('2026-11-05', 'lunch', { foodId: 'a', grams: 100 }, 4);
+    expect((await db.mealLogs.toArray()).map((m) => m.id).sort()).toEqual([
+      'meal:2026-11-04:dinner',
+      'meal:2026-11-04:lunch',
+      'meal:2026-11-05:lunch',
+    ]);
+  });
 });
 
 describe('food data', () => {

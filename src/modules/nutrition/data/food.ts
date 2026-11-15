@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftDateKey } from '../../../core/dates';
 import { db, softDelete } from '../../../core/db';
-import { newRecord, touch } from '../../../core/ids';
+import { naturalId, newRecord, touch } from '../../../core/ids';
 import type { DateKey, Food, MealLog } from '../../../core/types';
 import type { FoodInput, MealKind } from '../logic/nutrition';
 
@@ -33,7 +33,7 @@ export async function addMealItem(
       await db.mealLogs.put(updated);
       return updated;
     }
-    const created: MealLog = newRecord({ date, time: now, kind, items: [item] }, now);
+    const created: MealLog = newRecord({ date, time: now, kind, items: [item] }, now, naturalId('meal', date, kind));
     await db.mealLogs.add(created);
     return created;
   });
