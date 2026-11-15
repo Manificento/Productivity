@@ -19,6 +19,17 @@ export interface BaseRecord {
   id: Id;
   createdAt: Millis;
   updatedAt: Millis;
+  /**
+   * Tombstone (ADR-0009, sync p. 2): set by `softDelete()` from `core/db.ts` instead of a physical delete; the
+   * row then keeps only `id`, `createdAt`, `updatedAt` and this field — its content is dropped.
+   * Reads through `db` never return such a row — modules do not check this field.
+   */
+  deletedAt?: Millis;
+  /**
+   * `deviceId` (`settings` `device.id`) of the device whose write this is. Filled by the sync layer when a row is
+   * pushed or pulled; absent on rows that have not been synced. Modules do not set it.
+   */
+  updatedBy?: string;
 }
 
 // ---------- tasks ----------
@@ -424,4 +435,28 @@ export interface XpEvent extends BaseRecord {
 export interface Setting {
   key: string;
   value: unknown;
+  /**
+   * Time of the last write, for last-writer-wins sync (ADR-0009, sync p. 7). Optional: rows written as
+   * `{ key, value }` have none — until they do, the time of a pending change is `SyncOutboxEntry.updatedAt`.
+   * `softDelete()` sets it together with `deletedAt`.
+   */
+  updatedAt?: Millis;
+  /** Tombstone of a removed key, see `BaseRecord.deletedAt`. */
+  deletedAt?: Millis;
+}
+
+// ---------- sync (ADR-0009) ----------
+
+/**
+ * A changed row waiting to be pushed to the cloud. Written only by the core (`core/sync/outbox.ts`), in the
+ * transaction that changed the row; one entry per row, the latest change wins. No row behind the entry = it was
+ * physically deleted. Local-only: never exported, never synced itself.
+ */
+export interface SyncOutboxEntry {
+  /** Name of the table the row lives in. */
+  table: string;
+  /** Primary key of the row: `id`, or `key` for `settings`. */
+  key: string;
+  /** When the row was last changed on this device. */
+  updatedAt: Millis;
 }

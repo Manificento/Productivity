@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { loadDailyTargetsRange } from '../../../core/adaptation/useDailyTargets';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 import { shiftDateKey } from '../../../core/dates';
 import { newRecord, touch } from '../../../core/ids';
 import { dayTitle } from '../logic/notes';
@@ -22,7 +22,7 @@ export async function saveNote(
 }
 
 export async function deleteNote(id: Id): Promise<void> {
-  await db.notes.delete(id);
+  await softDelete(db.notes, id);
 }
 
 /** Live list of notes; undefined while loading. */

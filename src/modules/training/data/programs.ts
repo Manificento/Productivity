@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../../core/db';
+import { db, softDeleteMany } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import { saveWorkout, type WorkoutInput } from '../../../core/logging/workout';
 import type { DateKey, PlannedSession, Program, WorkoutLog } from '../../../core/types';
@@ -26,11 +26,12 @@ export async function createProgram(input: ProgramInput, today: DateKey, now = D
 export async function archiveProgram(id: string, today: DateKey, now = Date.now()): Promise<void> {
   await db.transaction('rw', db.programs, db.plannedSessions, async () => {
     await db.programs.update(id, touch({ archived: true }, now));
-    await db.plannedSessions
+    const future = await db.plannedSessions
       .where('programId')
       .equals(id)
       .filter((s) => s.date > today && s.status === 'planned')
-      .delete();
+      .primaryKeys();
+    await softDeleteMany(db.plannedSessions, future, now);
   });
 }
 
