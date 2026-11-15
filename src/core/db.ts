@@ -1,4 +1,9 @@
-import Dexie, { type EntityTable } from 'dexie';
+import Dexie, { type EntityTable, type Table } from 'dexie';
+import { newId } from './ids';
+import { SCHEMA_VERSION } from './schemaVersion';
+import { DEVICE_ID_KEY, isLocalOnlySetting } from './sync/localOnly';
+import { outboxMiddleware } from './sync/outbox';
+import { tombstoneMiddleware } from './sync/tombstones';
 import type {
   CheckIn,
   CognitiveTest,
@@ -15,6 +20,7 @@ import type {
   Project,
   Setting,
   SleepLog,
+  SyncOutboxEntry,
   Task,
   TimeCategory,
   TimeEntry,
@@ -53,9 +59,14 @@ export class LifeDB extends Dexie {
   mindSessions!: EntityTable<MindSession, 'id'>;
   notes!: EntityTable<Note, 'id'>;
   xpEvents!: EntityTable<XpEvent, 'id'>;
+  /** Outgoing sync queue — written only by the core middleware, read only by the sync layer (`core/sync/`). */
+  syncOutbox!: Table<SyncOutboxEntry, [table: string, key: string]>;
 
   constructor(name = 'lifeos') {
     super(name);
+    // Core middlewares (ADR-0009): changed rows go to `syncOutbox`; rows removed with `softDelete` are hidden.
+    this.use(outboxMiddleware);
+    this.use(tombstoneMiddleware);
     this.version(1).stores({
       projects: 'id, archived',
       tasks: 'id, projectId, dueDate, priority, completedAt, *tags',
@@ -98,12 +109,101 @@ export class LifeDB extends Dexie {
     this.version(6).stores({
       sleepLogs: 'id, &date, [sourceId+externalId]',
     });
+    // v7 (contract #274, ADR-0009): the outgoing sync queue, one entry per changed row; pushed oldest first.
+    this.version(7).stores({
+      syncOutbox: '[table+key], updatedAt',
+    });
+    // Versions above stay literal (append-only: a constant there would silently renumber the last one).
+    // SCHEMA_VERSION must name the newest of them — backups and the sync protocol speak this number.
+    if (this.verno !== SCHEMA_VERSION) {
+      throw new Error(`SCHEMA_VERSION (${SCHEMA_VERSION}) must equal the newest Dexie version (${this.verno})`);
+    }
+    // Every start: the installation has its id before the app's first query (first open and after an upgrade).
+    this.on('ready', (vip) => ensureDeviceId(vip as LifeDB));
   }
+}
+
+/** Reads `device.id`, creating it when missing. The second read under a write lock keeps two tabs on one id. */
+function ensureDeviceId(database: LifeDB): PromiseLike<string> {
+  const idOf = (row: Setting | undefined) => (typeof row?.value === 'string' && row.value ? row.value : undefined);
+  const { settings } = database;
+  return settings.get(DEVICE_ID_KEY).then(
+    (row) =>
+      idOf(row) ??
+      database.transaction('rw', settings, () =>
+        settings.get(DEVICE_ID_KEY).then((again) => {
+          const kept = idOf(again);
+          if (kept) return kept;
+          const id = newId();
+          return settings.put({ key: DEVICE_ID_KEY, value: id }).then(() => id);
+        }),
+      ),
+  );
 }
 
 export const db = new LifeDB();
 
-/** Table names, used by backup. Keep in sync with the stores above. */
+/**
+ * UUID of this installation (`settings` `device.id`) — the `updated_by` of what this device pushes (ADR-0009).
+ * Created when the database is first opened; device state: never synced, never exported, kept by `importAll`.
+ */
+export async function getDeviceId(): Promise<string> {
+  return ensureDeviceId(db);
+}
+
+/**
+ * Deletes a record the way the sync needs it (ADR-0009, sync p. 2; ADR-0010 p. 1): the row is replaced by a
+ * tombstone — its primary key, `createdAt`, a bumped `updatedAt` and `deletedAt` — and from then on no read through
+ * `db` returns it. Modules call this INSTEAD of `table.delete()` — a physical delete in a module fails
+ * `core/softDelete.guard.test.ts`.
+ *
+ * The content of the record is NOT kept: what the user deleted leaves the device at once, and the sync has only
+ * the key and the two times to send. So a tombstone holds no index of the removed fields either (`&date`, …).
+ *
+ * Works inside the module's own transaction. Deleting a missing or already deleted record does nothing.
+ * A device-state key of `settings` (`core/sync/localOnly.ts`) is never synced, so it is removed for real.
+ *
+ *   await softDelete(db.tasks, id);
+ */
+export function softDelete<K>(table: Table<any, K, any>, id: K, now: number = Date.now()): Promise<void> {
+  return softDeleteMany(table, [id], now);
+}
+
+/** `softDelete()` for several records of one table (instead of `bulkDelete` or a `where(…).delete()`). */
+export async function softDeleteMany<K>(
+  table: Table<any, K, any>,
+  ids: readonly K[],
+  now: number = Date.now(),
+): Promise<void> {
+  const localOnly = table.name === 'settings' ? ids.filter(isLocalOnlySetting) : [];
+  const synced = ids.filter((id) => !localOnly.includes(id));
+  if (localOnly.length === 0 && synced.length === 0) return;
+  // Read and replace in one transaction (the caller's own, when there is one): no write slips in between.
+  await table.db.transaction('rw', table, async () => {
+    if (localOnly.length > 0) await table.bulkDelete(localOnly);
+    if (synced.length === 0) return;
+    // Reads skip tombstones, so a missing id and an already deleted one both come back empty and stay as they are.
+    const rows: unknown[] = await table.bulkGet(synced);
+    const tombstones = rows.filter((row) => row !== undefined).map((row) => tombstoneOf(table, row, now));
+    if (tombstones.length > 0) await table.bulkPut(tombstones);
+  });
+}
+
+/** What stays of a deleted row: its primary key and `createdAt`, plus the time of the deletion. Nothing else. */
+function tombstoneOf(table: Table, row: unknown, now: number): Record<string, unknown> {
+  const live = row as Record<string, unknown>;
+  const tombstone: Record<string, unknown> = {};
+  for (const field of [table.schema.primKey.keyPath ?? []].flat()) tombstone[field] = live[field];
+  if (typeof live.createdAt === 'number') tombstone.createdAt = live.createdAt;
+  tombstone.updatedAt = now;
+  tombstone.deletedAt = now;
+  return tombstone;
+}
+
+/**
+ * Names of the DATA tables, used by backup. Keep in sync with the stores above.
+ * `syncOutbox` is deliberately not here: it is the device's sync queue, not data to export or import.
+ */
 export const TABLE_NAMES = [
   'projects',
   'tasks',

@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../../core/db';
+import { db, softDeleteMany } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { DateKey, Habit, HabitLog, Id, Millis } from '../../../core/types';
 import type { HabitFields } from '../logic/habitForm';
@@ -48,7 +48,7 @@ export async function toggleHabit(habitId: Id, date: DateKey, now: Millis = Date
     await db.habitLogs.update(latest.id, touch({ done }, now));
     // Older duplicates (e.g. from an import) would only confuse later readers.
     const stale = existing.filter((l) => l.id !== latest.id).map((l) => l.id);
-    if (stale.length > 0) await db.habitLogs.bulkDelete(stale);
+    if (stale.length > 0) await softDeleteMany(db.habitLogs, stale, now);
     return done;
   });
 }

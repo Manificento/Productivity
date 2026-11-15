@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { describe, expect, it } from 'vitest';
 import { LifeDB, TABLE_NAMES } from './db';
+import type { BaseRecord, Setting } from './types';
 
 describe('database migrations', () => {
   it('upgrading from v1 keeps existing data and adds cognitiveTests', async () => {
@@ -206,6 +207,39 @@ describe('contract: imported sleep (Dexie v6)', () => {
     expect(await db.sleepLogs.where('[sourceId+externalId]').equals(['com.northcube.sleepcycle', 'sc-1']).count()).toBe(
       1,
     );
+    db.close();
+  });
+});
+
+describe('contract #274: записи под синхронизацию', () => {
+  it('Given src/core/types.ts When читаю BaseRecord Then добавлены необязательные deletedAt?: Millis и updatedBy?: string (deviceId); Setting получает updatedAt; существующие записи читаются без миграции данных', async () => {
+    // The new fields are optional: a record written before the contract is still a valid BaseRecord / Setting…
+    const before: BaseRecord = { id: 't1', createdAt: 1, updatedAt: 2 };
+    const oldSetting: Setting = { key: 'theme', value: 'dark' };
+    // …and a synced one carries the tombstone mark, the device that wrote it and (settings) the write time.
+    const synced: BaseRecord = { ...before, deletedAt: 3, updatedBy: 'device-1' };
+    const newSetting: Setting = { ...oldSetting, updatedAt: 4 };
+    expect(synced.deletedAt).toBe(3);
+    expect(synced.updatedBy).toBe('device-1');
+    expect(newSetting.updatedAt).toBe(4);
+
+    const name = `migration-v7-${Math.random()}`;
+    const v6 = new Dexie(name);
+    v6.version(1).stores({ tasks: 'id, projectId, dueDate, priority, completedAt, *tags', settings: 'key' });
+    v6.version(6).stores({ sleepLogs: 'id, &date, [sourceId+externalId]' });
+    const task = { ...before, title: 'старая задача', priority: 4, tags: [] };
+    const night = { id: 's1', createdAt: 1, updatedAt: 2, date: '2026-11-04', bedtime: 1, wakeTime: 2, quality: 4 };
+    await v6.table('tasks').add(task);
+    await v6.table('sleepLogs').add(night);
+    await v6.table('settings').add(oldSetting);
+    v6.close();
+
+    const db = new LifeDB(name);
+    // No data migration: the rows are exactly what the old version stored.
+    expect(await db.tasks.get('t1')).toEqual(task);
+    expect(await db.tasks.toArray()).toEqual([task]);
+    expect(await db.sleepLogs.where('date').equals('2026-11-04').first()).toEqual(night);
+    expect(await db.settings.get('theme')).toEqual(oldSetting);
     db.close();
   });
 });

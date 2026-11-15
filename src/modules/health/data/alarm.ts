@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { z } from 'zod';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 import { cancelAlarm, setAlarm, type AlarmDismissal, type AlarmResult } from '../../../core/platform';
 import type { Millis } from '../../../core/types';
 import { stopNightSensing } from '../../../core/platform';
@@ -130,5 +130,5 @@ export function useDismissal(): AlarmDismissal | undefined | null {
 }
 
 export async function clearDismissal(): Promise<void> {
-  await db.settings.delete(DISMISSAL_KEY);
+  await softDelete(db.settings, DISMISSAL_KEY);
 }

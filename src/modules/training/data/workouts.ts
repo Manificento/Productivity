@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftDateKey, todayKey } from '../../../core/dates';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 import type { DateKey, WorkoutLog } from '../../../core/types';
 
 /**
@@ -17,7 +17,7 @@ export const HISTORY_DAYS = 60;
  */
 export async function deleteWorkout(id: string, today: DateKey = todayKey()): Promise<void> {
   await db.transaction('rw', db.workoutLogs, db.plannedSessions, async () => {
-    await db.workoutLogs.delete(id);
+    await softDelete(db.workoutLogs, id);
     await db.plannedSessions
       .filter((s) => s.workoutLogId === id)
       .modify((s) => {

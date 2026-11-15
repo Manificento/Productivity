@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { BASELINE_SETTING_KEY, DEFAULT_BASELINE } from '../../../core/adaptation/rules';
 import type { Baseline } from '../../../core/adaptation/types';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 
 /** The stored baseline merged over the defaults — the same way `loadDailyTargets` reads it. */
 export async function loadBaseline(): Promise<Baseline> {
@@ -15,7 +15,7 @@ export async function saveBaseline(b: Baseline): Promise<void> {
 
 /** Removes the user's baseline, so the defaults apply again. */
 export async function resetBaseline(): Promise<void> {
-  await db.settings.delete(BASELINE_SETTING_KEY);
+  await softDelete(db.settings, BASELINE_SETTING_KEY);
 }
 
 export function useBaseline(): Baseline | undefined {
