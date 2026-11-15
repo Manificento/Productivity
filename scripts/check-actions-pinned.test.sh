@@ -110,6 +110,49 @@ test_other_yaml_forms_fail() {
   check "flow-sequence назван" "$(says '.github/workflows/flow.yml:6:')" "$output"
 }
 
+test_alias_key_fails() {
+  workflow ci.yml \
+    "      - name: &k uses" \
+    "      - *k : actions/checkout@v4" \
+    "      - name: x" \
+    "        *k : actions/cache@v4"
+  run_check
+  check "код выхода ≠ 0" "$(failed)" "$output"
+  check "алиас-ключ в шаге назван" "$(says '.github/workflows/ci.yml:8: actions/checkout@v4')" "$output"
+  check "алиас-ключ после name назван" "$(says '.github/workflows/ci.yml:10: actions/cache@v4')" "$output"
+}
+
+test_flow_explicit_key_fails() {
+  workflow ci.yml \
+    "      - { ? uses" \
+    "          : actions/checkout@v4 }" \
+    "      - { ? \"uses\"" \
+    "          : actions/cache@v4 }"
+  run_check
+  check "код выхода ≠ 0" "$(failed)" "$output"
+  check "явный ключ во flow-mapping назван" "$(says '.github/workflows/ci.yml:8: actions/checkout@v4')" "$output"
+  check "явный ключ в кавычках во flow-mapping назван" \
+    "$(says '.github/workflows/ci.yml:10: actions/cache@v4')" "$output"
+}
+
+test_unparsable_yaml_fails() {
+  workflow ci.yml "      - uses: actions/checkout@$SHA # v4.4.0" "      - [unclosed"
+  run_check
+  check "код выхода ≠ 0, назван файл" "$(fails_naming '.github/workflows/ci.yml:')" "$output"
+  check "сказано, что YAML не разбирается" "$(says 'YAML')" "$output"
+}
+
+test_without_yaml_parser_fails() {
+  workflow ci.yml "      - uses: actions/checkout@$SHA # v4.4.0"
+  mkdir -p "$SANDBOX/bin"
+  printf '#!/bin/sh\nexit 1\n' > "$SANDBOX/bin/python3"
+  chmod +x "$SANDBOX/bin/python3"
+  output=$(env -u GITHUB_ACTIONS PATH="$SANDBOX/bin:$PATH" "$CHECK" "$SANDBOX" 2>&1)
+  status=$?
+  check "код выхода ≠ 0: без парсера проверка не проходит молча" "$(failed)" "$output"
+  check "сказано, что нужен PyYAML" "$(says 'PyYAML')" "$output"
+}
+
 test_tag_fails_with_file_and_line() {
   workflow ci.yml \
     "      - uses: actions/checkout@$SHA # v4.4.0" \
@@ -206,6 +249,14 @@ run_test "Given PR добавляет действие по ветке When ид
   test_branch_fails
 run_test "Given действие во flow-синтаксисе, с ключом в кавычках или uses : по тегу When проверка Then она падает и \
 называет файл и строку" test_other_yaml_forms_fail
+run_test "Given ключ uses через якорь/алиас When проверка Then она падает и называет файл и строку" \
+  test_alias_key_fails
+run_test "Given явный ключ ? uses во flow-mapping на двух строках When проверка Then она падает и называет файл и \
+строку" test_flow_explicit_key_fails
+run_test "Given workflow не разбирается как YAML When проверка Then она падает и называет файл" \
+  test_unparsable_yaml_fails
+run_test "Given нет python3 с PyYAML When проверка Then она падает, а не проходит молча" \
+  test_without_yaml_parser_fails
 run_test "Given блочный скаляр закончился When следом действие по тегу Then проверка падает и называет файл и строку" \
   test_block_scalar_ends_at_dedent
 run_test "Given короткий SHA или ссылки нет When проверка Then она падает и называет файл и строку" \

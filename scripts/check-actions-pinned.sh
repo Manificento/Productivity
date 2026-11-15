@@ -8,6 +8,10 @@
 # The SHA of a version: git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<version>*' (an annotated tag:
 # the peeled ^{} line). The check does not know whose SHA it is (GitHub also resolves commits of forks), so a reviewer
 # compares every new SHA with that tag.
+# Two passes per file. 1) A line scan parses the one canonical form `- uses: <ref> # <version>` and checks the ref.
+# 2) A YAML parser (python3 + PyYAML, preinstalled on ubuntu-latest) resolves every mapping key — quotes, escapes, flow
+# syntax, explicit `?` keys, anchors and aliases — and every key that reads `uses` and was not checked by pass 1 is an
+# error naming the file:line of its value. No parser, or a file it cannot parse, is an error too: the check fails closed.
 # Usage: scripts/check-actions-pinned.sh [root]   (default: this repository). Exit 1 names every file:line.
 set -uo pipefail
 
@@ -46,8 +50,49 @@ docker_re='^docker://[^@[:space:]]+@sha256:[0-9a-f]{64}$'
 hint="закрепите полным SHA коммита (40 символов) с комментарием версии, например @<sha> # v4.2.2; \
 SHA версии: git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<версия>*'"
 
+# uses_keys <file> — prints `<key line>\t<value line>\t<value>` for every mapping key that a YAML parser reads as
+# `uses` (aliases resolved), or `error\t<line>\t<message>` when the file is not valid YAML.
+uses_keys() {
+  python3 -I - "$1" << 'PY'
+import sys
+import yaml
+
+
+def walk(node, seen):
+    if id(node) in seen:
+        return
+    seen.add(id(node))
+    if isinstance(node, yaml.MappingNode):
+        for key, value in node.value:
+            if isinstance(key, yaml.ScalarNode) and key.value == "uses":
+                text = value.value if isinstance(value, yaml.ScalarNode) else "<" + value.id + ">"
+                text = text.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t")
+                print(f"{key.start_mark.line + 1}\t{value.start_mark.line + 1}\t{text}")
+            walk(key, seen)
+            walk(value, seen)
+    elif isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            walk(item, seen)
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as stream:
+        for document in yaml.compose_all(stream, Loader=yaml.SafeLoader):
+            walk(document, set())
+except yaml.YAMLError as error:
+    mark = getattr(error, "problem_mark", None) or getattr(error, "context_mark", None)
+    line = mark.line + 1 if mark else ""
+    problem = getattr(error, "problem", None) or str(error).splitlines()[0]
+    print(f"error\t{line}\t{problem}")
+PY
+}
+
+form_error="ключ uses в форме, которую проверка не разбирает (flow-синтаксис, ключ в кавычках, с escape или через \
+якорь/алиас, пробел перед двоеточием, явный ключ ?): запишите шаг блочной формой - uses: <owner>/<repo>@<sha> # v4.2.2"
+
 check_file() {
-  local file=$1 number=0 line value ref comment lines indent text_indent=-1
+  local file=$1 number=0 line value ref comment lines indent text_indent=-1 key_line value_line parsed
+  local -A canonical=() flagged=()
   mapfile -t lines < "$file"
   for line in "${lines[@]}"; do
     number=$((number + 1))
@@ -63,9 +108,8 @@ check_file() {
       [[ $line =~ $quoted_value_re && ${BASH_REMATCH[2]} != uses ]] && continue
       if [[ $line =~ $any_uses_re || $line =~ $escaped_key_re || $line =~ $explicit_key_re ]]; then
         checked=$((checked + 1))
-        report "$file" "$number" "ключ uses в форме, которую проверка не разбирает (flow-синтаксис, ключ в кавычках \
-или с escape, пробел перед двоеточием, явный ключ ?): запишите шаг блочной формой \
-- uses: <owner>/<repo>@<sha> # v4.2.2"
+        flagged[$number]=1
+        report "$file" "$number" "$form_error"
       fi
       continue
     fi
@@ -79,6 +123,7 @@ check_file() {
       comment=${comment#"${comment%%[![:space:]]*}"}
     fi
     checked=$((checked + 1))
+    canonical[$number]=$ref
     if [[ $ref == ./* ]]; then
       continue
     elif [[ $ref == docker://* ]]; then
@@ -91,7 +136,28 @@ check_file() {
 и его обновляет Dependabot"
     fi
   done
+
+  # Pass 2: every `uses` key as the YAML parser reads it.
+  while IFS=$'\t' read -r key_line value_line parsed; do
+    if [[ $key_line == error ]]; then
+      report "$file" "$value_line" "файл не разбирается как YAML ($parsed) — проверка не может прочитать шаги"
+    elif [[ -n ${canonical[$key_line]+x} && ${canonical[$key_line]} == "$parsed" ]]; then
+      continue # checked by pass 1
+    elif [[ -n ${canonical[$key_line]+x} ]]; then
+      report "$file" "$value_line" "$parsed — YAML читает значение uses иначе, чем строку: $form_error"
+    elif [[ -z ${flagged[$key_line]+x} && -z ${flagged[$value_line]+x} ]]; then
+      checked=$((checked + 1))
+      report "$file" "$value_line" "$parsed — $form_error"
+    fi
+  done < <(uses_keys "$file")
 }
+
+if ! python3 -I -c 'import yaml' > /dev/null 2>&1; then
+  report "${0##*/}" "" "нужен python3 с PyYAML (есть на ubuntu-latest; локально: pip install pyyaml) — без \
+YAML-парсера проверка не видит ключи uses через якорь, алиас или escape"
+  echo "check-actions-pinned: $problems проблем(ы)" >&2
+  exit 1
+fi
 
 shopt -s nullglob globstar
 for file in .github/workflows/*.yml .github/workflows/*.yaml .github/actions/**/action.yml \
