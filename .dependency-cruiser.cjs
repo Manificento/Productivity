@@ -36,9 +36,12 @@ module.exports = {
     {
       name: 'logic-is-pure',
       comment:
-        'Functional core: src/modules/*/logic and src/core/adaptation rules/engine are pure — no React, no Dexie, no DB.',
+        'Functional core: src/modules/*/logic, src/core/adaptation rules/engine and the sync protocol (src/core/sync) are pure — no React, no Dexie, no DB. In src/core/sync only the DBCore middlewares, the Dexie migration and tests touch Dexie.',
       severity: 'error',
-      from: { path: '^src/modules/[^/]+/logic/|^src/core/adaptation/(engine|rules)\\.ts$' },
+      from: {
+        path: '^src/modules/[^/]+/logic/|^src/core/adaptation/(engine|rules)\\.ts$|^src/core/sync/',
+        pathNot: '^src/core/sync/(outbox|tombstones|naturalKeys|[^/]+\\.test)\\.ts$',
+      },
       to: { path: '^src/core/db\\.ts$|node_modules/(react|react-dom|dexie|dexie-react-hooks)/' },
     },
     {
