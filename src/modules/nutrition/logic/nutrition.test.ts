@@ -23,12 +23,12 @@ const food = (id: string, name: string, kcal = 250, protein = 10, fat = 5, carbs
   updatedAt: 0,
 });
 
-const meal = (kind: MealLog['kind'], items: MealLog['items'], updatedAt = 0): MealLog => ({
+const meal = (kind: MealLog['kind'], items: { foodId: string; grams: number }[], updatedAt = 0): MealLog => ({
   id: kind + updatedAt,
   date: '2026-11-04',
   time: 0,
   kind,
-  items,
+  items: items.map((item, i) => ({ ...item, id: `${kind}-${i}`, updatedAt })),
   createdAt: 0,
   updatedAt,
 });

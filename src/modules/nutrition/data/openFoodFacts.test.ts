@@ -77,7 +77,7 @@ describe('cacheOffFood', () => {
   it('addOffFoodToMeal caches the product and adds it to the meal in one step', async () => {
     const food = await addOffFoodToMeal('2026-11-04', 'lunch', buckwheat, 80);
     const [meal] = await db.mealLogs.toArray();
-    expect(meal.items).toEqual([{ foodId: food.id, grams: 80 }]);
+    expect(meal.items).toMatchObject([{ foodId: food.id, grams: 80 }]);
     expect(food.source).toBe('openfoodfacts');
   });
 
