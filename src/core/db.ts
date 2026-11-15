@@ -179,7 +179,10 @@ export async function softDeleteMany<K>(
   }
 }
 
-/** Table names, used by backup. Keep in sync with the stores above. */
+/**
+ * Names of the DATA tables, used by backup. Keep in sync with the stores above.
+ * `syncOutbox` is deliberately not here: it is the device's sync queue, not data to export or import.
+ */
 export const TABLE_NAMES = [
   'projects',
   'tasks',

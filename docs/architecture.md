@@ -284,3 +284,27 @@ GitHub `production-kz` (секреты; рекомендуется подтве�
 | Канал уведомлений  | _заполнить при #259_ (секрет `ALERT_WEBHOOK_URL`)                                                |
 
 Как заполнить секреты, порядок первого запуска и откат — `infra/supabase/README.md`, «Что сделать владельцу».
+
+### Локальная схема под синхронизацию (#274, [ADR-0010](adr/0010-local-schema-for-sync.md))
+
+Данные по-прежнему не покидают устройство; база только готова к синхронизации. Что это значит для модулей:
+
+- **Удаление — только `softDelete(table, id)` / `softDeleteMany(table, ids)` из `src/core/db.ts`**, внутри своей
+  транзакции. Строка остаётся с `deletedAt` (tombstone), но ни одно чтение через `db` (включая `count` и
+  `useLiveQuery`) её не возвращает — проверять `deletedAt` в модуле не нужно. Физический `delete` / `bulkDelete` /
+  `clear` в модуле или в `core/logging/` роняет `src/core/softDelete.guard.test.ts`. В тестах таблицы по-прежнему
+  чистятся `clear()`; увидеть сам tombstone — `storedRows(table)` из `src/test/storedRows.ts`.
+- **Tombstone не держит ключ:** новая запись на тот же `id` или тот же уникальный ключ (`&date`,
+  `&[programId+date]`) создаётся без ошибки и заменяет tombstone. Живая запись ключ держит как раньше.
+- **`syncOutbox`** (Dexie v7, `[table+key]`) — очередь изменённых строк. Её пишет middleware ядра в той же транзакции,
+  что и модуль; модуль таблицу не открывает и не читает. Запись очереди без строки в таблице означает удаление.
+  Таблицы нет в `TABLE_NAMES`: она не экспортируется.
+- **Состояние устройства** — ключи `settings` из `src/core/sync/localOnly.ts` (`adaptation.morning`,
+  `adaptation.onboardingDone`, `device.id`, `time.pomodoro.running`): в очередь не попадают. Новый такой ключ
+  добавляется туда контрактной issue. `device.id` — UUID установки, `getDeviceId()` из `src/core/db.ts`.
+- **Версия схемы** — `SCHEMA_VERSION` из `src/core/schemaVersion.ts`: она же версия Dexie и резервной копии. Новая
+  версия Dexie = новый `this.version(n)` (литерал) + тот же номер в константе, иначе база не запустится.
+- **Резервная копия** содержит только живые данные: без tombstone, без `syncOutbox`, без `device.id`; импорт
+  сохраняет `device.id` устройства и принимает копии этой версии схемы и старше.
+- Новые поля записей: `BaseRecord.deletedAt?`, `BaseRecord.updatedBy?` (`deviceId`, заполняет слой синхронизации),
+  `Setting.updatedAt?` / `Setting.deletedAt?` — все необязательные, модули их не задают.
