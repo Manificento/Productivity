@@ -1,6 +1,11 @@
 name: Android
 
 # Debug APK for PRs that touch the native shell (ADR-0008). iOS joins after the Apple account (owner, P2).
+# Signed release (#285, README «Подпись release-сборки Android»): every PR checks the signing path on a throwaway
+# keystore made inside the job; the release with the app's upload key is built by a manual run from main or a tag v*,
+# with the secrets of the GitHub environment android-release. Without them the release is skipped with a notice and the
+# run stays green. A tag run executes this file from the tagged commit, so nothing in it can stop a hostile tag: the
+# lock is the environment's required reviewers plus a tag ruleset on v* (README, step 2).
 on:
   pull_request:
     paths:
@@ -9,7 +14,10 @@ on:
       - 'capacitor.config.ts'
       - 'package.json'
       - 'package-lock.json'
+      - '.gitignore'
       - '.github/workflows/android.yml'
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -18,6 +26,10 @@ permissions:
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Play needs a new versionCode for every upload: the run number of this workflow only grows.
+  LIFEOS_VERSION_CODE: ${{ github.run_number }}
 
 jobs:
   apk:
@@ -40,24 +52,105 @@ jobs:
       - run: npx cap sync android
       - run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
         working-directory: android
-      # Google Play asks to justify every health permission: only sleep and workouts may be read (#141).
-      - name: Health permissions are only READ_SLEEP and READ_EXERCISE
-        run: |
-          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt
-          ACTUAL=$("$AAPT" dump permissions android/app/build/outputs/apk/debug/app-debug.apk | grep -o "android.permission.health.[A-Z0-9_]*" | sort | tr '\n' ' ')
-          EXPECTED="android.permission.health.READ_EXERCISE android.permission.health.READ_SLEEP "
-          echo "health permissions: $ACTUAL"
-          test "$ACTUAL" = "$EXPECTED"
-      # The Health Connect permission screen opens the privacy policy from the app's assets (#214).
-      - name: Privacy policy is in the APK and the policy URL points at it
-        run: |
-          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt
-          unzip -l android/app/build/outputs/apk/debug/app-debug.apk | grep -q 'assets/public/privacy/index.html'
-          "$AAPT" dump --values resources android/app/build/outputs/apk/debug/app-debug.apk \
-            | grep -A1 'health_connect_privacy_policy_url' | grep -q 'file:///android_asset/public/privacy/index.html'
+      # Health permissions are only READ_SLEEP and READ_EXERCISE (#141); the privacy policy is in the APK and the
+      # policy URL points at it (#214). The release build passes the same script in the next step.
+      - name: Health permissions and privacy policy of the debug APK
+        run: android/scripts/check-apk.sh android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Подпись release проверена на одноразовом keystore (apksigner verify), release проходит те же проверки, что debug
+        run: android/scripts/test-release.sh
       - uses: actions/upload-artifact@v4
         with:
           name: lifeos-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  signing-gate:
+    name: Release signing gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: shellcheck -x android/scripts/*.sh android/scripts/tests/*.sh
+      - name: Ключи подписи — только из секретов, keystore-файлов в репозитории нет, шлюз release-задания
+        run: android/scripts/tests/signing.test.sh
+      # No secrets in this job: on a PR the gate only says why the release is skipped.
+      - name: Release на PR не собирается
+        if: github.event_name == 'pull_request'
+        run: android/scripts/release-secrets.sh
+
+  release:
+    name: Android signed release (AAB + APK)
+    needs: [apk, signing-gate]
+    # Skipped on PRs. Elsewhere the environment decides: the owner's approval (required reviewers) and its deployment
+    # rule (branch main, tags v*). The gate below only catches mistakes: a hostile tag ships its own copy of it.
+    if: github.event_name != 'pull_request'
+    # The four secrets live in this environment, not in the repository: other jobs and other branches cannot read them.
+    environment: android-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # No secrets at the job level: the gate gets only presence flags, and only the two steps that need the values get
+    # them. Every action is pinned to a commit: they all run on the runner that holds the key. No caches: a release is
+    # built from a clean checkout, not from what other runs stored.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The history of main: the gate checks that a tag points at a commit of main.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Запуск из main или тега v* из истории main, секреты подписи заданы
+        id: gate
+        env:
+          HAS_ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+          HAS_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD != '' }}
+          HAS_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS != '' }}
+          HAS_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD != '' }}
+        run: android/scripts/release-secrets.sh
+      # Without the secrets the gate has said so in a notice: the steps below are skipped and the run stays green.
+      - if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - if: steps.gate.outputs.ready == 'true'
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - if: steps.gate.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.gate.outputs.ready == 'true'
+        run: npm run build
+      - if: steps.gate.outputs.ready == 'true'
+        run: npx cap sync android
+      - name: Keystore из секрета
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+      - name: Подписанные release AAB и APK
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: android/scripts/build-release.sh
+      # Before any step that follows: the key does not outlive the build.
+      - name: Удалить keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - if: steps.gate.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          # The run number is the versionCode inside: the artifact name says which upload it is.
+          name: lifeos-release-${{ github.run_number }}
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30

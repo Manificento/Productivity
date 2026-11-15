@@ -55,3 +55,102 @@ cd android && ./gradlew assembleDebug   # android/app/build/outputs/apk/debug/ap
 
 CI собирает debug APK на каждом PR, который меняет `android/`, `src/core/platform.ts` или `capacitor.config.ts`,
 и прикладывает его артефактом `lifeos-debug-apk` (workflow «Android»). iOS — после аккаунта Apple.
+
+### Подпись release-сборки Android
+
+Google Play принимает только подписанную сборку (AAB). Подписывает её ключ загрузки владельца: он живёт у владельца
+и в секретах окружения GitHub `android-release`, в репозитории его нет (`.gitignore` закрывает `*.jks`, `*.keystore`,
+`*.p12`). Workflow «Android» собирает подписанные `app-release.aab` (для Play) и `app-release.apk` (для проверки на
+отдельном тестовом телефоне — см. предупреждение ниже) при ручном запуске из `main` или по тегу `v*` на коммите из
+истории `main` — и только после вашего «Approve» (шаг 2). На каждом PR путь подписи проверяется одноразовым ключом,
+созданным внутри задания.
+
+> **Ключ нельзя терять.** Каждое обновление приложения в Play должно быть подписано тем же ключом. Храните файл
+> keystore и оба пароля в двух местах вне репозитория (менеджер паролей и офлайн-копия). Если ключ загрузки всё же
+> потерян или утёк, а в Play Console включена подпись приложений Google Play (по умолчанию для новых приложений),
+> ключ загрузки можно сбросить через поддержку Play Console — это занимает дни. Никому не пересылайте ключ.
+
+> **Не ставьте `app-release.apk` на свой основной телефон.** Debug APK, `app-release.apk` (ключ загрузки) и сборка из
+> Play (с подписью приложений Google Play — ключ Google) — одно приложение `com.manificento.lifeos` с разными
+> подписями. Android не обновляет приложение сборкой с другой подписью (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`) и не
+> ставит сборку с меньшим `versionCode`: остаётся только удалить приложение. Удаление стирает все данные LifeOS на
+> телефоне — они живут только в нём, резервной копии Android нет (`allowBackup="false"`). Поэтому: на основной
+> телефон — только из Play (внутреннее тестирование или internal app sharing, когда появится аккаунт, #223);
+> `app-release.apk` и debug APK — на отдельное тестовое устройство. Если всё же меняете источник установки — сначала
+> **Настройки → Резервная копия → «Экспорт в JSON»**, сохраните файл вне телефона, после установки — «Импорт из JSON».
+
+1. **Создать keystore** (один раз, JDK 21; папка — вне репозитория):
+
+   ```
+   keytool -genkeypair -v -keystore ~/keys/lifeos-upload.jks -storetype PKCS12 \
+     -alias lifeos-upload -keyalg RSA -keysize 4096 -validity 10000
+   ```
+
+   keytool спросит пароль и имя владельца. У PKCS12 один пароль на хранилище и ключ.
+
+2. **Создать окружение `android-release`** — GitHub → Settings → Environments → New environment, имя
+   `android-release`. Все настройки этого шага обязательны:
+   - **Required reviewers** — добавить себя (галочку «Prevent self-review» не ставить: release запускаете вы сами).
+     Каждый release ждёт вашего «Approve» в Actions, и до него задание не получает ни одного секрета. Перед «Approve»
+     откройте запуск и проверьте: ветка `main` или тег `v*`, а коммит запуска есть в `main` (на странице коммита
+     GitHub пишет `main` рядом с веткой; локально — `git fetch && git merge-base --is-ancestor <sha> origin/main`).
+     Сомневаетесь — «Reject». Это главный замок: при запуске по тегу GitHub берёт workflow и скрипты из
+     помеченного коммита, поэтому проверки внутри них (шлюз задания тоже) защищают только от случайной ошибки, а не
+     от того, кто сам поставил тег на свой код.
+   - **Deployment branches and tags** → Selected branches and tags → добавить ветку `main` и тег `v*`. Запуск из
+     другой ветки GitHub не пустит к секретам. Правило сверяет только имя: тег `v*` можно поставить на любой коммит.
+
+   **Защитить теги `v*`** — Settings → Rules → Rulesets → New ruleset → New tag ruleset: имя `release-tags`,
+   Enforcement status — Active, Target tags → Add target → Include by pattern `v*`, правила Restrict creations,
+   Restrict updates, Restrict deletions; в Bypass list — только Repository admin (вы). Тогда создать или передвинуть
+   тег `v*` можете только вы. Теги `v*` ставит только владелец, «Approve» нажимает только владелец — агенты не
+   делают ни того, ни другого. Если агенты работают под вашим токеном, для GitHub они — это вы, и ruleset их не
+   остановит: остаётся ваш «Approve» с проверкой коммита.
+
+   **Положить четыре секрета в это окружение** — там же, Environment secrets → Add environment secret (не «New
+   repository secret»: секреты репозитория может прочитать workflow из любой ветки):
+
+   | Секрет                      | Значение                                                                           |
+   | --------------------------- | ---------------------------------------------------------------------------------- |
+   | `ANDROID_KEYSTORE_BASE64`   | файл keystore в base64: `base64 -w0 ~/keys/lifeos-upload.jks` (macOS: `base64 -i`) |
+   | `ANDROID_KEYSTORE_PASSWORD` | пароль keystore                                                                    |
+   | `ANDROID_KEY_ALIAS`         | `lifeos-upload` (alias из шага 1)                                                  |
+   | `ANDROID_KEY_PASSWORD`      | пароль ключа (у PKCS12 — тот же, что у keystore)                                   |
+
+   Секреты не попадают в журнал (GitHub их маскирует), в сборки PR и в форки. Пока секретов нет, сборка release
+   пропускается с уведомлением «Секретов подписи нет», CI зелёный; если задана только часть — запуск падает и
+   называет недостающие.
+
+3. **Запустить сборку** — Actions → Android → Run workflow (ветка `main`) или тегом на коммите из `main`:
+
+   ```
+   git switch main && git pull && git tag v0.1.0 && git push origin v0.1.0
+   ```
+
+   Запуск ждёт вашего «Approve» (шаг 2). Запуск из другой ветки GitHub к окружению не пустит; если вы одобрили тег на
+   коммите не из `main` по ошибке, шлюз задания упадёт с «Тег не из истории main» до шагов с ключом. Коммит, в котором
+   шлюз вырезан, шлюз не остановит — его останавливает только ваша проверка перед «Approve».
+
+   Задание «Android signed release (AAB + APK)» выгружает артефакт `lifeos-release-<номер запуска>`.
+   `versionCode` — номер запуска workflow «Android» (растёт с каждым запуском, Play требует новый на каждую загрузку),
+   `versionName` — тег без `v` или `version` из `package.json`. Задание проверяет подпись (`apksigner verify`, сертификат
+   ключа из секретов), версию, права здоровья и политику конфиденциальности — так же, как у debug.
+
+Локально (нужны JDK 21 и Android SDK) — те же переменные среды, путь к файлу вместо base64. `LIFEOS_VERSION_CODE` —
+больше номера последнего запуска workflow «Android» (Actions → Android, номер вида `#123`; ниже — `124`): сборку с
+меньшим `versionCode` Play не примет после любой загрузки из CI, а телефон не поставит поверх CI-сборки без удаления
+приложения, которое стирает его данные (см. предупреждение выше).
+
+```
+npm run build && npx cap sync android
+export ANDROID_KEYSTORE_FILE=~/keys/lifeos-upload.jks ANDROID_KEY_ALIAS=lifeos-upload LIFEOS_VERSION_CODE=124
+read -rs ANDROID_KEYSTORE_PASSWORD && export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+android/scripts/build-release.sh   # android/app/build/outputs/bundle/release/app-release.aab
+```
+
+Для загрузки в Play собирайте в CI: локальный `versionCode` легко совпадёт с номером одного из следующих запусков.
+
+Вместо переменных среды подойдут свойства Gradle с теми же именами (`-PANDROID_KEY_ALIAS=…` или
+`~/.gradle/gradle.properties` — вне репозитория). Без всех четырёх значений `assembleRelease` даёт неподписанный APK.
+Проверка на одноразовом ключе, как в CI, — `android/scripts/test-release.sh`.
+Аккаунт Google Play и публикация во внутренний тест — действие владельца (#223).

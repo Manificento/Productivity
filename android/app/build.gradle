@@ -1,5 +1,22 @@
 apply plugin: 'com.android.application'
 
+// Release signing and version (#285, README «Подпись release-сборки Android»). Every value comes from an environment
+// variable or a Gradle property of the same name (-PNAME=…, ~/.gradle/gradle.properties); the repository holds no key
+// and no password. Without all four signing values the release build stays unsigned and Play will not accept it.
+def fromEnvOrProperty = { String name -> providers.environmentVariable(name).orElse(providers.gradleProperty(name)).getOrNull() }
+def releaseSigning = [
+    storeFile    : fromEnvOrProperty('ANDROID_KEYSTORE_FILE'),
+    storePassword: fromEnvOrProperty('ANDROID_KEYSTORE_PASSWORD'),
+    keyAlias     : fromEnvOrProperty('ANDROID_KEY_ALIAS'),
+    keyPassword  : fromEnvOrProperty('ANDROID_KEY_PASSWORD'),
+]
+def hasReleaseSigning = releaseSigning.values().every { it }
+// versionCode — the CI run number (grows with every run, Play needs a new one for each upload); versionName — the
+// tag without «v» or the version in package.json.
+def appVersionCode = (fromEnvOrProperty('LIFEOS_VERSION_CODE') ?: '1') as int
+def appVersionName = fromEnvOrProperty('LIFEOS_VERSION_NAME') ?:
+    new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version
+
 android {
     namespace = "com.manificento.lifeos"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +24,8 @@ android {
         applicationId "com.manificento.lifeos"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -26,8 +43,19 @@ android {
             systemProperty 'robolectric.dependency.dir', layout.buildDirectory.dir('robolectric-jars').get().asFile.path
         }
     }
+    signingConfigs {
+        release {
+            storeFile releaseSigning.storeFile ? file(releaseSigning.storeFile) : null
+            storePassword releaseSigning.storePassword
+            keyAlias releaseSigning.keyAlias
+            keyPassword releaseSigning.keyPassword
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
