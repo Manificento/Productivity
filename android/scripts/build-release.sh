@@ -49,10 +49,12 @@ build_tools="$(printf "%s\n" "${ANDROID_HOME:?ANDROID_HOME is not set}"/build-to
 
 echo '— подпись APK (apksigner verify)'
 "$build_tools/apksigner" verify --verbose "$apk"
-apk_cert=$("$build_tools/apksigner" verify --print-certs "$apk" \
-  | sed -n 's/^Signer #1 certificate SHA-256 digest:[[:space:]]*//p' | fingerprint)
+# «Signer #1 certificate …» or «Signer (minSdkVersion=…) certificate …», depending on the build-tools version.
+apk_certs=$("$build_tools/apksigner" verify --print-certs "$apk")
+apk_cert=$(sed -n 's/^.*certificate SHA-256 digest:[[:space:]]*//p' <<< "$apk_certs" | sed -n 1p | fingerprint)
 if [ -z "$expected_cert" ] || [ "$apk_cert" != "$expected_cert" ]; then
-  echo "::error title=APK подписан не тем ключом::сертификат APK $apk_cert, ключ из keystore $expected_cert"
+  echo "$apk_certs"
+  echo "::error title=APK подписан не тем ключом::сертификат APK ${apk_cert:-не найден}, ключ из keystore $expected_cert"
   exit 1
 fi
 
