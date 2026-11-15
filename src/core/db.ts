@@ -1,6 +1,8 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
 import { SCHEMA_VERSION } from './schemaVersion';
+import { isLocalOnlySetting } from './sync/localOnly';
 import { outboxMiddleware } from './sync/outbox';
+import { tombstoneMiddleware } from './sync/tombstones';
 import type {
   CheckIn,
   CognitiveTest,
@@ -61,7 +63,9 @@ export class LifeDB extends Dexie {
 
   constructor(name = 'lifeos') {
     super(name);
+    // Core middlewares (ADR-0009): changed rows go to `syncOutbox`; rows removed with `softDelete` are hidden.
     this.use(outboxMiddleware);
+    this.use(tombstoneMiddleware);
     this.version(1).stores({
       projects: 'id, archived',
       tasks: 'id, projectId, dueDate, priority, completedAt, *tags',
@@ -117,6 +121,34 @@ export class LifeDB extends Dexie {
 }
 
 export const db = new LifeDB();
+
+/**
+ * Deletes a record the way the sync needs it (ADR-0009, sync p. 2): the row stays with `deletedAt` (a tombstone)
+ * and a bumped `updatedAt`, and from then on no read through `db` returns it. Modules call this INSTEAD of
+ * `table.delete()` — a physical delete in a module fails `core/softDelete.guard.test.ts`.
+ *
+ * Works inside the module's own transaction. Deleting a missing or already deleted record does nothing.
+ * A device-state key of `settings` (`core/sync/localOnly.ts`) is never synced, so it is removed for real.
+ *
+ *   await softDelete(db.tasks, id);
+ */
+export function softDelete<K>(table: Table<any, K, any>, id: K, now: number = Date.now()): Promise<void> {
+  return softDeleteMany(table, [id], now);
+}
+
+/** `softDelete()` for several records of one table (instead of `bulkDelete` or a `where(…).delete()`). */
+export async function softDeleteMany<K>(
+  table: Table<any, K, any>,
+  ids: readonly K[],
+  now: number = Date.now(),
+): Promise<void> {
+  const localOnly = table.name === 'settings' ? ids.filter(isLocalOnlySetting) : [];
+  const synced = ids.filter((id) => !localOnly.includes(id));
+  if (localOnly.length > 0) await table.bulkDelete(localOnly);
+  if (synced.length > 0) {
+    await table.bulkUpdate(synced.map((key) => ({ key, changes: { deletedAt: now, updatedAt: now } })));
+  }
+}
 
 /** Table names, used by backup. Keep in sync with the stores above. */
 export const TABLE_NAMES = [

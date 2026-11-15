@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { toDateKey } from '../dates';
-import { db } from '../db';
+import { db, softDelete } from '../db';
 import { newRecord, touch } from '../ids';
 import type { SleepLog } from '../types';
 import { sleepHours } from './sleepTime';
@@ -101,7 +101,7 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
     if (own) {
       if (onDay && onDay.id !== own.id) {
         // The night moved onto a day that already has one: that night stays, this copy goes.
-        await db.sleepLogs.delete(own.id);
+        await softDelete(db.sleepLogs, own.id, now);
         return onDay;
       }
       const next = { date, bedtime: valid.bedtime, wakeTime: valid.wakeTime };
@@ -121,7 +121,10 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
 /**
  * Removes a sleep record. Use when an edit moves a night to another wake-up day:
  * `deleteSleep(old.id)` then `saveSleep(newValues)`, inside one user action.
+ *
+ * The record becomes a tombstone (`softDelete`, ADR-0009): reads no longer return it, and a night saved later for
+ * the same day replaces it — the day's unique key is not blocked.
  */
 export async function deleteSleep(id: string): Promise<void> {
-  await db.sleepLogs.delete(id);
+  await softDelete(db.sleepLogs, id);
 }
