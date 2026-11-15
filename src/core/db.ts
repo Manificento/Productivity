@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
+import { SCHEMA_VERSION } from './schemaVersion';
 import { outboxMiddleware } from './sync/outbox';
 import type {
   CheckIn,
@@ -107,6 +108,11 @@ export class LifeDB extends Dexie {
     this.version(7).stores({
       syncOutbox: '[table+key], updatedAt',
     });
+    // Versions above stay literal (append-only: a constant there would silently renumber the last one).
+    // SCHEMA_VERSION must name the newest of them — backups and the sync protocol speak this number.
+    if (this.verno !== SCHEMA_VERSION) {
+      throw new Error(`SCHEMA_VERSION (${SCHEMA_VERSION}) must equal the newest Dexie version (${this.verno})`);
+    }
   }
 }
 
