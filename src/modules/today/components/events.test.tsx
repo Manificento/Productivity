@@ -187,7 +187,8 @@ describe('События', () => {
   it('shows an error when deleting fails', async () => {
     const user = userEvent.setup();
     await db.lifeEvents.add(event({}));
-    vi.spyOn(db.lifeEvents, 'delete').mockRejectedValueOnce(new Error('locked'));
+    // deleteEvent() marks the record through softDelete() (contract #274), which writes with bulkUpdate.
+    vi.spyOn(db.lifeEvents, 'bulkUpdate').mockRejectedValueOnce(new Error('locked'));
     renderAt('/today/events/e1');
     await user.click(await screen.findByRole('button', { name: 'Удалить' }));
     const dialog = screen.getByRole('dialog', { name: 'Удалить событие?' });

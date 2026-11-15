@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftDateKey, toDateKey } from '../../../core/dates';
-import { db } from '../../../core/db';
+import { db, softDelete, softDeleteMany } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { DateKey, Id, Project, Task } from '../../../core/types';
 import type { TaskPatch } from '../logic/editForm';
@@ -75,7 +75,7 @@ export async function toggleTask(id: Id, now: number = Date.now()): Promise<void
     if (task.recurrence) {
       // Found by the link alone: the copy's date may have been edited or postponed since.
       const open = await db.tasks.filter((t) => isNextCopyOf(t, task)).primaryKeys();
-      await db.tasks.bulkDelete(open);
+      await softDeleteMany(db.tasks, open, now);
     }
     const { completedAt: _done, ...reopened } = task;
     await db.tasks.put(touch(reopened, now));
@@ -137,7 +137,7 @@ export async function deferLowPriority(
 }
 
 export async function deleteTask(id: Id): Promise<void> {
-  await db.tasks.delete(id);
+  await softDelete(db.tasks, id);
 }
 
 /** Live list of completed tasks, read through the completedAt index; undefined while loading. */

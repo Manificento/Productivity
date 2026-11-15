@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { Id, LifeEvent, Project } from '../../../core/types';
 import type { EventFields } from '../logic/events';
@@ -20,7 +20,7 @@ export async function updateEvent(id: Id, fields: EventFields, now: number = Dat
 }
 
 export async function deleteEvent(id: Id): Promise<void> {
-  await db.lifeEvents.delete(id);
+  await softDelete(db.lifeEvents, id);
 }
 
 export function useEvents(): LifeEvent[] | undefined {

@@ -1,5 +1,5 @@
 import { liveQuery } from 'dexie';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 import { restoreSettings, restoreState, type PomodoroSettings, type PomodoroState } from '../logic/pomodoro';
 
 /*
@@ -98,7 +98,7 @@ export async function syncRunningSetting(state: PomodoroState): Promise<void> {
       const { phase, startedAt, endsAt } = state;
       await db.settings.put({ key: RUNNING_SETTING_KEY, value: { phase, startedAt, endsAt } });
     } else {
-      await db.settings.delete(RUNNING_SETTING_KEY);
+      await softDelete(db.settings, RUNNING_SETTING_KEY);
     }
   } catch {
     // ignore

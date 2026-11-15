@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { shiftDateKey } from '../../../core/dates';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
 import { newRecord, touch } from '../../../core/ids';
 import type { DateKey, Food, MealLog } from '../../../core/types';
 import type { FoodInput, MealKind } from '../logic/nutrition';
@@ -75,7 +75,7 @@ async function updateItems(
       throw new Error('Позиция не найдена — обновите экран');
     }
     const items = change(meal.items);
-    if (items.length === 0) await db.mealLogs.delete(at.mealId);
+    if (items.length === 0) await softDelete(db.mealLogs, at.mealId, now);
     else await db.mealLogs.put({ ...meal, ...touch({ items }, now) });
   });
 }
