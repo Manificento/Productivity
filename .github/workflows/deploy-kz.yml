@@ -4,8 +4,10 @@ name: Deploy KZ
 # Manual only: never on push or on a schedule. Every value comes from the secrets of the GitHub environment
 # `production-kz` (the table is in infra/supabase/README.md, «Что сделать владельцу»); without them the run stops at
 # its first step and touches nothing. Only branch `main` deploys, and only commits from its history (deploy-remote.sh
-# checks the revision). The logic lives in infra/supabase/deploy-remote.sh, which the Infra workflow checks over SSH
-# against a test server on every change of infra/ or of this file.
+# checks the revision). On success the run summary holds the API's public URL and anon key for the app's build
+# (VITE_SUPABASE_URL_KZ, VITE_SUPABASE_ANON_KEY_KZ); no closed value gets there. The logic lives in
+# infra/supabase/deploy-remote.sh, which the Infra workflow checks over SSH against a test server on every change of
+# infra/ or of this file.
 on:
   workflow_dispatch:
     inputs:

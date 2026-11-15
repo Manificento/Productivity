@@ -359,8 +359,9 @@ check 'значение по умолчанию изменилось, ключ �
   test "${revised[DISK_ALERT_PERCENT]:-}" == 90
 check 'значение по умолчанию изменилось, ключ меняли на сервере (BACKUP_KEEP=30): значение владельца сохранено' \
   test "${revised[BACKUP_KEEP]:-}" == 30
-defaults_line=$(grep 'по умолчанию' "$revision_log" | grep -w DISK_ALERT_PERCENT)
-kept_line=$(grep 'изменённые на сервере' "$revision_log" | grep -w BACKUP_KEEP)
+# The messages without the log's `[time] ` prefix (the time has digits of its own).
+defaults_line=$(grep 'по умолчанию' "$revision_log" | grep -w DISK_ALERT_PERCENT | sed 's/^\[[^]]*\] //')
+kept_line=$(grep 'изменённые на сервере' "$revision_log" | grep -w BACKUP_KEEP | sed 's/^\[[^]]*\] //')
 check '…журнал называет ключ с новым значением по умолчанию по имени, без значения' \
   bash -c "[[ -n \$1 && \$1 != *90* && \$1 != *85* && \$1 != *BACKUP_KEEP* ]]" _ "$defaults_line"
 check '…и ключ, сохранённый за владельцем, по имени, без значения' \
