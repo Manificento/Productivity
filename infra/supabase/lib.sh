@@ -69,7 +69,19 @@ wait_for_api() {
 # Backups of a region live under s3://$S3_BUCKET/$S3_PREFIX/ (default prefix lifeos/<region>) — the bucket must be
 # in the region's own jurisdiction (ADR-0009).
 backup_prefix() { echo "${S3_PREFIX:-lifeos/$REGION}"; }
-backup_pattern() { echo "^lifeos-$REGION-[0-9]{8}T[0-9]{6}Z\\.sql\\.gz\$"; }
+backup_pattern() { echo "^lifeos-$REGION-[0-9]{8}T[0-9]{6}Z\\.sql\\.gz\\.enc\$"; }
+
+# Copies are encrypted before they leave the server (#265): AES-256 with a key derived by PBKDF2 from
+# BACKUP_ENCRYPTION_KEY (random, from gen-env.sh). Without the key no copy can be read, so it is kept in the password
+# manager apart from the bucket keys — a leak of the bucket alone discloses nothing.
+BACKUP_CIPHER=(-aes-256-cbc -pbkdf2 -iter 200000 -md sha256)
+require_backup_key() {
+  require BACKUP_ENCRYPTION_KEY
+  ((${#BACKUP_ENCRYPTION_KEY} >= 32)) || die "BACKUP_ENCRYPTION_KEY короче 32 символов — создайте новый: openssl rand -hex 32"
+}
+# stdin → stdout; the key is read from the environment, never from the command line (visible in `ps`).
+encrypt_backup() { openssl enc -e "${BACKUP_CIPHER[@]}" -salt -pass env:BACKUP_ENCRYPTION_KEY; }
+decrypt_backup() { openssl enc -d "${BACKUP_CIPHER[@]}" -pass env:BACKUP_ENCRYPTION_KEY; }
 
 require_s3() { require S3_ENDPOINT S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; }
 
@@ -107,15 +119,54 @@ notify() {
     --data "{\"text\": \"$(json_escape "$text")\"}" "$ALERT_WEBHOOK_URL" > /dev/null
 }
 
-# Names of this region's backups in the bucket, oldest first (the timestamp in the name sorts chronologically).
-# An S3 error (credentials, network) fails the call; only an empty prefix gives an empty list.
-list_backups() {
+# Names of all objects under this region's prefix. An S3 error (credentials, network) fails the call; only an empty
+# prefix gives an empty list.
+list_objects() {
   local listing
   listing=$(s3 "$1" s3 ls "s3://$S3_BUCKET/$(backup_prefix)/") || {
     # `aws s3 ls` exits 1 for a prefix with no objects; any other failure is real.
     [[ $? == 1 && -z $listing ]] || die "не удалось получить список копий в s3://$S3_BUCKET/$(backup_prefix)/"
   }
-  awk '{print $4}' <<< "$listing" | { grep -E "$(backup_pattern)" || true; } | sort
+  awk 'NF >= 4 {print $4}' <<< "$listing"
+}
+
+# Names of this region's backups in the bucket, oldest first (the timestamp in the name sorts chronologically).
+list_backups() {
+  local names
+  names=$(list_objects "$1") || exit 1
+  { grep -E "$(backup_pattern)" <<< "$names" || true; } | sort
+}
+
+# Copies made before #265 were uploaded unencrypted: lifeos-<region>-<time>.sql.gz.
+legacy_backup_pattern() { echo "^lifeos-$REGION-[0-9]{8}T[0-9]{6}Z\\.sql\\.gz\$"; }
+
+# Re-encrypts those copies in place: <name>.enc is uploaded once it decrypts back to the same bytes, and only then
+# the plaintext object is deleted. The timestamp stays in the name, so restore points and pruning are kept. Safe to
+# rerun. A copy that is not valid gzip is left untouched. Returns 1 if any copy is still in the clear (logged).
+migrate_legacy_backups() {
+  local dir=$1 target names name legacy failed=0
+  target="s3://$S3_BUCKET/$(backup_prefix)"
+  names=$(list_objects "$dir") || return 1
+  mapfile -t legacy < <(grep -E "$(legacy_backup_pattern)" <<< "$names")
+  for name in "${legacy[@]}"; do
+    if ! s3 "$dir" s3 cp --only-show-errors "$target/$name" "/work/$name"; then
+      log "старую копию $name не скачать — осталась в бакете в открытом виде"
+      failed=1
+    elif ! gzip -t "$dir/$name" 2> /dev/null; then
+      log "старая копия $name повреждена (не gzip) и осталась в бакете в открытом виде — проверьте и удалите её вручную"
+      failed=1
+    elif encrypt_backup < "$dir/$name" > "$dir/$name.enc" &&
+      decrypt_backup < "$dir/$name.enc" | cmp -s - "$dir/$name" &&
+      s3 "$dir" s3 cp --only-show-errors "/work/$name.enc" "$target/$name.enc" &&
+      s3 "$dir" s3 rm --only-show-errors "$target/$name"; then
+      log "старая копия $name зашифрована → $name.enc, открытая удалена"
+    else
+      log "старую копию $name не зашифровать — осталась в бакете в открытом виде"
+      failed=1
+    fi
+    rm -f "$dir/$name" "$dir/$name.enc"
+  done
+  return "$failed"
 }
 
 # Prints the names to delete so that only the newest <keep> remain; reads names (any order) from stdin.
