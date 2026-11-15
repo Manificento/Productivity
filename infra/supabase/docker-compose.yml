@@ -19,6 +19,9 @@ services:
         condition: service_healthy
     volumes:
       - ./volumes/api/kong.yml:/home/kong/temp.yml:ro
+    labels:
+      # sha256 of kong.yml (lib.sh, `compose`): a changed file recreates the container, which reads it only at start.
+      lifeos.config-sha256: ${KONG_CONFIG_SHA256:-}
     environment:
       KONG_DATABASE: 'off'
       KONG_DECLARATIVE_CONFIG: /tmp/kong.yml
@@ -143,6 +146,9 @@ services:
       - ./volumes/proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - proxy-data:/data
       - proxy-config:/config
+    labels:
+      # sha256 of the Caddyfile (lib.sh, `compose`): a changed file recreates the container (no admin API to reload).
+      lifeos.config-sha256: ${PROXY_CONFIG_SHA256:-}
     environment:
       API_DOMAIN: ${API_DOMAIN:-}
       ACME_EMAIL: ${ACME_EMAIL:-}
