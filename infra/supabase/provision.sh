@@ -126,7 +126,9 @@ write_settings() {
   # Names only: a value may be a secret.
   ((${#updated[@]} == 0)) ||
     log "регион $region: новые значения по умолчанию из env.example (на сервере эти ключи не меняли): ${updated[*]}"
-  ((${#kept[@]} == 0)) || log "регион $region: сохранены значения, изменённые на сервере: ${kept[*]}"
+  # A file restored from an old copy keeps the defaults of its time: they are kept too, and named here the same way.
+  ((${#kept[@]} == 0)) ||
+    log "регион $region: сохранены значения, изменённые на сервере (вручную или восстановлением файла из копии), — чтобы взять значение по умолчанию из env.example, удалите строку: ${kept[*]}"
 }
 
 # record <file> < content: replaces a file of the applied/ record as a whole.
@@ -144,7 +146,11 @@ init_sql_sums() { (cd "$here/volumes/db" && sha256sum -- *.sql); }
 check_init_sql() {
   local line changed=()
   docker volume inspect "lifeos-${region}_db-data" > /dev/null 2>&1 || return 0 # a new database: it runs now
-  [[ -f $applied/init-sql.sha256 ]] || return 0                                   # deployed before #295
+  if [[ ! -f $applied/init-sql.sha256 ]]; then
+    # Deployed before #295: what the database was created with is unknown, so the reminder holds for every file.
+    log "регион $region: записи о SQL первичной инициализации базы нет (сервер развёрнут до #295) — файлы volumes/db/ на этой базе не выполняются: они действуют только на пустой базе при её создании, изменения схемы работающей базы вносятся миграциями"
+    return 0
+  fi
   while IFS= read -r line; do
     grep -qxF -- "$line" "$applied/init-sql.sha256" || changed+=("${line##* }")
   done < <(init_sql_sums)

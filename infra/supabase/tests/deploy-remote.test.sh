@@ -15,9 +15,12 @@ SERVER_ENV=$SERVER/kz.env
 SERVER_CODE=$SERVER/app/infra/supabase
 
 # The secrets of the production-kz environment, as the workflow passes them to deploy-remote.sh.
-SECRET_NAMES=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DOMAIN SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
+SECRET_NAMES=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
   SMTP_ADMIN_EMAIL S3_ENDPOINT S3_REGION S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY
   ALERT_WEBHOOK_URL)
+# Its variables: public values. The API domain goes into the run summary (VITE_SUPABASE_URL_KZ), and GitHub masks the
+# value of every secret there too (`https://***`), so it must not be a secret.
+VARIABLE_NAMES=(DOMAIN)
 
 fails() { ! "$@"; }
 
@@ -28,9 +31,9 @@ check 'единственная задача использует окружен
   test "$(yq -r '[.jobs[].environment] | join(" ")' "$WORKFLOW")" == production-kz
 check 'первый шаг — проверка секретов, ещё до checkout' \
   test "$(yq -r '.jobs[].steps[0] | has("uses")' "$WORKFLOW")" == false
-check '…ему передаются ровно обязательные секреты' \
+check '…ему передаются ровно обязательные секреты и переменные' \
   test "$(yq -r '.jobs[].steps[0].env | keys | sort | join(" ")' "$WORKFLOW")" == \
-  "$(printf '%s\n' "${SECRET_NAMES[@]}" | sort | paste -sd ' ')"
+  "$(printf '%s\n' "${SECRET_NAMES[@]}" "${VARIABLE_NAMES[@]}" | sort | paste -sd ' ')"
 check 'секреты не заданы на уровне задачи: сторонние шаги (checkout) их не видят' \
   bash -c "! yq -r '.jobs[].env // {} | .[]' '$WORKFLOW' | grep -q 'secrets\.'"
 check 'сторонние действия закреплены на SHA коммита' \
@@ -41,6 +44,13 @@ for name in "${SECRET_NAMES[@]}" SSH_PORT SMTP_PORT; do
 done
 check "шаг деплоя получает все секреты окружения (не хватает: ${missing_in_workflow[*]:-—})" \
   test "${#missing_in_workflow[@]}" == 0
+not_variable=()
+for name in "${VARIABLE_NAMES[@]}"; do
+  [[ $(yq -r ".jobs[].steps[0].env.$name, .jobs[].steps[-1].env.$name" "$WORKFLOW" | sort -u) == "\${{ vars.$name }}" ]] ||
+    not_variable+=("$name")
+done
+check "домен API — переменная окружения (vars), а не секрет: секрет GitHub маскирует и в итоге запуска, адрес стал бы https://*** (не так: ${not_variable[*]:-—})" \
+  test "${#not_variable[@]}" == 0
 
 # The first step exactly as GitHub runs it: `bash --noprofile --norc -eo pipefail`.
 first_step() { env -i PATH="$PATH" HOME="$HOME" "$@" bash --noprofile --norc -eo pipefail -c "$(yq -r '.jobs[].steps[0].run' "$WORKFLOW")"; }
@@ -49,11 +59,15 @@ first_step GITHUB_REF=refs/heads/main > "$no_secrets_log" 2>&1
 no_secrets_code=$?
 check 'секреты не заданы: первый шаг завершается с ошибкой' test "$no_secrets_code" != 0
 listed=()
-for name in "${SECRET_NAMES[@]}"; do grep -qw "$name" "$no_secrets_log" && listed+=("$name"); done
+for name in "${SECRET_NAMES[@]}"; do grep '^::error' "$no_secrets_log" | grep -v 'переменн' | grep -qw "$name" && listed+=("$name"); done
 check '…и называет все недостающие секреты' test "${#listed[@]}" == "${#SECRET_NAMES[@]}"
+listed=()
+for name in "${VARIABLE_NAMES[@]}"; do grep '^::error' "$no_secrets_log" | grep 'переменн' | grep -qw "$name" && listed+=("$name"); done
+check '…и недостающую переменную (DOMAIN) — как переменную, а не секрет' \
+  test "${#listed[@]}" == "${#VARIABLE_NAMES[@]}"
 check '…сообщение об ошибке видно в GitHub (::error)' grep -q '^::error' "$no_secrets_log"
 all_secrets=()
-for name in "${SECRET_NAMES[@]}"; do all_secrets+=("$name=x"); done
+for name in "${SECRET_NAMES[@]}" "${VARIABLE_NAMES[@]}"; do all_secrets+=("$name=x"); done
 check 'секреты заданы, запуск из main: первый шаг проходит' first_step GITHUB_REF=refs/heads/main "${all_secrets[@]}"
 check 'запуск не из ветки main: первый шаг останавливается' \
   fails first_step GITHUB_REF=refs/heads/feat/999 "${all_secrets[@]}"
@@ -374,6 +388,23 @@ check 'итог запуска новой ревизии: адрес API и кл
     grep -qxF 'VITE_SUPABASE_ANON_KEY_KZ=${server_env[ANON_KEY]}' '$GITHUB_STEP_SUMMARY'"
 leaked_into "$WORK/redeploy.log" "$WORK/lost-env.log" "$revision_log" "$GITHUB_STEP_SUMMARY"
 check "закрытые значения не попали ни в один журнал деплоя и в итог (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
+
+section 'сервер, развёрнутый до #295: записи о SQL первичной инициализации нет, а база с данными уже есть'
+rm -f "$SERVER/kz.applied/init-sql.sha256"
+legacy_log=$WORK/legacy.log
+MAIN_REF=$revision REVISION=$revision "$INFRA_DIR/deploy-remote.sh" > "$legacy_log" 2>&1
+legacy_code=$?
+check 'деплой завершается успешно' test "$legacy_code" == 0
+((legacy_code == 0)) || tail -n 40 "$legacy_log"
+legacy_line=$(grep 'до #295' "$legacy_log" | grep 'только на пустой базе' | grep 'миграц')
+check 'в журнале напоминание: SQL первичной инициализации на этой базе не выполняется, схема меняется миграциями' \
+  test -n "$legacy_line"
+check '…и запись о SQL инициализации сделана: со следующего деплоя изменения называются по имени файла' \
+  test -s "$SERVER/kz.applied/init-sql.sha256"
+check '…база не пересоздана, данные на месте' \
+  test "$(compose ps -q db)|$(probe)" == "$db_before|до повторного деплоя"
+leaked_into "$legacy_log"
+check "…закрытые значения в журнал не попали (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
 
 section 'контейнер упал → задание healthcheck.sh из расписания шлёт уведомление (заглушка канала)'
 compose stop rest > /dev/null 2>&1

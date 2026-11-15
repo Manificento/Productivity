@@ -6,8 +6,8 @@
 #
 #   deploy-remote.sh          # deploys REVISION (default HEAD) of this repository
 #
-# Everything comes from the environment (the workflow maps the secrets of `production-<region>`; the table of secrets
-# is in README.md, «Что сделать владельцу»). Optional, not secret: REGION (kz), SSH_PORT (22), SMTP_PORT (587),
+# Everything comes from the environment (the workflow maps the secrets and the variable DOMAIN of
+# `production-<region>`; the table is in README.md, «Что сделать владельцу»). Optional, not secret: REGION (kz), SSH_PORT (22), SMTP_PORT (587),
 # DEPLOY_DIR (/opt/lifeos), REVISION (HEAD), PROXY_HTTPS_PORT (443), PROXY_HTTP_PORT (80), MAIN_REF (origin/main).
 # Only a commit from the history of MAIN_REF is deployed: the code of an unreviewed branch would get every secret.
 # Secret values never reach the log: no tracing, and they travel to the server on SSH's stdin, not on a command line.
@@ -17,9 +17,11 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 . "$here/lib.sh"
 
-REQUIRED_SECRETS=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DOMAIN SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
+REQUIRED_SECRETS=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
   SMTP_ADMIN_EMAIL S3_ENDPOINT S3_REGION S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY
   ALERT_WEBHOOK_URL)
+# Variables of the environment, not secrets: the API domain goes into the run summary, where GitHub masks secrets.
+REQUIRED_VARIABLES=(DOMAIN)
 # What provision.sh gets on stdin, besides the values derived below. One KEY=VALUE per line.
 SERVER_SETTINGS=(SITE_URL SMTP_ADMIN_EMAIL SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS S3_ENDPOINT S3_REGION S3_BUCKET
   AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY ALERT_WEBHOOK_URL PROXY_HTTP_PORT PROXY_HTTPS_PORT)
@@ -32,16 +34,20 @@ PROXY_HTTPS_PORT=${PROXY_HTTPS_PORT:-443}
 PROXY_HTTP_PORT=${PROXY_HTTP_PORT:-80}
 MAIN_REF=${MAIN_REF:-origin/main}
 
-# Stops before anything is touched when a secret is missing, naming all of them at once. The workflow checks the same
-# list in its first step, before checkout; this is the guard for any other caller.
+# Stops before anything is touched when a secret or a variable is missing, naming all of them at once. The workflow
+# checks the same lists in its first step, before checkout; this is the guard for any other caller.
 check_secrets() {
-  local name missing=()
+  local name missing=() missing_variables=()
   for name in "${REQUIRED_SECRETS[@]}"; do [[ -n ${!name:-} ]] || missing+=("$name"); done
-  if ((${#missing[@]} > 0)); then
+  for name in "${REQUIRED_VARIABLES[@]}"; do [[ -n ${!name:-} ]] || missing_variables+=("$name"); done
+  ((${#missing[@]} == 0)) ||
     echo "::error title=Не заданы секреты окружения production-$REGION::${missing[*]} — что это и где взять: infra/supabase/README.md, «Что сделать владельцу»"
-    die "не заданы секреты окружения production-$REGION (${#missing[@]}): ${missing[*]}"
-  fi
-  log "секреты окружения production-$REGION заданы (${#REQUIRED_SECRETS[@]})"
+  ((${#missing_variables[@]} == 0)) ||
+    echo "::error title=Не заданы переменные окружения production-$REGION::${missing_variables[*]} — это переменная (Environment variables), а не секрет; что это и где взять: infra/supabase/README.md, «Что сделать владельцу»"
+  ((${#missing[@]} == 0)) || die "не заданы секреты окружения production-$REGION (${#missing[@]}): ${missing[*]}"
+  ((${#missing_variables[@]} == 0)) ||
+    die "не заданы переменные окружения production-$REGION (${#missing_variables[@]}): ${missing_variables[*]}"
+  log "секреты (${#REQUIRED_SECRETS[@]}) и переменные (${#REQUIRED_VARIABLES[@]}) окружения production-$REGION заданы"
 }
 
 # Values must fit one line of the settings file, where they are written in single quotes (no expansion by Compose).
@@ -50,7 +56,7 @@ check_values() {
   for name in "${SERVER_SETTINGS[@]}" DOMAIN SSH_HOST SSH_USER; do
     value=${!name}
     [[ $value != *[$'\n\r']* && $value != *"'"* ]] ||
-      die "секрет $name: значение должно быть одной строкой без апострофа (')"
+      die "$name: значение должно быть одной строкой без апострофа (')"
   done
   [[ $REGION =~ ^[a-z]{2}$ ]] || die "REGION должен быть двухбуквенным кодом, а не «$REGION»"
   [[ $DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] ||
