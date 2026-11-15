@@ -122,8 +122,8 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
  * Removes a sleep record. Use when an edit moves a night to another wake-up day:
  * `deleteSleep(old.id)` then `saveSleep(newValues)`, inside one user action.
  *
- * The record becomes a tombstone (`softDelete`, ADR-0009): reads no longer return it, and a night saved later for
- * the same day replaces it — the day's unique key is not blocked.
+ * The record becomes a tombstone (`softDelete`, ADR-0009): reads no longer return it, and it keeps no data of the
+ * night — so the day's unique key is free for a night saved later.
  */
 export async function deleteSleep(id: string): Promise<void> {
   await softDelete(db.sleepLogs, id);

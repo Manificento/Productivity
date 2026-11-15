@@ -152,9 +152,13 @@ export async function getDeviceId(): Promise<string> {
 }
 
 /**
- * Deletes a record the way the sync needs it (ADR-0009, sync p. 2): the row stays with `deletedAt` (a tombstone)
- * and a bumped `updatedAt`, and from then on no read through `db` returns it. Modules call this INSTEAD of
- * `table.delete()` — a physical delete in a module fails `core/softDelete.guard.test.ts`.
+ * Deletes a record the way the sync needs it (ADR-0009, sync p. 2; ADR-0010 p. 1): the row is replaced by a
+ * tombstone — its primary key, `createdAt`, a bumped `updatedAt` and `deletedAt` — and from then on no read through
+ * `db` returns it. Modules call this INSTEAD of `table.delete()` — a physical delete in a module fails
+ * `core/softDelete.guard.test.ts`.
+ *
+ * The content of the record is NOT kept: what the user deleted leaves the device at once, and the sync has only
+ * the key and the two times to send. So a tombstone holds no index of the removed fields either (`&date`, …).
  *
  * Works inside the module's own transaction. Deleting a missing or already deleted record does nothing.
  * A device-state key of `settings` (`core/sync/localOnly.ts`) is never synced, so it is removed for real.
@@ -173,10 +177,27 @@ export async function softDeleteMany<K>(
 ): Promise<void> {
   const localOnly = table.name === 'settings' ? ids.filter(isLocalOnlySetting) : [];
   const synced = ids.filter((id) => !localOnly.includes(id));
-  if (localOnly.length > 0) await table.bulkDelete(localOnly);
-  if (synced.length > 0) {
-    await table.bulkUpdate(synced.map((key) => ({ key, changes: { deletedAt: now, updatedAt: now } })));
-  }
+  if (localOnly.length === 0 && synced.length === 0) return;
+  // Read and replace in one transaction (the caller's own, when there is one): no write slips in between.
+  await table.db.transaction('rw', table, async () => {
+    if (localOnly.length > 0) await table.bulkDelete(localOnly);
+    if (synced.length === 0) return;
+    // Reads skip tombstones, so a missing id and an already deleted one both come back empty and stay as they are.
+    const rows: unknown[] = await table.bulkGet(synced);
+    const tombstones = rows.filter((row) => row !== undefined).map((row) => tombstoneOf(table, row, now));
+    if (tombstones.length > 0) await table.bulkPut(tombstones);
+  });
+}
+
+/** What stays of a deleted row: its primary key and `createdAt`, plus the time of the deletion. Nothing else. */
+function tombstoneOf(table: Table, row: unknown, now: number): Record<string, unknown> {
+  const live = row as Record<string, unknown>;
+  const tombstone: Record<string, unknown> = {};
+  for (const field of [table.schema.primKey.keyPath ?? []].flat()) tombstone[field] = live[field];
+  if (typeof live.createdAt === 'number') tombstone.createdAt = live.createdAt;
+  tombstone.updatedAt = now;
+  tombstone.deletedAt = now;
+  return tombstone;
 }
 
 /**

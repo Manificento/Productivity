@@ -57,14 +57,16 @@ export function isBackup(value: unknown): value is Backup {
  * Unknown tables in the backup are ignored; tables missing from it are cleared.
  * Accepts backups of this schema version and of any older one; a backup from a newer app is refused.
  *
- * Sync (ADR-0009): `clear()` removes tombstones too, so nothing deleted before the import survives it. This
+ * Sync (ADR-0009): `clear()` removes tombstones too, so no trace of what was deleted before the import survives it. This
  * device keeps its `device.id` — an id inside the file is ignored, as are rows marked `deletedAt` (a backup is
  * live data). The core middleware queues every removed and every restored row in `syncOutbox`: with an account, a
  * restore is «replace the data in the cloud» (sync p. 9).
  */
 export async function importAll(backup: unknown): Promise<void> {
   if (!isBackup(backup)) throw new Error('Файл не похож на резервную копию LifeOS');
-  if (backup.version > SCHEMA_VERSION) throw new Error('Резервная копия из более новой версии приложения');
+  if (backup.version > SCHEMA_VERSION) {
+    throw new Error('Резервная копия сделана в более новой версии приложения. Обновите приложение и повторите импорт');
+  }
   await db.transaction(
     'rw',
     TABLE_NAMES.map((n) => db.table(n)),

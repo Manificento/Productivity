@@ -34,8 +34,9 @@ describe('contract #274: единая версия схемы', () => {
       expect((await db.tasks.get('t1'))?.title).toBe(`версия ${version}`);
     }
 
+    // The message is shown to the user as is: it says what to do, not only what is wrong.
     await expect(importAll({ ...backup, version: SCHEMA_VERSION + 1, tables: { tasks: [] } })).rejects.toThrow(
-      'Резервная копия из более новой версии приложения',
+      'Резервная копия сделана в более новой версии приложения. Обновите приложение и повторите импорт',
     );
     // A rejected backup changes nothing.
     expect(await db.tasks.count()).toBe(1);

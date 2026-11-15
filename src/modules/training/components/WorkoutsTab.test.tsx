@@ -169,8 +169,8 @@ describe('workouts tab', () => {
     await saveWorkout({ date: TODAY, type: 'Бег', durationMin: 30, rpe: 6 }, 1);
     renderTab();
     fireEvent.click(within(await history()).getByRole('button', { name: 'Удалить: Бег, 4 ноября' }));
-    // deleteWorkout() marks the record through softDelete() (contract #274), which writes with bulkUpdate.
-    const del = vi.spyOn(db.workoutLogs, 'bulkUpdate').mockRejectedValueOnce(new Error('quota'));
+    // deleteWorkout() marks the record through softDelete() (contract #274), which writes the tombstone with bulkPut.
+    const del = vi.spyOn(db.workoutLogs, 'bulkPut').mockRejectedValueOnce(new Error('quota'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
     expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Не удалось удалить');
     expect(await db.workoutLogs.count()).toBe(1);

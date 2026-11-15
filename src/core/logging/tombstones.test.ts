@@ -25,15 +25,21 @@ describe('contract #274: общие пути записи и удалённые 
     await deleteSleep(first.id);
 
     expect(await db.sleepLogs.count()).toBe(0);
+    // The tombstone keeps the key and the times only: the night's data is gone from the device.
     const [tombstone] = await storedRows<SleepLog>('sleepLogs');
-    expect(tombstone).toMatchObject({ id: first.id, date: '2026-11-05', quality: 3 });
-    expect(tombstone?.deletedAt).toEqual(expect.any(Number));
+    expect(tombstone).toEqual({
+      id: first.id,
+      createdAt: 1_000,
+      updatedAt: expect.any(Number),
+      deletedAt: expect.any(Number),
+    });
 
     const again = await saveSleep({ ...night('2026-11-05', '22:00', '06:30'), quality: 5 }, 2_000);
     expect(await db.sleepLogs.toArray()).toEqual([again]);
     expect(again).toMatchObject({ date: '2026-11-05', quality: 5, createdAt: 2_000 });
-    // One night on the day in the store too, and the old night's deletion is still queued for the sync.
-    expect(await storedRows('sleepLogs')).toEqual([again]);
+    // One night on the day in the store too (the tombstone has no `date`), and the old night's deletion is still
+    // queued for the sync.
+    expect((await storedRows<SleepLog>('sleepLogs')).filter((s) => s.date === '2026-11-05')).toEqual([again]);
     expect(await db.syncOutbox.get(['sleepLogs', first.id])).toBeDefined();
     expect(await db.syncOutbox.get(['sleepLogs', again.id])).toBeDefined();
 

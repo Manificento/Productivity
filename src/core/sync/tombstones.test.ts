@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { storedRows as stored } from '../../test/storedRows';
 import { db, softDelete, softDeleteMany, TABLE_NAMES } from '../db';
-import type { CheckIn, PlannedSession, SleepLog, Task, WeightLog } from '../types';
+import type { CheckIn, Note, PlannedSession, SleepLog, Task, WeightLog } from '../types';
 
 const T0 = new Date(2026, 10, 4, 12, 0).getTime();
 const DAY = '2026-11-04';
@@ -46,14 +46,42 @@ const ids = (tasks: Task[]): string[] => tasks.map((t) => t.id);
 describe('contract #274: softDelete и read-middleware', () => {
   it('Given любой модуль удаляет запись через новый хелпер softDelete(table, id) из src/core/db.ts When читаю таблицу через db Then запись помечена deletedAt', async () => {
     const rows = await stored<Task>('tasks');
-    // The row is still in IndexedDB, whole, with the mark and a bumped updatedAt (the deletion wins last-writer-wins).
+    // The row is still in IndexedDB with the mark and a bumped updatedAt (the deletion wins last-writer-wins)…
     expect(rows).toHaveLength(5);
-    expect(rows.find((t) => t.id === 'b')).toEqual(
-      task('b', { dueDate: '2026-11-02', priority: 1, tags: ['дом'], deletedAt: T0 + 1000, updatedAt: T0 + 1000 }),
-    );
+    expect(rows.find((t) => t.id === 'b')).toMatchObject({ id: 'b', deletedAt: T0 + 1000, updatedAt: T0 + 1000 });
     expect(rows.find((t) => t.id === 'a')).not.toHaveProperty('deletedAt');
     // …and the deletion is queued for the sync.
     expect(await db.syncOutbox.get(['tasks', 'b'])).toEqual({ table: 'tasks', key: 'b', updatedAt: T0 + 1000 });
+  });
+
+  it('удалённая запись не хранит содержимое: от неё остаются только ключ, createdAt, updatedAt и deletedAt', async () => {
+    // What the user deleted must not stay on the device, nor reach the cloud with the first push (ADR-0010 p. 1).
+    expect((await stored<Task>('tasks')).find((t) => t.id === 'b')).toEqual({
+      id: 'b',
+      createdAt: T0,
+      updatedAt: T0 + 1000,
+      deletedAt: T0 + 1000,
+    });
+  });
+
+  it('текста удалённой заметки нет в IndexedDB', async () => {
+    const note: Note = {
+      id: 'n1',
+      createdAt: T0,
+      updatedAt: T0,
+      title: 'Личное',
+      body: 'секретный текст',
+      linkIds: ['a'],
+    };
+    await db.notes.add(note);
+    await softDelete(db.notes, 'n1');
+
+    const rows = await stored('notes');
+    expect(rows).toEqual([{ id: 'n1', createdAt: T0, updatedAt: T0 + 1000, deletedAt: T0 + 1000 }]);
+    expect(JSON.stringify(rows)).not.toContain('секретный текст');
+    expect(JSON.stringify(rows)).not.toContain('Личное');
+    // The tombstone left the indexes of the removed fields too.
+    expect(await db.notes.where('linkIds').equals('a').count()).toBe(0);
   });
 
   it('read-middleware скрывает удалённую запись из get', async () => {
@@ -170,7 +198,12 @@ describe('contract #274: softDelete и read-middleware', () => {
   it('update и modify не трогают удалённую запись, а новая запись с тем же id (put или add) её заменяет', async () => {
     expect(await db.tasks.update('b', { title: 'правка удалённой' })).toBe(0);
     expect(await db.tasks.where('priority').equals(1).modify({ title: 'новое' })).toBe(1);
-    expect((await stored<Task>('tasks')).find((t) => t.id === 'b')?.title).toBe('b');
+    expect((await stored<Task>('tasks')).find((t) => t.id === 'b')).toEqual({
+      id: 'b',
+      createdAt: T0,
+      updatedAt: T0 + 1000,
+      deletedAt: T0 + 1000,
+    });
 
     await db.tasks.put(task('b', { title: 'создана заново' }));
     await db.tasks.add(task('d', { title: 'тоже заново' }));
@@ -194,7 +227,7 @@ describe('contract #274: softDelete и read-middleware', () => {
     expect(await db.settings.get('time.pomodoro.running')).toBeUndefined();
     // The user's setting leaves a tombstone to sync; device state has nothing to sync and is simply removed.
     expect(await stored('settings')).toEqual([
-      { key: 'adaptation.baseline', value: { sleepHours: 8 }, deletedAt: T0 + 2000, updatedAt: T0 + 2000 },
+      { key: 'adaptation.baseline', deletedAt: T0 + 2000, updatedAt: T0 + 2000 },
     ]);
     expect(await outboxKeys('settings')).toEqual(['adaptation.baseline']);
 
@@ -249,14 +282,35 @@ describe('contract #274: удалённая запись не держит ун�
       await t.bulkPut([make('newer')]);
       expect(await t.toArray()).toEqual([make('newer')]);
 
-      // The tombstones gave the key up and are gone from the store…
-      expect(await stored(table)).toEqual([make('newer')]);
-      // …but their deletion is not lost: it stays queued for the sync, next to the new row.
+      // The tombstones carry no payload, so they never held the key: they stay, next to the new row…
+      const tombstone = (id: string, at: number) => ({ id, createdAt: T0, updatedAt: at, deletedAt: at });
+      expect(await stored(table)).toEqual([tombstone('new', T0 + 3000), make('newer'), tombstone('old', T0 + 2000)]);
+      // …and their deletion is queued for the sync.
       expect(await outboxKeys(table)).toEqual(['new', 'newer', 'old']);
       // A live row keeps the key, as before.
       await expect(t.add(make('dup'))).rejects.toThrow();
       await expect(t.put(make('dup'))).rejects.toThrow();
       expect(await t.toArray()).toEqual([make('newer')]);
+    },
+  );
+
+  it.each(cases)(
+    '$table ($index): tombstone с содержимым (так он может прийти с сервера) не держит уникальный ключ — запись его заменяет',
+    async ({ table, make }) => {
+      const t = db.table(table);
+      // Not what `softDelete` writes: a whole row marked deleted, the way a pull may deliver it.
+      await t.put({ ...make('old'), deletedAt: T0 + 2000, updatedAt: T0 + 2000 });
+      expect(await t.count()).toBe(0);
+
+      await t.add(make('new'));
+      expect(await t.toArray()).toEqual([make('new')]);
+      // The tombstone gave the key up and is gone from the store, but its deletion stays queued for the sync.
+      expect(await stored(table)).toEqual([make('new')]);
+      expect(await outboxKeys(table)).toEqual(['new', 'old']);
+
+      await t.put({ ...make('new'), deletedAt: T0 + 3000 });
+      await t.bulkPut([make('newer')]);
+      expect(await stored(table)).toEqual([make('newer')]);
     },
   );
 

@@ -20,7 +20,8 @@ export interface BaseRecord {
   createdAt: Millis;
   updatedAt: Millis;
   /**
-   * Tombstone (ADR-0009, sync p. 2): set by `softDelete()` from `core/db.ts` instead of a physical delete.
+   * Tombstone (ADR-0009, sync p. 2): set by `softDelete()` from `core/db.ts` instead of a physical delete; the
+   * row then keeps only `id`, `createdAt`, `updatedAt` and this field — its content is dropped.
    * Reads through `db` never return such a row — modules do not check this field.
    */
   deletedAt?: Millis;

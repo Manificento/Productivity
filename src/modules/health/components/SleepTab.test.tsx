@@ -127,8 +127,8 @@ describe('sleep tab', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(await db.sleepLogs.count()).toBe(1);
 
-    // deleteSleep() marks the record through softDelete() (contract #274), which writes with bulkUpdate.
-    const del = vi.spyOn(db.sleepLogs, 'bulkUpdate').mockRejectedValueOnce(new Error('quota'));
+    // deleteSleep() marks the record through softDelete() (contract #274), which writes the tombstone with bulkPut.
+    const del = vi.spyOn(db.sleepLogs, 'bulkPut').mockRejectedValueOnce(new Error('quota'));
     fireEvent.click(screen.getByRole('button', { name: 'Удалить запись за 4 ноября' }));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Удалить' }));
     expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent('Не удалось удалить');

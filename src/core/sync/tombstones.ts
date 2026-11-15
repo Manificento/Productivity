@@ -9,7 +9,7 @@ import Dexie, {
 } from 'dexie';
 import { SYNC_OUTBOX } from './outbox';
 
-/** A row removed with `softDelete()`: it stays in IndexedDB for the sync, but the app must not see it. */
+/** A row removed with `softDelete()`: its key and times stay in IndexedDB for the sync, but the app must not see it. */
 function isTombstone(row: unknown): boolean {
   return typeof row === 'object' && row !== null && (row as { deletedAt?: unknown }).deletedAt != null;
 }
@@ -30,6 +30,8 @@ const EQUAL = 1;
  * (`add`) or one of its unique keys under another id (`&date`, `&[programId+date]`) are physically removed in the
  * same transaction; the outbox middleware below records that removal, so the deletion is still pushed. A `put` with
  * the tombstone's own id simply overwrites it — the way records with deterministic ids are re-created.
+ * A tombstone written by `softDelete()` carries no content, so it holds no unique key at all; the unique-key
+ * removal is for a tombstone that still has its fields (a whole row marked `deletedAt`, e.g. delivered by a pull).
  *
  * `update`/`modify` find rows through the filtered reads, so they do not touch tombstones.
  *
@@ -73,7 +75,7 @@ function hideTombstones(table: DBCoreTable, pkOf: (row: unknown) => unknown): DB
       });
     },
     // A native count would include tombstones. Reading the rows also makes a live query observe them, so a
-    // `softDelete` (which changes no index key) re-runs a live `count()`.
+    // `softDelete` (which keeps the primary key) re-runs a live `count()`.
     count: (req) => table.query({ ...req, values: true }).then((res) => res.result.filter(isLive).length),
     openCursor: (req) =>
       table
