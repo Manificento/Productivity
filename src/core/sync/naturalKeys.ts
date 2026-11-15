@@ -20,6 +20,7 @@ type Row = Record<string, unknown>;
 const isRow = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value);
 const time = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 const text = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+const isLive = (row: Row): boolean => row.deletedAt == null;
 
 /**
  * The natural id of a stored row, or `undefined` when the row lacks what identifies it (no valid day, habit or
@@ -142,9 +143,13 @@ function uniteItems(meals: Row[]): unknown[] | undefined {
  * The tables are emptied first, so nothing stays under a random id, tombstones included: a tombstone carries no
  * day, so it cannot be moved to a natural id, and no server has seen the id it deletes (nothing was pushed before
  * v8). For the same reason the outbox entries of the old ids are removed instead of being left as deletions to
- * push; every migrated row is queued under its new id, so the first cloud copy sends it.
+ * push; every migrated row is queued under its new id, so the first cloud copy sends it. The queue is written here
+ * and not left to the outbox middleware: the result must not depend on how Dexie runs middlewares in an upgrade.
  *
- * No other table refers to the ids of these five tables, so there is nothing else to rewrite.
+ * No other table refers to the ids of these five tables (checked against `core/types.ts` and the `settings` values
+ * the modules write), so there is nothing else to rewrite.
+ *
+ * Safe to run again: on migrated data it rewrites the same rows (only the queue entries get a new time).
  * `.then()` chains only — see `outbox.ts`.
  */
 export function migrateToNaturalIds(tx: Transaction, now: number = Date.now()): PromiseLike<unknown> {
@@ -154,7 +159,8 @@ export function migrateToNaturalIds(tx: Transaction, now: number = Date.now()): 
       done.then(() => {
         const table = tx.table<Row, Id>(name);
         return table.toArray().then((rows) => {
-          const migrated = withNaturalIds(name, rows) as Row[];
+          // Reads through `db` already skip tombstones; the filter keeps that true if Dexie ever reads past them here.
+          const migrated = withNaturalIds(name, rows.filter(isLive)) as Row[];
           const queued = migrated.map((row): SyncOutboxEntry => ({ table: name, key: row.id as Id, updatedAt: now }));
           return table
             .clear()

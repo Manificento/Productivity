@@ -135,6 +135,22 @@ export async function createV7Database(name: string): Promise<void> {
   v7.close();
 }
 
+/**
+ * The same data as Dexie v6 held it — what most installations upgrade from: no `syncOutbox` store yet and no
+ * tombstones (v6 deleted rows for real). Creates the database `name` and closes it.
+ */
+export async function createV6Database(name: string): Promise<void> {
+  const { syncOutbox: _noQueueYet, ...stores } = V7_STORES;
+  const { syncOutbox: _noEntries, ...rows } = V7_ROWS;
+  const v6 = new Dexie(name);
+  v6.version(6).stores(stores);
+  await v6.open();
+  for (const [table, list] of Object.entries(rows)) {
+    await v6.table(table).bulkAdd(list.filter((row) => !('deletedAt' in row)));
+  }
+  v6.close();
+}
+
 /** What IndexedDB really holds in a table of `name` — read without the core middlewares (tombstones included). */
 export async function storedRowsOf<T = Record<string, unknown>>(name: string, table: string): Promise<T[]> {
   const raw = new Dexie(name);

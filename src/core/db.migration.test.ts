@@ -1,8 +1,9 @@
+import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createV7Database, storedRowsOf, V7_ROWS } from '../test/fixtures/dbV7';
+import { createV6Database, createV7Database, storedRowsOf, V7_ROWS, V7_STORES } from '../test/fixtures/dbV7';
 import { LifeDB, TABLE_NAMES } from './db';
 import { SCHEMA_VERSION } from './schemaVersion';
-import { NATURAL_KEY_TABLES } from './sync/naturalKeys';
+import { migrateToNaturalIds, NATURAL_KEY_TABLES } from './sync/naturalKeys';
 import type { SyncOutboxEntry } from './types';
 
 const T0 = new Date(2026, 10, 15, 9, 0).getTime();
@@ -183,8 +184,6 @@ describe('contract #275: миграция Dexie v8 на фикстуре баз�
 
   it('an empty database of the previous version upgrades without data and without outbox entries', async () => {
     name = `migration-v8-empty-${Math.random()}`;
-    const { default: Dexie } = await import('dexie');
-    const { V7_STORES } = await import('../test/fixtures/dbV7');
     const v7 = new Dexie(name);
     v7.version(7).stores(V7_STORES);
     await v7.open();
@@ -195,5 +194,70 @@ describe('contract #275: миграция Dexie v8 на фикстуре баз�
     expect(db.verno).toBe(8);
     for (const table of NATURAL_KEY_TABLES) expect(await db.table(table).count()).toBe(0);
     expect(await db.syncOutbox.count()).toBe(0);
+  });
+
+  it('a database that skipped v7 (v6: no outbox store yet) is migrated the same way in one upgrade', async () => {
+    name = `migration-v6-${Math.random()}`;
+    await createV6Database(name);
+    db = new LifeDB(name);
+    await db.open();
+    expect(db.verno).toBe(8);
+
+    expect((await db.sleepLogs.toArray()).map((s) => s.id).sort()).toEqual(['sleep:2026-11-03', 'sleep:2026-11-04']);
+    expect((await db.habitLogs.toArray()).map((l) => l.id).sort()).toEqual([
+      'habitLog:h1:2026-11-03',
+      'habitLog:h1:2026-11-04',
+      'habitLog:h2:2026-11-03',
+    ]);
+    expect((await db.habitLogs.get('habitLog:h1:2026-11-03'))?.updatedAt).toBe(300);
+    expect((await db.mealLogs.get('meal:2026-11-03:lunch'))?.items.map((i) => i.id)).toEqual([
+      'm-1aa0:0',
+      'm-1aa0:1',
+      'm-2bb1:0',
+    ]);
+    expect(await db.tasks.toArray()).toEqual(V7_ROWS.tasks);
+
+    // The queue was created by this very upgrade: it holds the migrated rows and nothing else.
+    const entries = await db.syncOutbox.toArray();
+    expect(entries.every((e) => (NATURAL_KEY_TABLES as readonly string[]).includes(e.table))).toBe(true);
+    expect(entries.map((e) => e.key).filter((key) => key.startsWith('sleep'))).toEqual([
+      'sleep:2026-11-03',
+      'sleep:2026-11-04',
+    ]);
+    expect(entries).toHaveLength(3 + 2 + 3 + 3 + 2);
+    // The installation of the fixture keeps its id through the upgrade.
+    expect((await db.settings.get('device.id'))?.value).toBe('device-1');
+  });
+});
+
+describe('contract #275: migrateToNaturalIds — the migration itself, outside a Dexie upgrade', () => {
+  const tables = [...NATURAL_KEY_TABLES, 'syncOutbox'];
+  /** The v7 fixture opened WITHOUT the core middlewares: what the function does on its own. */
+  async function migrateRaw(at: number): Promise<Record<string, unknown[]>> {
+    const raw = new Dexie(name);
+    await raw.open();
+    try {
+      await raw.transaction('rw', tables, (tx) => migrateToNaturalIds(tx, at));
+      return Object.fromEntries(await Promise.all(tables.map(async (t) => [t, await raw.table(t).toArray()] as const)));
+    } finally {
+      raw.close();
+    }
+  }
+
+  it('is idempotent: a second run leaves every record as the first run made it', async () => {
+    name = `migration-raw-${Math.random()}`;
+    await createV7Database(name);
+
+    const { syncOutbox: queue, ...first } = await migrateRaw(T0);
+    // Tombstones are dropped by the migration itself — it does not rely on the read middleware to skip them.
+    expect(first.sleepLogs.map((s) => (s as { id: string }).id)).toEqual(['sleep:2026-11-03', 'sleep:2026-11-04']);
+    expect(first.mealLogs).toHaveLength(3);
+    expect(first.habitLogs).toHaveLength(3);
+
+    const { syncOutbox: queueAgain, ...second } = await migrateRaw(T0 + 5_000);
+    expect(second).toEqual(first);
+    // The queue names the same rows; only the time of the entries of the rewritten tables moved.
+    const keys = (entries: unknown[]) => (entries as SyncOutboxEntry[]).map((e) => `${e.table}/${e.key}`);
+    expect(keys(queueAgain)).toEqual(keys(queue));
   });
 });
