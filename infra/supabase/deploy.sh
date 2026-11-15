@@ -3,7 +3,8 @@
 #
 #   ENV_FILE=.env ./deploy.sh
 #
-# Idempotent: re-running pulls the pinned images and recreates only the containers whose config changed.
+# Idempotent: re-running pulls the pinned images and recreates only the containers whose config changed — a changed
+# kong.yml or Caddyfile counts too (lib.sh, `compose`).
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 load_env

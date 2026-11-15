@@ -1,11 +1,14 @@
 name: Deploy KZ
 
 # Deploys the Supabase stack of region kz to the owner's server in Kazakhstan (#284, the real run is #259).
-# Manual only: never on push or on a schedule. Every value comes from the secrets of the GitHub environment
-# `production-kz` (the table is in infra/supabase/README.md, «Что сделать владельцу»); without them the run stops at
-# its first step and touches nothing. Only branch `main` deploys, and only commits from its history (deploy-remote.sh
-# checks the revision). The logic lives in infra/supabase/deploy-remote.sh, which the Infra workflow checks over SSH
-# against a test server on every change of infra/ or of this file.
+# Manual only: never on push or on a schedule. Every value comes from the GitHub environment `production-kz`: its
+# secrets, and one variable, DOMAIN — the API domain is public (DNS, the TLS certificate, the app), and GitHub masks the
+# value of a secret in the run summary too, which would turn the URL there into `https://***`. The table is in
+# infra/supabase/README.md, «Что сделать владельцу»; without these values the run stops at its first step and touches
+# nothing. Only branch `main` deploys, and only commits from its history (deploy-remote.sh checks the revision). On
+# success the run summary holds the API's public URL and anon key for the app's build (VITE_SUPABASE_URL_KZ,
+# VITE_SUPABASE_ANON_KEY_KZ); no closed value gets there. The logic lives in infra/supabase/deploy-remote.sh, which the
+# Infra workflow checks over SSH against a test server on every change of infra/ or of this file.
 on:
   workflow_dispatch:
     inputs:
@@ -33,14 +36,15 @@ jobs:
       REGION: kz
       REVISION: ${{ inputs.revision }}
     steps:
-      # Before anything else, checkout included: the list of every missing secret, and a run from another branch stops.
-      - name: Секреты окружения production-kz заданы, запуск из main
+      # Before anything else, checkout included: the list of every missing secret and variable, and a run from another
+      # branch stops.
+      - name: Секреты и переменные окружения production-kz заданы, запуск из main
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-          DOMAIN: ${{ secrets.DOMAIN }}
+          DOMAIN: ${{ vars.DOMAIN }}
           SITE_URL: ${{ secrets.SITE_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
@@ -53,23 +57,32 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
-        # The names of the required secrets are the keys of `env` above; values are never printed.
+        # The names of the required secrets and variables are the keys of `env` above; values are never printed.
         run: |
           missing=()
-          for name in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DOMAIN SITE_URL SMTP_HOST SMTP_USER SMTP_PASS \
+          for name in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SITE_URL SMTP_HOST SMTP_USER SMTP_PASS \
             SMTP_ADMIN_EMAIL S3_ENDPOINT S3_REGION S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
             BACKUP_ENCRYPTION_KEY ALERT_WEBHOOK_URL; do
             [ -n "${!name:-}" ] || missing+=("$name")
           done
+          missing_variables=()
+          for name in DOMAIN; do
+            [ -n "${!name:-}" ] || missing_variables+=("$name")
+          done
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error title=Не заданы секреты окружения production-kz::${missing[*]} — что это и где взять: infra/supabase/README.md, «Что сделать владельцу»"
+          fi
+          if [ "${#missing_variables[@]}" -gt 0 ]; then
+            echo "::error title=Не заданы переменные окружения production-kz::${missing_variables[*]} — это переменная (Environment variables), а не секрет; что это и где взять: infra/supabase/README.md, «Что сделать владельцу»"
+          fi
+          if [ "${#missing[@]}" -gt 0 ] || [ "${#missing_variables[@]}" -gt 0 ]; then
             exit 1
           fi
           if [ "${GITHUB_REF:-}" != refs/heads/main ]; then
             echo "::error title=Запуск не из main::Deploy KZ запускается только из ветки main, а не из ${GITHUB_REF:-?}"
             exit 1
           fi
-          echo "секреты окружения production-kz заданы, запуск из main"
+          echo "секреты и переменные окружения production-kz заданы, запуск из main"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # The whole history and origin/main: any earlier revision of main can be deployed (rollback).
@@ -82,7 +95,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-          DOMAIN: ${{ secrets.DOMAIN }}
+          DOMAIN: ${{ vars.DOMAIN }}
           SITE_URL: ${{ secrets.SITE_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}

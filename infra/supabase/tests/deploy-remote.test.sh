@@ -15,9 +15,12 @@ SERVER_ENV=$SERVER/kz.env
 SERVER_CODE=$SERVER/app/infra/supabase
 
 # The secrets of the production-kz environment, as the workflow passes them to deploy-remote.sh.
-SECRET_NAMES=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DOMAIN SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
+SECRET_NAMES=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SITE_URL SMTP_HOST SMTP_USER SMTP_PASS
   SMTP_ADMIN_EMAIL S3_ENDPOINT S3_REGION S3_BUCKET AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY
   ALERT_WEBHOOK_URL)
+# Its variables: public values. The API domain goes into the run summary (VITE_SUPABASE_URL_KZ), and GitHub masks the
+# value of every secret there too (`https://***`), so it must not be a secret.
+VARIABLE_NAMES=(DOMAIN)
 
 fails() { ! "$@"; }
 
@@ -28,9 +31,9 @@ check 'единственная задача использует окружен
   test "$(yq -r '[.jobs[].environment] | join(" ")' "$WORKFLOW")" == production-kz
 check 'первый шаг — проверка секретов, ещё до checkout' \
   test "$(yq -r '.jobs[].steps[0] | has("uses")' "$WORKFLOW")" == false
-check '…ему передаются ровно обязательные секреты' \
+check '…ему передаются ровно обязательные секреты и переменные' \
   test "$(yq -r '.jobs[].steps[0].env | keys | sort | join(" ")' "$WORKFLOW")" == \
-  "$(printf '%s\n' "${SECRET_NAMES[@]}" | sort | paste -sd ' ')"
+  "$(printf '%s\n' "${SECRET_NAMES[@]}" "${VARIABLE_NAMES[@]}" | sort | paste -sd ' ')"
 check 'секреты не заданы на уровне задачи: сторонние шаги (checkout) их не видят' \
   bash -c "! yq -r '.jobs[].env // {} | .[]' '$WORKFLOW' | grep -q 'secrets\.'"
 check 'сторонние действия закреплены на SHA коммита' \
@@ -41,6 +44,13 @@ for name in "${SECRET_NAMES[@]}" SSH_PORT SMTP_PORT; do
 done
 check "шаг деплоя получает все секреты окружения (не хватает: ${missing_in_workflow[*]:-—})" \
   test "${#missing_in_workflow[@]}" == 0
+not_variable=()
+for name in "${VARIABLE_NAMES[@]}"; do
+  [[ $(yq -r ".jobs[].steps[0].env.$name, .jobs[].steps[-1].env.$name" "$WORKFLOW" | sort -u) == "\${{ vars.$name }}" ]] ||
+    not_variable+=("$name")
+done
+check "домен API — переменная окружения (vars), а не секрет: секрет GitHub маскирует и в итоге запуска, адрес стал бы https://*** (не так: ${not_variable[*]:-—})" \
+  test "${#not_variable[@]}" == 0
 
 # The first step exactly as GitHub runs it: `bash --noprofile --norc -eo pipefail`.
 first_step() { env -i PATH="$PATH" HOME="$HOME" "$@" bash --noprofile --norc -eo pipefail -c "$(yq -r '.jobs[].steps[0].run' "$WORKFLOW")"; }
@@ -49,11 +59,15 @@ first_step GITHUB_REF=refs/heads/main > "$no_secrets_log" 2>&1
 no_secrets_code=$?
 check 'секреты не заданы: первый шаг завершается с ошибкой' test "$no_secrets_code" != 0
 listed=()
-for name in "${SECRET_NAMES[@]}"; do grep -qw "$name" "$no_secrets_log" && listed+=("$name"); done
+for name in "${SECRET_NAMES[@]}"; do grep '^::error' "$no_secrets_log" | grep -v 'переменн' | grep -qw "$name" && listed+=("$name"); done
 check '…и называет все недостающие секреты' test "${#listed[@]}" == "${#SECRET_NAMES[@]}"
+listed=()
+for name in "${VARIABLE_NAMES[@]}"; do grep '^::error' "$no_secrets_log" | grep 'переменн' | grep -qw "$name" && listed+=("$name"); done
+check '…и недостающую переменную (DOMAIN) — как переменную, а не секрет' \
+  test "${#listed[@]}" == "${#VARIABLE_NAMES[@]}"
 check '…сообщение об ошибке видно в GitHub (::error)' grep -q '^::error' "$no_secrets_log"
 all_secrets=()
-for name in "${SECRET_NAMES[@]}"; do all_secrets+=("$name=x"); done
+for name in "${SECRET_NAMES[@]}" "${VARIABLE_NAMES[@]}"; do all_secrets+=("$name=x"); done
 check 'секреты заданы, запуск из main: первый шаг проходит' first_step GITHUB_REF=refs/heads/main "${all_secrets[@]}"
 check 'запуск не из ветки main: первый шаг останавливается' \
   fails first_step GITHUB_REF=refs/heads/feat/999 "${all_secrets[@]}"
@@ -130,6 +144,8 @@ export ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert
 export SSH_PORT=$SSH_TEST_PORT DEPLOY_DIR=$SERVER PROXY_HTTPS_PORT=8443 PROXY_HTTP_PORT=8088
 # The workflow deploys only commits of origin/main; the commit under test is not on main yet, so here «main» is HEAD.
 export MAIN_REF=HEAD
+# The run summary of «Deploy KZ» (GitHub sets it for every step); in the Infra workflow it must not be CI's own one.
+export GITHUB_STEP_SUMMARY=$WORK/summary.md
 
 ALERT_WEBHOOK_URL='' "$INFRA_DIR/deploy-remote.sh" > "$WORK/missing-one.log" 2>&1
 names_only_webhook() { grep -qw ALERT_WEBHOOK_URL "$1" && ! grep -qw SMTP_PASS "$1"; }
@@ -164,21 +180,37 @@ check 'файл настроек собран из секретов: домен,
   "https://localhost:8443|$SMTP_PASS|$S3_BUCKET|$BACKUP_ENCRYPTION_KEY|$ALERT_WEBHOOK_URL"
 check 'секреты базы созданы на сервере' bash -c "[[ '${server_env[JWT_SECRET]:-}' =~ ^[0-9a-f]{64}$ ]]"
 
-leaked=()
-for name in SSH_PRIVATE_KEY SMTP_PASS AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY ALERT_WEBHOOK_URL; do
-  # Every line of the value (the SSH key has several), except the key's BEGIN/END markers.
-  while IFS= read -r part; do
-    [[ -z $part || $part == -----* ]] && continue
-    if grep -qF -- "$part" "$deploy_log"; then
-      leaked+=("$name")
-      break
-    fi
-  done <<< "${!name}"
-done
-for name in POSTGRES_PASSWORD JWT_SECRET SERVICE_ROLE_KEY PG_META_CRYPTO_KEY; do
-  grep -qF -- "${server_env[$name]:-unset}" "$deploy_log" && leaked+=("$name")
-done
+# leaked_into <file…>: the names of the closed secrets whose values are in any of the files, in `leaked`. The anon key
+# and the public URL are public by design (the app holds them); everything else here is not.
+leaked_into() {
+  local name part
+  leaked=()
+  for name in SSH_PRIVATE_KEY SMTP_PASS AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_ENCRYPTION_KEY ALERT_WEBHOOK_URL; do
+    # Every line of the value (the SSH key has several), except the key's BEGIN/END markers.
+    while IFS= read -r part; do
+      [[ -z $part || $part == -----* ]] && continue
+      if grep -qF -- "$part" "$@"; then
+        leaked+=("$name")
+        break
+      fi
+    done <<< "${!name}"
+  done
+  for name in POSTGRES_PASSWORD JWT_SECRET SERVICE_ROLE_KEY PG_META_CRYPTO_KEY; do
+    grep -qF -- "${server_env[$name]:-unset}" "$@" && leaked+=("$name")
+  done
+}
+leaked_into "$deploy_log"
 check "значения секретов не попадают в журнал деплоя (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
+
+# The values the app's build needs, as Vite reads them (src/core/sync/config.ts).
+check 'итог запуска: публичный адрес API — переменная сборки VITE_SUPABASE_URL_KZ' \
+  grep -qxF 'VITE_SUPABASE_URL_KZ=https://localhost:8443' "$GITHUB_STEP_SUMMARY"
+check '…и публичный ключ клиента — VITE_SUPABASE_ANON_KEY_KZ (ключ anon с сервера)' \
+  grep -qxF "VITE_SUPABASE_ANON_KEY_KZ=${server_env[ANON_KEY]}" "$GITHUB_STEP_SUMMARY"
+leaked_into "$GITHUB_STEP_SUMMARY"
+check "закрытые значения в итог запуска не попадают (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
+check 'первый деплой создал базу: о SQL первичной инициализации в журнале ни слова' \
+  bash -c "! grep -q 'только на пустой базе' '$deploy_log'"
 
 # From here on the lib.sh helpers (compose, api_status…) act on the test server's stack.
 use_server() {
@@ -236,6 +268,8 @@ compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
 probe() { compose exec -T db psql -U supabase_admin -d postgres -tAc 'select body from public.deploy_probe'; }
 db_before=$(compose ps -q db)
 auth_before=$(compose ps -q auth)
+kong_before=$(compose ps -q kong)
+proxy_before=$(compose ps -q proxy)
 # The owner changed a setting on the server by hand (more copies kept); the deploy must not undo it.
 sed -i 's/^BACKUP_KEEP=.*/BACKUP_KEEP=30/' "$SERVER_ENV"
 # A rotated secret: Auth is recreated with it, the database is not.
@@ -260,6 +294,10 @@ check '…и Auth пересоздан с ним' auth_recreated_with_new_pass
 check 'настройка, изменённая на сервере вручную (BACKUP_KEEP=30), сохранена' test "${again[BACKUP_KEEP]:-}" == 30
 check 'файл настроек по-прежнему 600' test "$(stat -c %a "$SERVER_ENV")" == 600
 check 'база не пересоздана: тот же контейнер db' test "$(compose ps -q db)" == "$db_before"
+check 'код заменён, но kong.yml и Caddyfile те же: kong и proxy не пересозданы' \
+  test "$(compose ps -q kong)|$(compose ps -q proxy)" == "$kong_before|$proxy_before"
+check 'SQL первичной инициализации не менялся: о нём в журнале ни слова' \
+  bash -c "! grep -q 'только на пустой базе' '$WORK/redeploy.log'"
 check 'данные на месте' test "$(probe)" == 'до повторного деплоя'
 check 'API отвечает с прежним ключом anon' test "$(api_status /auth/v1/health "$ANON_KEY")" == 200
 check '…и с прежним ключом service_role' test "$(api_status /rest/v1/ "$SERVICE_ROLE_KEY")" == 200
@@ -277,6 +315,96 @@ check 'база не тронута: тот же контейнер db' test "$(
 check '…данные на месте' test "$(probe)" == 'до повторного деплоя'
 check '…API отвечает с прежними ключами' \
   test "$(api_status /auth/v1/health "$ANON_KEY")|$(api_status /rest/v1/ "$SERVICE_ROLE_KEY")" == '200|200'
+
+section 'новая ревизия меняет kong.yml, Caddyfile, SQL первичной инициализации и значения по умолчанию в env.example'
+# new_revision <path> <sed script>…: a commit of «main» = HEAD with the files edited (an object only: no ref moves).
+new_revision() {
+  local index=$WORK/revision.index blob tree
+  GIT_INDEX_FILE=$index git -C "$REPO_DIR" read-tree HEAD || return 1
+  while (($# >= 2)); do
+    blob=$(git -C "$REPO_DIR" show "HEAD:infra/supabase/$1" | sed "$2" | git -C "$REPO_DIR" hash-object -w --stdin)
+    GIT_INDEX_FILE=$index git -C "$REPO_DIR" update-index --cacheinfo "100644,$blob,infra/supabase/$1" || return 1
+    shift 2
+  done
+  tree=$(GIT_INDEX_FILE=$index git -C "$REPO_DIR" write-tree) || return 1
+  GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.kz GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.kz \
+    git -C "$REPO_DIR" commit-tree "$tree" -p HEAD -m 'новая ревизия main'
+}
+# BACKUP_KEEP was changed by the owner (30), DISK_ALERT_PERCENT was not (85, the old default). `$a` is sed's «append».
+# shellcheck disable=SC2016
+revision=$(new_revision \
+  volumes/api/kong.yml '$a # kong.yml новой ревизии' \
+  volumes/proxy/Caddyfile '$a # Caddyfile новой ревизии' \
+  volumes/db/roles.sql '$a -- roles.sql новой ревизии' \
+  env.example 's/^BACKUP_KEEP=14$/BACKUP_KEEP=20/; s/^DISK_ALERT_PERCENT=85$/DISK_ALERT_PERCENT=90/')
+kong_before=$(compose ps -q kong)
+proxy_before=$(compose ps -q proxy)
+auth_before=$(compose ps -q auth)
+rest_before=$(compose ps -q rest)
+revision_log=$WORK/revision.log
+: > "$GITHUB_STEP_SUMMARY"
+MAIN_REF=$revision REVISION=$revision "$INFRA_DIR/deploy-remote.sh" > "$revision_log" 2>&1
+revision_code=$?
+check 'deploy-remote.sh новой ревизии завершается успешно' test "$revision_code" == 0
+((revision_code == 0)) || tail -n 40 "$revision_log"
+check '…на сервере код новой ревизии' test "$(cat "$SERVER/app/REVISION")" == "$revision"
+
+running_file_has() { compose exec -T "$1" grep -qF "$3" "$2"; }
+check 'изменился kong.yml: kong пересоздан и работает с новым файлом' \
+  bash -c "[[ \$1 != '$kong_before' ]]" _ "$(compose ps -q kong)"
+check '…kong читает kong.yml новой ревизии' running_file_has kong /home/kong/temp.yml 'kong.yml новой ревизии'
+check 'изменился Caddyfile: proxy пересоздан и работает с новым файлом' \
+  bash -c "[[ \$1 != '$proxy_before' ]]" _ "$(compose ps -q proxy)"
+check '…proxy читает Caddyfile новой ревизии' running_file_has proxy /etc/caddy/Caddyfile 'Caddyfile новой ревизии'
+check 'контейнеры без изменений не тронуты: db, auth, rest те же' \
+  test "$(compose ps -q db)|$(compose ps -q auth)|$(compose ps -q rest)" == "$db_before|$auth_before|$rest_before"
+check '…API по HTTPS отвечает через новые kong и proxy' \
+  test "$(https_status /auth/v1/health "$ANON_KEY")|$(https_status /rest/v1/ "$SERVICE_ROLE_KEY")" == '200|200'
+
+init_sql_line=$(grep 'roles.sql' "$revision_log" | grep 'только на пустой базе' | grep 'миграц')
+check 'изменился SQL первичной инициализации, а база с данными: в журнале ясная строка, что roles.sql действует только на пустой базе, а схема меняется миграциями' \
+  test -n "$init_sql_line"
+check '…база не пересоздана, данные на месте' \
+  test "$(compose ps -q db)|$(probe)" == "$db_before|до повторного деплоя"
+
+declare -A revised=()
+read_env_file "$SERVER_ENV" revised
+check 'значение по умолчанию изменилось, ключ не меняли на сервере (DISK_ALERT_PERCENT): новое значение' \
+  test "${revised[DISK_ALERT_PERCENT]:-}" == 90
+check 'значение по умолчанию изменилось, ключ меняли на сервере (BACKUP_KEEP=30): значение владельца сохранено' \
+  test "${revised[BACKUP_KEEP]:-}" == 30
+# The messages without the log's `[time] ` prefix (the time has digits of its own).
+defaults_line=$(grep 'по умолчанию' "$revision_log" | grep -w DISK_ALERT_PERCENT | sed 's/^\[[^]]*\] //')
+kept_line=$(grep 'изменённые на сервере' "$revision_log" | grep -w BACKUP_KEEP | sed 's/^\[[^]]*\] //')
+check '…журнал называет ключ с новым значением по умолчанию по имени, без значения' \
+  bash -c "[[ -n \$1 && \$1 != *90* && \$1 != *85* && \$1 != *BACKUP_KEEP* ]]" _ "$defaults_line"
+check '…и ключ, сохранённый за владельцем, по имени, без значения' \
+  bash -c "[[ -n \$1 && \$1 != *30* && \$1 != *20* && \$1 != *DISK_ALERT_PERCENT* ]]" _ "$kept_line"
+check 'секреты базы те же' \
+  test "${revised[JWT_SECRET]:-}|${revised[ANON_KEY]:-}" == "${server_env[JWT_SECRET]}|${server_env[ANON_KEY]}"
+
+check 'итог запуска новой ревизии: адрес API и ключ anon' \
+  bash -c "grep -qxF 'VITE_SUPABASE_URL_KZ=https://localhost:8443' '$GITHUB_STEP_SUMMARY' &&
+    grep -qxF 'VITE_SUPABASE_ANON_KEY_KZ=${server_env[ANON_KEY]}' '$GITHUB_STEP_SUMMARY'"
+leaked_into "$WORK/redeploy.log" "$WORK/lost-env.log" "$revision_log" "$GITHUB_STEP_SUMMARY"
+check "закрытые значения не попали ни в один журнал деплоя и в итог (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
+
+section 'сервер, развёрнутый до #295: записи о SQL первичной инициализации нет, а база с данными уже есть'
+rm -f "$SERVER/kz.applied/init-sql.sha256"
+legacy_log=$WORK/legacy.log
+MAIN_REF=$revision REVISION=$revision "$INFRA_DIR/deploy-remote.sh" > "$legacy_log" 2>&1
+legacy_code=$?
+check 'деплой завершается успешно' test "$legacy_code" == 0
+((legacy_code == 0)) || tail -n 40 "$legacy_log"
+legacy_line=$(grep 'до #295' "$legacy_log" | grep 'только на пустой базе' | grep 'миграц')
+check 'в журнале напоминание: SQL первичной инициализации на этой базе не выполняется, схема меняется миграциями' \
+  test -n "$legacy_line"
+check '…и запись о SQL инициализации сделана: со следующего деплоя изменения называются по имени файла' \
+  test -s "$SERVER/kz.applied/init-sql.sha256"
+check '…база не пересоздана, данные на месте' \
+  test "$(compose ps -q db)|$(probe)" == "$db_before|до повторного деплоя"
+leaked_into "$legacy_log"
+check "…закрытые значения в журнал не попали (попали: ${leaked[*]:-—})" test "${#leaked[@]}" == 0
 
 section 'контейнер упал → задание healthcheck.sh из расписания шлёт уведомление (заглушка канала)'
 compose stop rest > /dev/null 2>&1
