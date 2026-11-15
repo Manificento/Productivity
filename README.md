@@ -55,3 +55,62 @@ cd android && ./gradlew assembleDebug   # android/app/build/outputs/apk/debug/ap
 
 CI собирает debug APK на каждом PR, который меняет `android/`, `src/core/platform.ts` или `capacitor.config.ts`,
 и прикладывает его артефактом `lifeos-debug-apk` (workflow «Android»). iOS — после аккаунта Apple.
+
+### Подпись release-сборки Android
+
+Google Play принимает только подписанную сборку (AAB). Подписывает её ключ загрузки владельца: он живёт у владельца
+и в секретах GitHub, в репозитории его нет (`.gitignore` закрывает `*.jks`, `*.keystore`, `*.p12`). Workflow «Android»
+собирает подписанные `app-release.aab` (для Play) и `app-release.apk` (поставить на телефон вручную) при ручном
+запуске или по тегу `v*`. На каждом PR путь подписи проверяется одноразовым ключом, созданным внутри задания.
+
+> **Ключ нельзя терять.** Каждое обновление приложения в Play должно быть подписано тем же ключом. Храните файл
+> keystore и оба пароля в двух местах вне репозитория (менеджер паролей и офлайн-копия). Если ключ загрузки всё же
+> потерян или утёк, а в Play Console включена подпись приложений Google Play (по умолчанию для новых приложений),
+> ключ загрузки можно сбросить через поддержку Play Console — это занимает дни. Никому не пересылайте ключ.
+
+1. **Создать keystore** (один раз, JDK 21; папка — вне репозитория):
+
+   ```
+   keytool -genkeypair -v -keystore ~/keys/lifeos-upload.jks -storetype PKCS12 \
+     -alias lifeos-upload -keyalg RSA -keysize 4096 -validity 10000
+   ```
+
+   keytool спросит пароль и имя владельца. У PKCS12 один пароль на хранилище и ключ.
+
+2. **Положить четыре секрета** — GitHub → Settings → Secrets and variables → Actions → New repository secret:
+
+   | Секрет                      | Значение                                                                           |
+   | --------------------------- | ---------------------------------------------------------------------------------- |
+   | `ANDROID_KEYSTORE_BASE64`   | файл keystore в base64: `base64 -w0 ~/keys/lifeos-upload.jks` (macOS: `base64 -i`) |
+   | `ANDROID_KEYSTORE_PASSWORD` | пароль keystore                                                                    |
+   | `ANDROID_KEY_ALIAS`         | `lifeos-upload` (alias из шага 1)                                                  |
+   | `ANDROID_KEY_PASSWORD`      | пароль ключа (у PKCS12 — тот же, что у keystore)                                   |
+
+   Секреты не попадают в журнал (GitHub их маскирует), в сборки PR и в форки. Пока секретов нет, release-задание
+   пропускается с уведомлением «Секретов подписи нет», CI зелёный; если задана только часть — запуск падает и
+   называет недостающие.
+
+3. **Запустить сборку** — Actions → Android → Run workflow (ветка `main`) или тегом:
+
+   ```
+   git tag v0.1.0 && git push origin v0.1.0
+   ```
+
+   Задание «Android signed release (AAB + APK)» выгружает артефакт `lifeos-release-<номер запуска>`.
+   `versionCode` — номер запуска workflow «Android» (растёт с каждым запуском, Play требует новый на каждую загрузку),
+   `versionName` — тег без `v` или `version` из `package.json`. Задание проверяет подпись (`apksigner verify`, сертификат
+   ключа из секретов), версию, права здоровья и политику конфиденциальности — так же, как у debug.
+
+Локально (нужны JDK 21 и Android SDK) — те же переменные среды, путь к файлу вместо base64:
+
+```
+npm run build && npx cap sync android
+export ANDROID_KEYSTORE_FILE=~/keys/lifeos-upload.jks ANDROID_KEY_ALIAS=lifeos-upload LIFEOS_VERSION_CODE=1
+read -rs ANDROID_KEYSTORE_PASSWORD && export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+android/scripts/build-release.sh   # android/app/build/outputs/bundle/release/app-release.aab
+```
+
+Вместо переменных среды подойдут свойства Gradle с теми же именами (`-PANDROID_KEY_ALIAS=…` или
+`~/.gradle/gradle.properties` — вне репозитория). Без всех четырёх значений `assembleRelease` даёт неподписанный APK.
+Проверка на одноразовом ключе, как в CI, — `android/scripts/test-release.sh`.
+Аккаунт Google Play и публикация во внутренний тест — действие владельца (#223).
