@@ -89,6 +89,9 @@ function hideTombstones(table: DBCoreTable, pkOf: (row: unknown) => unknown): DB
 /**
  * A cursor that steps over tombstones. `unique` iteration (`uniqueKeys`) is done here, over a plain cursor, because
  * a native unique cursor would stop on a key's first row even when that row is a tombstone and a live row follows.
+ * Known difference: iterating unique keys in REVERSE lands on the key's last live row, where a native `prevunique`
+ * cursor lands on its first — the keys are the same, only `primaryKey` of the visited row differs. Nothing in
+ * LifeOS reads it.
  */
 function liveCursor(cursor: DBCoreCursor, unique: boolean): DBCoreCursor {
   let toSkip = 0;
