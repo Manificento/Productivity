@@ -33,3 +33,8 @@ test-results
 
 # Settings of the self-hosted backend hold real secrets (infra/supabase/README.md); only env.example is tracked.
 infra/supabase/.env*
+
+# Android signing keys (#285): the release key lives only with the owner and in GitHub Secrets (README).
+*.jks
+*.keystore
+*.p12
