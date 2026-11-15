@@ -1,0 +1,16 @@
+# Caddy in front of Kong (service `proxy` of docker-compose.yml, profile `proxy`); values come from the region's
+# settings file. API_DOMAIN gets a Let's Encrypt certificate that Caddy renews itself; ACME_EMAIL is its contact.
+# `localhost` (the CI test server) gets a certificate from Caddy's own CA instead.
+{
+	email {$ACME_EMAIL}
+	http_port {$PROXY_HTTP_PORT}
+	https_port {$PROXY_HTTPS_PORT}
+	# No admin API on the host network: a new config comes with a new container.
+	admin off
+	# A container has no system trust store to install the local CA into.
+	skip_install_trust
+}
+
+{$API_DOMAIN} {
+	reverse_proxy 127.0.0.1:{$KONG_HTTP_PORT}
+}

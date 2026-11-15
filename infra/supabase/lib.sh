@@ -15,10 +15,10 @@ die() {
   exit 1
 }
 
-# Exports KEY=VALUE lines of ENV_FILE that are not already set in the environment. The file is parsed, never
-# executed; surrounding single or double quotes are stripped.
-load_env() {
-  [[ -f $ENV_FILE ]] || die "нет файла настроек $ENV_FILE (создайте его: ./gen-env.sh > .env)"
+# read_env_file <file> <name of an associative array>: puts the file's KEY=VALUE lines into the array. The file is
+# parsed, never executed; surrounding single or double quotes are stripped.
+read_env_file() {
+  local -n env_values=$2
   local line key value
   while IFS= read -r line || [[ -n $line ]]; do
     [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
@@ -26,8 +26,20 @@ load_env() {
     key=${BASH_REMATCH[1]}
     value=${BASH_REMATCH[2]}
     if [[ $value =~ ^\"(.*)\"$ || $value =~ ^\'(.*)\'$ ]]; then value=${BASH_REMATCH[1]}; fi
-    [[ -n ${!key+set} ]] || export "$key=$value"
-  done < "$ENV_FILE"
+    # shellcheck disable=SC2034 # env_values is the caller's array (nameref)
+    env_values["$key"]=$value
+  done < "$1"
+}
+
+# Exports the settings of ENV_FILE that are not already set in the environment.
+load_env() {
+  [[ -f $ENV_FILE ]] || die "нет файла настроек $ENV_FILE (создайте его: ./gen-env.sh > .env)"
+  local -A settings=()
+  local key
+  read_env_file "$ENV_FILE" settings
+  for key in "${!settings[@]}"; do
+    [[ -n ${!key+set} ]] || export "$key=${settings[$key]}"
+  done
   require REGION
   [[ $REGION =~ ^[a-z]{2}$ ]] || die "REGION должен быть двухбуквенным кодом (kz, eu…), а не «$REGION»"
 }
@@ -47,12 +59,19 @@ compose() {
 # The API gateway as seen from the server itself.
 local_api_url() { echo "http://127.0.0.1:${KONG_HTTP_PORT:-8000}"; }
 
-# HTTP status of GET <path> through the gateway with the given API key (empty key = no key).
-api_status() {
-  local path=$1 key=${2:-} args=(-s -o /dev/null -w '%{http_code}' -m 10)
-  [[ -n $key ]] && args+=(-H "apikey: $key" -H "Authorization: Bearer $key")
-  curl "${args[@]}" "$(local_api_url)$path" || true
+# HTTP status of GET <url> with the given API key (empty key = no key); more curl options (--cacert …) may follow.
+# The key goes to curl as a header file (printf is a builtin), not on its command line, where `ps` would show it.
+http_status() {
+  local url=$1 key=${2:-} args=(-s -o /dev/null -w '%{http_code}' -m 10 "${@:3}")
+  if [[ -n $key ]]; then
+    curl "${args[@]}" -H @<(printf 'apikey: %s\nAuthorization: Bearer %s\n' "$key" "$key") "$url" || true
+  else
+    curl "${args[@]}" "$url" || true
+  fi
 }
+
+# HTTP status of GET <path> through the gateway, as seen from the server itself.
+api_status() { http_status "$(local_api_url)$1" "${2:-}"; }
 
 # Waits until Auth and PostgREST answer 200 through Kong (up to a minute).
 wait_for_api() {

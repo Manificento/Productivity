@@ -2,13 +2,14 @@ name: Infra
 
 # Supabase self-hosted as code (infra/supabase, issue #172): the stack is deployed into the runner's Docker and
 # checked on every change of infra/; the restore drill (backup → MinIO → restore on an empty stack) also runs weekly,
-# so a broken backup is noticed within a week even when nobody touches infra/.
+# so a broken backup is noticed within a week even when nobody touches infra/. The script of the «Deploy KZ» workflow
+# runs over SSH against a test server (the runner itself, MinIO instead of the bucket) — issue #284.
 on:
   pull_request:
-    paths: ['infra/**', '.github/workflows/infra.yml']
+    paths: ['infra/**', '.github/workflows/infra.yml', '.github/workflows/deploy-kz.yml']
   push:
     branches: [main]
-    paths: ['infra/**', '.github/workflows/infra.yml']
+    paths: ['infra/**', '.github/workflows/infra.yml', '.github/workflows/deploy-kz.yml']
   schedule:
     - cron: '17 3 * * 1' # Mondays 03:17 UTC
   workflow_dispatch:
@@ -52,3 +53,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: infra/supabase/tests/backup-restore.test.sh
+
+  deploy-remote:
+    name: Deploy KZ over SSH to a test server
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      # The test server is the runner itself: the test starts its own sshd and uses the runner user's crontab.
+      - name: sshd and cron on the runner
+        run: |
+          if [ ! -x /usr/sbin/sshd ] || ! command -v crontab > /dev/null; then
+            sudo apt-get update -q && sudo apt-get install -y -q openssh-server cron
+          fi
+      - run: infra/supabase/tests/deploy-remote.test.sh
