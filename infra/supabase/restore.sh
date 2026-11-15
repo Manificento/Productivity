@@ -21,6 +21,9 @@ if [[ -z $name ]]; then
   name=$(list_backups "$work" | tail -n 1)
   [[ -n $name ]] || die "в $source_dir/ нет копий региона $REGION"
 fi
+if [[ $name =~ $(legacy_backup_pattern) ]]; then
+  die "«$name» — незашифрованная копия до #265: сначала ./migrate-backups.sh, затем ./restore.sh $name.enc"
+fi
 [[ $name =~ $(backup_pattern) ]] || die "«$name» не похоже на копию региона $REGION"
 
 psql_admin() { compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 "$@"; }

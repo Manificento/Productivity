@@ -119,15 +119,54 @@ notify() {
     --data "{\"text\": \"$(json_escape "$text")\"}" "$ALERT_WEBHOOK_URL" > /dev/null
 }
 
-# Names of this region's backups in the bucket, oldest first (the timestamp in the name sorts chronologically).
-# An S3 error (credentials, network) fails the call; only an empty prefix gives an empty list.
-list_backups() {
+# Names of all objects under this region's prefix. An S3 error (credentials, network) fails the call; only an empty
+# prefix gives an empty list.
+list_objects() {
   local listing
   listing=$(s3 "$1" s3 ls "s3://$S3_BUCKET/$(backup_prefix)/") || {
     # `aws s3 ls` exits 1 for a prefix with no objects; any other failure is real.
     [[ $? == 1 && -z $listing ]] || die "не удалось получить список копий в s3://$S3_BUCKET/$(backup_prefix)/"
   }
-  awk '{print $4}' <<< "$listing" | { grep -E "$(backup_pattern)" || true; } | sort
+  awk 'NF >= 4 {print $4}' <<< "$listing"
+}
+
+# Names of this region's backups in the bucket, oldest first (the timestamp in the name sorts chronologically).
+list_backups() {
+  local names
+  names=$(list_objects "$1") || exit 1
+  { grep -E "$(backup_pattern)" <<< "$names" || true; } | sort
+}
+
+# Copies made before #265 were uploaded unencrypted: lifeos-<region>-<time>.sql.gz.
+legacy_backup_pattern() { echo "^lifeos-$REGION-[0-9]{8}T[0-9]{6}Z\\.sql\\.gz\$"; }
+
+# Re-encrypts those copies in place: <name>.enc is uploaded once it decrypts back to the same bytes, and only then
+# the plaintext object is deleted. The timestamp stays in the name, so restore points and pruning are kept. Safe to
+# rerun. A copy that is not valid gzip is left untouched. Returns 1 if any copy is still in the clear (logged).
+migrate_legacy_backups() {
+  local dir=$1 target names name legacy failed=0
+  target="s3://$S3_BUCKET/$(backup_prefix)"
+  names=$(list_objects "$dir") || return 1
+  mapfile -t legacy < <(grep -E "$(legacy_backup_pattern)" <<< "$names")
+  for name in "${legacy[@]}"; do
+    if ! s3 "$dir" s3 cp --only-show-errors "$target/$name" "/work/$name"; then
+      log "старую копию $name не скачать — осталась в бакете в открытом виде"
+      failed=1
+    elif ! gzip -t "$dir/$name" 2> /dev/null; then
+      log "старая копия $name повреждена (не gzip) и осталась в бакете в открытом виде — проверьте и удалите её вручную"
+      failed=1
+    elif encrypt_backup < "$dir/$name" > "$dir/$name.enc" &&
+      decrypt_backup < "$dir/$name.enc" | cmp -s - "$dir/$name" &&
+      s3 "$dir" s3 cp --only-show-errors "/work/$name.enc" "$target/$name.enc" &&
+      s3 "$dir" s3 rm --only-show-errors "$target/$name"; then
+      log "старая копия $name зашифрована → $name.enc, открытая удалена"
+    else
+      log "старую копию $name не зашифровать — осталась в бакете в открытом виде"
+      failed=1
+    fi
+    rm -f "$dir/$name" "$dir/$name.enc"
+  done
+  return "$failed"
 }
 
 # Prints the names to delete so that only the newest <keep> remain; reads names (any order) from stdin.

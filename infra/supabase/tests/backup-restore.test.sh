@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Infra checks of issue #172 for backups: backup.sh to S3 (a local MinIO container), 14 newest copies kept,
-# restore.sh of the latest copy on an empty stack brings back synthetic users and data.
+# Infra checks of issues #172 and #265 for backups: backup.sh to S3 (a local MinIO container), encrypted, 14 newest
+# copies kept, unencrypted copies made before #265 re-encrypted in place; restore.sh of the latest copy on an empty
+# stack brings back synthetic users and data.
 # Needs Docker. Run: infra/supabase/tests/backup-restore.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -56,18 +57,31 @@ done
 check 'синтетический пользователь видит свои 3 заметки' test "$(notes "$token")" == 'первая,вторая,третья'
 
 section 'backup.sh: pg_dump сжат, зашифрован и загружен в S3 (MinIO), хранятся 14 последних копий'
-# 15 older copies already in the bucket: after one more backup the two oldest must go.
+# 15 older encrypted copies plus 2 unencrypted ones made before #265 (newer than the rest) are already in the bucket:
+# after one more backup the 2 old ones are re-encrypted in place and the 4 oldest of the 18 must go.
 echo old > "$WORK/old.sql.gz.enc"
 for day in $(seq -w 1 15); do
   s3 "$WORK" s3 cp --only-show-errors /work/old.sql.gz.enc "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-202601${day}T030000Z.sql.gz.enc"
 done
+printf 'legacy plaintext copy\n' | gzip > "$WORK/legacy.sql.gz"
+for day in 16 17; do
+  s3 "$WORK" s3 cp --only-show-errors /work/legacy.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-202601${day}T030000Z.sql.gz"
+done
+# Every object under the prefix, whatever its name.
+object_names() { s3 "$WORK" s3 ls "s3://$S3_BUCKET/lifeos/kz/" | awk 'NF >= 4 {print $4}'; }
 today=$(date -u +%Y%m%d)
 check 'backup.sh завершается успешно' "$INFRA_DIR/backup.sh"
 mapfile -t kept < <(list_backups "$WORK")
 newest=${kept[-1]:-}
 check 'в бакете 14 копий' test "${#kept[@]}" == 14
 check 'самая новая — только что сделанная (сегодняшняя дата)' bash -c "[[ '$newest' == lifeos-kz-$today* || '$newest' == lifeos-kz-$(date -u +%Y%m%d)* ]]"
-check 'две самые старые удалены' bash -c "[[ '${kept[0]}' == lifeos-kz-20260103T030000Z.sql.gz.enc ]]"
+check 'четыре самые старые удалены' bash -c "[[ '${kept[0]}' == lifeos-kz-20260105T030000Z.sql.gz.enc ]]"
+check 'старые незашифрованные копии (до #265) зашифрованы на месте: точки восстановления сохранены' \
+  bash -c "[[ ' ${kept[*]} ' == *' lifeos-kz-20260116T030000Z.sql.gz.enc '* && ' ${kept[*]} ' == *' lifeos-kz-20260117T030000Z.sql.gz.enc '* ]]"
+check '…копий в открытом виде в бакете не осталось' bash -c "! grep -q '\.sql\.gz\$' <<< '$(object_names)'"
+s3 "$WORK" s3 cp --only-show-errors "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20260116T030000Z.sql.gz.enc" /work/migrated.enc
+decrypts_to() { decrypt_backup < "$1" | cmp -s - "$2"; }
+check '…и расшифровываются в исходную копию' decrypts_to "$WORK/migrated.enc" "$WORK/legacy.sql.gz"
 s3 "$WORK" s3 cp --only-show-errors "s3://$S3_BUCKET/lifeos/kz/$newest" "/work/$newest"
 decrypt() { BACKUP_ENCRYPTION_KEY=$1 decrypt_backup < "$WORK/$newest"; }
 check 'в бакете только зашифрованный файл (заголовок OpenSSL, не gzip)' \
@@ -99,6 +113,27 @@ check '…уведомление отправлено' grep -q 'резервна
 check 'ключ короче 32 символов: backup.sh отказывается работать' \
   bash -c "! BACKUP_ENCRYPTION_KEY=short '$INFRA_DIR/backup.sh' 2> '$WORK/short.log' && grep -q 'короче 32' '$WORK/short.log'"
 check '…ничего не загружено' test "$(all_objects)" == "$before"
+
+section 'migrate-backups.sh: старые незашифрованные копии шифруются на месте, повреждённые не трогает, повтор безопасен'
+s3 "$WORK" s3 cp --only-show-errors /work/legacy.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20260120T030000Z.sql.gz"
+printf 'not a gzip file\n' > "$WORK/corrupt.sql.gz"
+s3 "$WORK" s3 cp --only-show-errors /work/corrupt.sql.gz "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20260121T030000Z.sql.gz"
+check 'повреждённая старая копия: migrate-backups.sh завершается с ошибкой и называет её' \
+  bash -c "! '$INFRA_DIR/migrate-backups.sh' 2> '$WORK/migrate.log' && grep -q 'lifeos-kz-20260121T030000Z.sql.gz' '$WORK/migrate.log'"
+check '…целая зашифрована, открытая удалена' \
+  bash -c "grep -qx lifeos-kz-20260120T030000Z.sql.gz.enc <<< '$(object_names)' && ! grep -qx lifeos-kz-20260120T030000Z.sql.gz <<< '$(object_names)'"
+check '…повреждённая не удалена и не зашифрована' \
+  bash -c "grep -qx lifeos-kz-20260121T030000Z.sql.gz <<< '$(object_names)' && ! grep -qx lifeos-kz-20260121T030000Z.sql.gz.enc <<< '$(object_names)'"
+: > "$hooks"
+check 'backup.sh при оставшейся открытой копии: код не 0' \
+  bash -c "! ALERT_WEBHOOK_URL=http://127.0.0.1:9199/alert '$INFRA_DIR/backup.sh' 2> /dev/null"
+check '…уведомление о незашифрованных копиях отправлено' grep -q 'незашифрованные' "$hooks"
+s3 "$WORK" s3 rm --only-show-errors "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20260121T030000Z.sql.gz"
+check 'повреждённая удалена вручную: migrate-backups.sh завершается успешно' "$INFRA_DIR/migrate-backups.sh"
+check '…повторный запуск тоже' "$INFRA_DIR/migrate-backups.sh"
+check '…копий в открытом виде в бакете нет' bash -c "! grep -q '\.sql\.gz\$' <<< '$(object_names)'"
+check 'restore.sh не принимает имя открытой копии и подсказывает migrate-backups.sh' \
+  bash -c "! '$INFRA_DIR/restore.sh' lifeos-kz-20260120T030000Z.sql.gz 2> '$WORK/legacy-name.log' && grep -q migrate-backups.sh '$WORK/legacy-name.log'"
 
 section 'restore.sh последней (зашифрованной) копии на пустом стеке восстанавливает синтетические данные'
 "$INFRA_DIR/restore.sh" > /dev/null 2> "$WORK/refused.log"

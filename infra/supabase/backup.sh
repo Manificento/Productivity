@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Backs up the region's database to S3-compatible storage and keeps the BACKUP_KEEP (default 14) newest copies.
+# Unencrypted copies made before #265 are re-encrypted in place on the way (migrate_legacy_backups in lib.sh).
 #
 #   ENV_FILE=.env ./backup.sh          # daily from cron, see README
 #
@@ -15,7 +16,7 @@ work=$(mktemp -d)
 on_exit() {
   local code=$?
   rm -rf "$work"
-  if ((code != 0)); then
+  if ((code != 0)) && [[ -z ${alerted:-} ]]; then
     notify "🔴 LifeOS [$REGION] $(hostname): резервная копия не создана (код $code), см. журнал backup.sh" || true
   fi
 }
@@ -43,9 +44,18 @@ log "размер копии: $(du -h "$work/$name" | cut -f1)"
 s3 "$work" s3 cp --only-show-errors "/work/$name" "$target/$name"
 log "загружено в $target/$name"
 
+# Copies made before #265 are re-encrypted in place, so none stays in the bucket in the clear (lib.sh).
+legacy_left=0
+migrate_legacy_backups "$work" || legacy_left=1
+
 expired=$(list_backups "$work" | expired_backups "$keep")
 for old in $expired; do
   s3 "$work" s3 rm --only-show-errors "$target/$old"
   log "удалена старая копия $old"
 done
 log "регион $REGION: хранится копий — $(list_backups "$work" | wc -l) (не больше $keep)"
+if ((legacy_left)); then
+  alerted=1
+  notify "🟠 LifeOS [$REGION] $(hostname): копия создана, но в бакете остались незашифрованные старые копии — см. журнал backup.sh" || true
+  exit 1
+fi
