@@ -6,7 +6,8 @@
 # SHA and the comment together. Checked: .github/workflows/*.yml|yaml and composite actions in .github/actions/; local
 # actions (./…) are part of this repository; docker:// images need an @sha256: digest.
 # The SHA of a version: git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<version>*' (an annotated tag:
-# the peeled ^{} line).
+# the peeled ^{} line). The check does not know whose SHA it is (GitHub also resolves commits of forks), so a reviewer
+# compares every new SHA with that tag.
 # Usage: scripts/check-actions-pinned.sh [root]   (default: this repository). Exit 1 names every file:line.
 set -uo pipefail
 
@@ -27,7 +28,18 @@ report() {
   problems=$((problems + 1))
 }
 
+# The one form the check parses: a block-mapping key `uses:`, optionally after `- `.
 uses_re='^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*(.*)$'
+# Fail closed: every other way YAML can spell a `uses` key — flow mapping `{ uses: x }` / `[uses: x]`, quoted key
+# `'uses':`, `"uses" :`, `uses :`, an escaped key `"\u0075ses":`, an explicit key `? uses` — is an error, not a skip.
+any_uses_re="(^|[][{,[:space:]-])['\"]?uses['\"]?[[:space:]]*:"
+escaped_key_re='"[^"]*\\[^"]*"[[:space:]]*:'
+explicit_key_re='^[[:space:]]*(-[[:space:]]+)*\?([[:space:]]|$)'
+# A line that is only `key: '<quoted scalar>'` (+ comment): "uses:" inside it is text, e.g. a run command.
+quoted_value_re="^[[:space:]]*(-[[:space:]]+)?([A-Za-z0-9_-]+):[[:space:]]+('([^']|'')*'|\"([^\"\\\\]|\\\\.)*\")[[:space:]]*(#.*)?$"
+# A block scalar header `key: |` / `- >-`: the more-indented lines after it are text (YAML allows this header only in
+# block context). Its indent = the key column, so a line that is not text is never taken for text.
+block_scalar_re="^( *(- +)*)(['\"]?[A-Za-z0-9_-]+['\"]?[[:space:]]*:[[:space:]]+)?[|>][0-9+-]*([[:space:]]+#.*)?[[:space:]]*$"
 action_re='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@[:space:]]+)?@[0-9a-f]{40}$'
 version_comment_re='^#[[:space:]]*v?[0-9]+(\.[0-9]+)*([-+][^[:space:]]+)?([[:space:]]|$)'
 docker_re='^docker://[^@[:space:]]+@sha256:[0-9a-f]{64}$'
@@ -35,11 +47,28 @@ hint="закрепите полным SHA коммита (40 символов) �
 SHA версии: git ls-remote https://github.com/<owner>/<repo> 'refs/tags/<версия>*'"
 
 check_file() {
-  local file=$1 number=0 line value ref comment lines
+  local file=$1 number=0 line value ref comment lines indent text_indent=-1
   mapfile -t lines < "$file"
   for line in "${lines[@]}"; do
     number=$((number + 1))
-    [[ $line =~ $uses_re ]] || continue
+    line=${line%$'\r'}
+    if ((text_indent >= 0)); then # inside a block scalar
+      indent=${line%%[! ]*}
+      [[ $line =~ ^[[:space:]]*$ ]] || ((${#indent} > text_indent)) && continue
+      text_indent=-1
+    fi
+    [[ $line =~ ^[[:space:]]*# ]] && continue
+    [[ $line =~ $block_scalar_re ]] && text_indent=${#BASH_REMATCH[1]}
+    if [[ ! $line =~ $uses_re ]]; then
+      [[ $line =~ $quoted_value_re && ${BASH_REMATCH[2]} != uses ]] && continue
+      if [[ $line =~ $any_uses_re || $line =~ $escaped_key_re || $line =~ $explicit_key_re ]]; then
+        checked=$((checked + 1))
+        report "$file" "$number" "ключ uses в форме, которую проверка не разбирает (flow-синтаксис, ключ в кавычках \
+или с escape, пробел перед двоеточием, явный ключ ?): запишите шаг блочной формой \
+- uses: <owner>/<repo>@<sha> # v4.2.2"
+      fi
+      continue
+    fi
     value=${BASH_REMATCH[2]}
     # `uses: 'owner/repo@ref' # comment`, `uses: "…"` or plain.
     if [[ $value =~ ^[\'\"]([^\'\"]*)[\'\"][[:space:]]*(.*)$ ]]; then

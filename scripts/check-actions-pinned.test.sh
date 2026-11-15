@@ -63,9 +63,51 @@ test_pinned_actions_pass() {
     "      - uses: ./.github/actions/local" \
     "      - uses: docker://alpine@sha256:$(printf 'a%.0s' {1..64})" \
     "      # - uses: actions/checkout@v4 (a comment is not a step)" \
-    "      - run: echo 'uses: actions/checkout@v4'"
+    "      - run: \"echo 'uses: actions/checkout@v4'\"" \
+    "      - name: 'uses: in a quoted string is text'" \
+    "      - run: |" \
+    "          echo 'a block scalar is text too'" \
+    "          uses: actions/checkout@v4" \
+    "" \
+    "          { uses: actions/checkout@v4 }" \
+    "      - name: after the block scalar" \
+    "        uses: actions/setup-node@$SHA # v4.4.0"
   run_check
   check "код выхода 0" "$(passed)" "$output"
+}
+
+test_block_scalar_ends_at_dedent() {
+  workflow ci.yml \
+    "      - run: >-" \
+    "          echo uses: in text" \
+    "        uses: actions/checkout@v4"
+  run_check
+  check "код выхода ≠ 0, назван файл и строка после блока" \
+    "$(fails_naming '.github/workflows/ci.yml:9: actions/checkout@v4')" "$output"
+}
+
+test_other_yaml_forms_fail() {
+  workflow ci.yml \
+    "      - { uses: actions/checkout@v4 }" \
+    "      - 'uses': actions/setup-node@v4" \
+    "      - \"uses\" : actions/setup-java@main" \
+    "      - uses : actions/upload-artifact@v4" \
+    "      - {\"uses\":actions/cache@v4}" \
+    "      - \"\\u0075ses\": actions/labeler@v5" \
+    "      - ? uses" \
+    "        : actions/stale@v9"
+  printf 'name: Test\non: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: [uses: actions/checkout@v4]\n' \
+    > "$SANDBOX/.github/workflows/flow.yml"
+  run_check
+  check "код выхода ≠ 0" "$(failed)" "$output"
+  check "flow-mapping назван" "$(says '.github/workflows/ci.yml:7:')" "$output"
+  check "ключ в одинарных кавычках назван" "$(says '.github/workflows/ci.yml:8:')" "$output"
+  check "ключ в двойных кавычках с пробелом назван" "$(says '.github/workflows/ci.yml:9:')" "$output"
+  check "uses с пробелом перед двоеточием назван" "$(says '.github/workflows/ci.yml:10:')" "$output"
+  check "flow-mapping без пробелов назван" "$(says '.github/workflows/ci.yml:11:')" "$output"
+  check "ключ с escape-последовательностью назван" "$(says '.github/workflows/ci.yml:12:')" "$output"
+  check "явный ключ ? назван" "$(says '.github/workflows/ci.yml:13:')" "$output"
+  check "flow-sequence назван" "$(says '.github/workflows/flow.yml:6:')" "$output"
 }
 
 test_tag_fails_with_file_and_line() {
@@ -162,6 +204,10 @@ run_test "Given PR добавляет действие по тегу When идё
   test_tag_fails_with_file_and_line
 run_test "Given PR добавляет действие по ветке When идёт CI Then проверка падает и называет файл и строку" \
   test_branch_fails
+run_test "Given действие во flow-синтаксисе, с ключом в кавычках или uses : по тегу When проверка Then она падает и \
+называет файл и строку" test_other_yaml_forms_fail
+run_test "Given блочный скаляр закончился When следом действие по тегу Then проверка падает и называет файл и строку" \
+  test_block_scalar_ends_at_dedent
 run_test "Given короткий SHA или ссылки нет When проверка Then она падает и называет файл и строку" \
   test_short_sha_and_missing_ref_fail
 run_test "Given полный SHA без комментария версии When проверка Then она падает и называет файл и строку" \
