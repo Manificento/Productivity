@@ -68,9 +68,9 @@ export function FoodTab({
         const items: MealItemRef[] = meals
           .filter((m) => m.kind === kind)
           .flatMap((m) =>
-            m.items.map((it, index) => ({
+            m.items.map((it) => ({
               mealId: m.id,
-              index,
+              itemId: it.id,
               foodId: it.foodId,
               grams: it.grams,
               food: byId.get(it.foodId),
@@ -88,7 +88,7 @@ export function FoodTab({
                     {items.map((item) => {
                       const text = `${item.food?.name ?? 'Удалённый продукт'}, ${formatGrams(item.grams)} г`;
                       return (
-                        <li key={`${item.mealId}/${item.index}`}>
+                        <li key={`${item.mealId}/${item.itemId}`}>
                           <button
                             type="button"
                             aria-label={`Изменить: ${text}`}

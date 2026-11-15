@@ -1,10 +1,30 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadDailyTargets } from '../../../core/adaptation/useDailyTargets';
-import { db } from '../../../core/db';
+import { db, softDelete } from '../../../core/db';
+import { naturalId } from '../../../core/ids';
 import { saveCheckIn } from './checkIns';
 
 afterEach(async () => {
   await db.checkIns.clear();
+});
+
+describe('contract #275: checkIns — the id is the day', () => {
+  it('Given saveSleep, checkIns, habitLogs, mealLogs, weightLogs When создаётся запись Then её id — naturalId(...) — checkIns', async () => {
+    const id = await saveCheckIn('2026-11-04', { energy: 2, focus: 3 }, 1000);
+    expect(id).toBe(naturalId('checkIn', '2026-11-04'));
+    expect(await db.checkIns.toArray()).toEqual([
+      { id: 'checkIn:2026-11-04', date: '2026-11-04', energy: 2, focus: 3, createdAt: 1000, updatedAt: 1000 },
+    ]);
+  });
+
+  it('a check-in deleted and saved again for the same day is the same record again', async () => {
+    const id = await saveCheckIn('2026-11-04', { energy: 2, focus: 3 }, 1000);
+    await softDelete(db.checkIns, id, 1500);
+    expect(await saveCheckIn('2026-11-04', { energy: 5, focus: 4 }, 2000)).toBe(id);
+    expect(await db.checkIns.toArray()).toEqual([
+      { id, date: '2026-11-04', energy: 5, focus: 4, createdAt: 2000, updatedAt: 2000 },
+    ]);
+  });
 });
 
 describe('check-in data', () => {

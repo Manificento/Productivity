@@ -224,9 +224,17 @@ export interface Food extends BaseRecord {
   externalId?: string;
 }
 
+/**
+ * One food of a meal. The sync merges a meal by its items (ADR-0009, sync p. 5): the lists of two devices are
+ * united by `id`, and an item changed on both is taken with the later `updatedAt`.
+ */
 export interface MealItem {
+  /** Unique within the meal; never changes. New items get `newId()`. */
+  id: Id;
   foodId: Id;
   grams: number;
+  /** Time of the last change of this item (its creation or a change of `grams`). */
+  updatedAt: Millis;
 }
 
 export interface MealLog extends BaseRecord {

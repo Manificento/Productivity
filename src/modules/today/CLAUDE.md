@@ -3,6 +3,7 @@
 Метка дорожки: `area:today`. Задачи: `scripts/agent.sh next today`.
 
 - **Пишет в таблицы:** `lifeEvents`, `checkIns`, `settings` (только ключи `adaptation.*`). Остальные таблицы — только чтение через `db` из `src/core/db.ts`.
+- **Чек-ин:** одна запись `checkIns` на день, её `id` — `naturalId('checkIn', date)` из `src/core/ids.ts` (#275), не `newId()`.
 - **Суть модуля:** главный экран, важные события, чек-ин, базовый режим, инсайты. Владеет и движком `src/core/adaptation/` — его можно ДОПОЛНЯТЬ правилами и полями (issues этой дорожки), но не переименовывать и не удалять существующие поля `DailyTargets`.
 - **Утренний поток:** сон записывай только через `saveSleep()` + `sleepWindow()` из `src/core/logging/`;
   тест внимания — переход на `/cognition/pvt?return=/` (без импорта модуля `cognition`).

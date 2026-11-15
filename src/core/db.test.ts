@@ -135,7 +135,9 @@ describe('contract: imported tasks (Dexie v4)', () => {
     expect(db.verno).toBeGreaterThanOrEqual(4);
     expect((await db.tasks.get('t1'))?.title).toBe('старая задача');
     expect((await db.projects.get('p1'))?.name).toBe('Дом');
-    expect((await db.weightLogs.get('w1'))?.kg).toBe(70);
+    // The weight of the day is kept; since v8 (#275) it lives under the id of its day.
+    expect((await db.weightLogs.get('weight:2026-11-04'))?.kg).toBe(70);
+    expect(await db.weightLogs.count()).toBe(1);
     await db.tasks.add({
       id: 't2',
       createdAt: 0,
@@ -192,7 +194,8 @@ describe('contract: imported sleep (Dexie v6)', () => {
 
     const db = new LifeDB(name);
     expect(db.verno).toBeGreaterThanOrEqual(6);
-    expect((await db.sleepLogs.get('s1'))?.quality).toBe(4);
+    // The old night is kept; since v8 (#275) it lives under the id of its day.
+    expect((await db.sleepLogs.get('sleep:2026-11-04'))?.quality).toBe(4);
     await db.sleepLogs.add({
       id: 's2',
       createdAt: 0,
@@ -235,10 +238,11 @@ describe('contract #274: записи под синхронизацию', () => 
     v6.close();
 
     const db = new LifeDB(name);
-    // No data migration: the rows are exactly what the old version stored.
+    // No data migration for the new fields: the rows are exactly what the old version stored…
     expect(await db.tasks.get('t1')).toEqual(task);
     expect(await db.tasks.toArray()).toEqual([task]);
-    expect(await db.sleepLogs.where('date').equals('2026-11-04').first()).toEqual(night);
+    // …except the id of a «one per day» record, which v8 (#275) derives from its day; the content is untouched.
+    expect(await db.sleepLogs.where('date').equals('2026-11-04').first()).toEqual({ ...night, id: 'sleep:2026-11-04' });
     expect(await db.settings.get('theme')).toEqual(oldSetting);
     db.close();
   });

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { toDateKey } from '../dates';
 import { db, softDelete } from '../db';
-import { newRecord, touch } from '../ids';
-import type { SleepLog } from '../types';
+import { naturalId, newRecord, touch } from '../ids';
+import type { BaseRecord, SleepLog } from '../types';
 import { sleepHours } from './sleepTime';
 
 const ImportKey = z.string().trim().min(1);
@@ -59,7 +59,7 @@ const IMPORT_OWNED = ['date', 'bedtime', 'wakeTime'] as const;
 
 /**
  * Creates or updates the sleep record for the night that ended on the wake-up day
- * (`date` = local day of `wakeTime`; one record per day).
+ * (`date` = local day of `wakeTime`; one record per day, its id is `naturalId('sleep', date)`).
  *
  * Entered in LifeOS (no `sourceId`): the day's record is created or overwritten. An imported night corrected by hand
  * keeps `sourceId` (it was not lived in the app) but loses `externalId`: the next re-import no longer reverts it.
@@ -93,9 +93,7 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
         await db.sleepLogs.put(updated);
         return updated;
       }
-      const created: SleepLog = newRecord(entered, now);
-      await db.sleepLogs.add(created);
-      return created;
+      return create(entered, now);
     }
     const own = await db.sleepLogs.where('[sourceId+externalId]').equals([sourceId, externalId]).first();
     if (own) {
@@ -107,15 +105,26 @@ export async function saveSleep(input: SleepInput, now: number = Date.now()): Pr
       const next = { date, bedtime: valid.bedtime, wakeTime: valid.wakeTime };
       // Nothing changed in the app: no write, so live queries are not woken on every re-import.
       if (IMPORT_OWNED.every((key) => own[key] === next[key])) return own;
-      const updated: SleepLog = { ...own, ...next, updatedAt: now };
+      // The id names the day: a night that moved to another day is deleted there and re-created under the new id.
+      const updated: SleepLog = { ...own, ...next, id: naturalId('sleep', date), updatedAt: now };
+      if (updated.id !== own.id) await softDelete(db.sleepLogs, own.id, now);
       await db.sleepLogs.put(updated);
       return updated;
     }
     if (onDay) return onDay;
-    const created: SleepLog = newRecord({ ...valid, date }, now);
-    await db.sleepLogs.add(created);
-    return created;
+    return create({ ...valid, date }, now);
   });
+}
+
+/**
+ * A new night gets the id of its day (`sleep:<DateKey>`, #275): the same night logged on two devices is one record
+ * for the sync. A night deleted earlier on that day left a tombstone with this id — `add` replaces it
+ * (`core/sync/tombstones.ts`), so the day keeps one id through delete and re-create.
+ */
+async function create(night: Omit<SleepLog, keyof BaseRecord>, now: number): Promise<SleepLog> {
+  const created: SleepLog = newRecord(night, now, naturalId('sleep', night.date));
+  await db.sleepLogs.add(created);
+  return created;
 }
 
 /**

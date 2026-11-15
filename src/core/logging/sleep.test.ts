@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../db';
+import { naturalId } from '../ids';
 import { deleteSleep, saveSleep } from './sleep';
 import { sleepHours, sleepWindow } from './sleepTime';
 
 beforeEach(async () => {
   await db.sleepLogs.clear();
+  await db.syncOutbox.clear();
 });
 
 describe('sleepWindow', () => {
@@ -77,6 +79,33 @@ describe('saveSleep', () => {
   });
 });
 
+describe('contract #275: sleepLogs — the id is the wake-up day', () => {
+  it('Given saveSleep, checkIns, habitLogs, mealLogs, weightLogs When создаётся запись Then её id — naturalId(...) — saveSleep', async () => {
+    const manual = await saveSleep({ ...sleepWindow('2026-11-05', '23:30', '07:00'), quality: 4 }, 1_000);
+    expect(manual.id).toBe(naturalId('sleep', '2026-11-05'));
+    expect(manual.id).toBe('sleep:2026-11-05');
+
+    const imported = await saveSleep(
+      { ...sleepWindow('2026-11-06', '23:30', '07:00'), quality: 3, sourceId: 'com.app', externalId: 'x-1' },
+      1_000,
+    );
+    expect(imported.id).toBe('sleep:2026-11-06');
+    expect((await db.sleepLogs.toArray()).map((s) => s.id).sort()).toEqual(['sleep:2026-11-05', 'sleep:2026-11-06']);
+  });
+
+  it('a night deleted and logged again for the same day is the same record again (same id, no second row)', async () => {
+    const first = await saveSleep({ ...sleepWindow('2026-11-05', '23:30', '07:00'), quality: 4 }, 1_000);
+    await deleteSleep(first.id);
+    expect(await db.sleepLogs.count()).toBe(0);
+
+    const again = await saveSleep({ ...sleepWindow('2026-11-05', '00:30', '07:00'), quality: 2 }, 2_000);
+    expect(again).toMatchObject({ id: first.id, quality: 2, createdAt: 2_000, updatedAt: 2_000 });
+    expect(await db.sleepLogs.toArray()).toEqual([again]);
+    // One row and one outbox entry for the day: the sync sees an update of `sleep:2026-11-05`, not delete + new id.
+    expect((await db.syncOutbox.where({ table: 'sleepLogs' }).toArray()).map((e) => e.key)).toEqual([first.id]);
+  });
+});
+
 describe('saveSleep — imported nights (#227)', () => {
   const SC = 'com.northcube.sleepcycle';
   const night = (wakeDay: string, bed = '23:30', wake = '07:00') => sleepWindow(wakeDay, bed, wake);
@@ -118,10 +147,13 @@ describe('saveSleep — imported nights (#227)', () => {
 
   it('a re-imported night that now ends on another day moves there', async () => {
     const first = await saveSleep({ ...night('2026-11-05'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 1_000);
+    await db.sleepLogs.update(first.id, { quality: 5 });
     const moved = await saveSleep({ ...night('2026-11-06'), quality: 3, sourceId: SC, externalId: 'sc-1' }, 2_000);
-    expect(moved.id).toBe(first.id);
-    expect(moved.date).toBe('2026-11-06');
-    expect(await db.sleepLogs.count()).toBe(1);
+    // The id names the day (#275), so the night is re-created under the new day's id and the old one is deleted.
+    expect(first.id).toBe('sleep:2026-11-05');
+    expect(moved).toMatchObject({ id: 'sleep:2026-11-06', date: '2026-11-06', quality: 5, updatedAt: 2_000 });
+    expect(await db.sleepLogs.toArray()).toEqual([moved]);
+    expect(await db.sleepLogs.get(first.id)).toBeUndefined();
   });
 
   it('an import never overwrites a night already logged for that day (manual or from another app)', async () => {

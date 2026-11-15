@@ -4,8 +4,10 @@ import { Button, Field, Input, Sheet } from '../../../ui';
 import { removeMealItem, setMealItemGrams, type MealItemAt } from '../data/food';
 import { formatGrams, macrosFor } from '../logic/nutrition';
 
-/** One logged item: which meal record it is in and its position there. */
+/** One logged item as the screen shows it: where it is (meal record and item id) and what it holds. */
 export interface MealItemRef extends MealItemAt {
+  foodId: string;
+  grams: number;
   food: Food | undefined;
   mealLabel: string;
 }
@@ -17,7 +19,7 @@ export function MealItemSheet({ item, onClose }: { item: MealItemRef | undefined
   return (
     <Sheet open={item !== undefined} title={item ? itemName(item) : ''} onClose={onClose}>
       {/* Re-mount per item so the field starts from that item's weight. */}
-      {item && <MealItemForm key={`${item.mealId}/${item.index}`} item={item} onClose={onClose} />}
+      {item && <MealItemForm key={`${item.mealId}/${item.itemId}`} item={item} onClose={onClose} />}
     </Sheet>
   );
 }

@@ -273,12 +273,19 @@ export function buildDemoTables(today: DateKey, now: Millis): DemoTables {
     days.flatMap((day) => {
       const meal = (kind: MealLog['kind'], hour: number, items: [string, number][]) => {
         const time = at(day, hour, int(0, 40));
+        const record = stamp(`meal-${day}-${kind}`, time);
         return {
-          ...stamp(`meal-${day}-${kind}`, time),
+          ...record,
           date: day,
           time,
           kind,
-          items: items.map(([id, grams]) => ({ foodId: f[id], grams })),
+          // Every item of a meal has its own id and time (#275).
+          items: items.map(([id, grams], i) => ({
+            id: `${record.id}-${i}`,
+            foodId: f[id],
+            grams,
+            updatedAt: record.updatedAt,
+          })),
           at: time,
         };
       };
