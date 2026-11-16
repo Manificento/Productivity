@@ -33,8 +33,9 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 }
 
 test.describe('delete a day record and create it again', () => {
-  // FIXME(#309): the «Вес» card has no way to delete a day's entry yet. The scenario is written against the
-  // labels #309 specifies; remove `fixme` when #309 is done — it must pass unchanged.
+  // FIXME(#309): the «Вес» card has no way to delete a day's entry yet. This criterion was moved from #294 to #309,
+  // which owns it: the scenario is written against the labels #309 specifies; remove `fixme` when #309 is done — it
+  // must pass unchanged.
   test.fixme('Given записан вес за сегодня When я удаляю запись и ввожу вес снова Then на экране одна запись с новым значением; после перезагрузки страницы она на месте', async ({
     page,
   }) => {
