@@ -212,7 +212,7 @@ GitHub → **Settings → Environments → New environment** `production-kz`. **
    apt install -y caddy
    printf 'api.example.kz {\n  reverse_proxy 127.0.0.1:8000 {\n    header_up X-Real-IP {remote_host}\n  }\n}\n' > /etc/caddy/Caddyfile
    systemctl reload caddy
-   echo 'KONG_TRUSTED_IPS=172.16.0.0/12,192.168.0.0/16' >> .env && ./deploy.sh
+   sed -i 's|^KONG_TRUSTED_IPS=.*|KONG_TRUSTED_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16|' .env && ./deploy.sh
    ```
 
    Прокси **сам ставит** `X-Real-IP` — адрес клиента, а `KONG_TRUSTED_IPS` велит Kong этому заголовку верить: без
@@ -313,9 +313,9 @@ ENV_FILE=.env ./migrate.sh   # стек уже запущен (deploy.sh)
   соединения приходят к Kong с одного адреса (шлюз сети Docker), и без настройки предел был бы общим на регион: его
   исчерпал бы кто угодно, и вход с обновлением сессий остановились бы у всех. Поэтому Caddy сам ставит `X-Real-IP`
   (`volumes/proxy/Caddyfile`), а `KONG_TRUSTED_IPS` перечисляет адреса, заголовку которых Kong верит. «Deploy KZ»
-  задаёт `172.16.0.0/12,192.168.0.0/16` — частные диапазоны Docker; если сети Docker на сервере настроены на другие
-  адреса (`default-address-pools`), допишите их в `KONG_TRUSTED_IPS` файла настроек вручную — нужный адрес покажет
-  `docker network inspect lifeos-kz_default` (поле `Gateway`).
+  задаёт `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` — частные диапазоны, в одном из которых лежит сеть Docker стека.
+  Проверить на сервере: в `compose logs kong` строка запроса начинается с адреса клиента, а не с адреса шлюза сети
+  Docker (`172.x.0.1`).
 - ⚠️ `KONG_TRUSTED_IPS` задают **только** вместе с прокси, который сам ставит `X-Real-IP`, и только пока Kong
   слушает `127.0.0.1` (`KONG_BIND`): иначе клиент назовёт любой адрес и обойдёт пределы. Без прокси оставьте пустым.
 - **Облачный Supabase (staging в ЕС):** миграции применять с `set lifeos.region = 'eu';` перед файлом, шаблон и тему

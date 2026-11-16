@@ -72,9 +72,10 @@ write_settings() {
     die "нет $ENV_FILE, а том базы lifeos-${region}_db-data уже есть: верните файл из менеджера паролей (chmod 600) и запустите деплой снова — новые секреты закрыли бы стеку доступ к его данным"
   fi
   given[COMPOSE_PROFILES]=proxy
-  # Kong is reached only through that proxy, from the gateway of the stack's Docker network: Kong takes the client's
-  # address from the header the proxy sets (Caddyfile), so Auth counts its limits per client, not for all at once.
-  given[KONG_TRUSTED_IPS]=172.16.0.0/12,192.168.0.0/16
+  # Kong is reached only through that proxy, from the gateway of the stack's Docker network — a private address,
+  # whatever address pools Docker has. Kong takes the client's address from the header the proxy sets (Caddyfile), so
+  # Auth counts its limits per client, not for all at once.
+  given[KONG_TRUSTED_IPS]=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 
   # env.example with fresh secrets: they are used on the first run only.
   base=$("$here/gen-env.sh" REGION="$region")
