@@ -162,7 +162,9 @@ describe('workouts tab', () => {
     expect(stat('Минуты')).toHaveTextContent('20');
     expect(stat('Тренировки')).toHaveTextContent('1');
     expect(stat('Средний RPE')).toHaveTextContent('2');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The screen shows the change as soon as the write commits; the dialog closes only when the write's promise
+    // resolves, which under load can come a moment later (#292).
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('a failed deletion shows an error and keeps the workout', async () => {

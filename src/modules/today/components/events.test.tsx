@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -72,7 +72,9 @@ describe('События', () => {
 
     const upcoming = await screen.findByRole('region', { name: 'Предстоящие' });
     expect(await within(upcoming).findByRole('link', { name: /IELTS/ })).toHaveTextContent('через 5 дней');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The list shows the event as soon as the write commits; the form closes only when the save's promise resolves,
+    // which under load can come a moment later (#292).
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     const saved = await db.lifeEvents.toArray();
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({

@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { db } from '../../../core/db';
@@ -138,7 +138,9 @@ describe('projects', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
 
     expect(await screen.findByRole('heading', { name: '#Университет' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // The screen shows the change as soon as the write commits; the dialog closes only when the write's promise
+    // resolves, which under load can come a moment later (#292).
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect((await db.projects.get(study.id))?.name).toBe('Университет');
   });
 
