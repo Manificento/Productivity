@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeSyncServer } from '../../test/fakeSyncServer';
 import { naturalId } from '../ids';
 import type { SyncOutboxEntry } from '../types';
@@ -581,6 +581,14 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
       laptop.sync(server);
     });
 
+    // Whatever the devices did: the server never holds two live sessions of one day — a device could not store both.
+    afterEach(() => {
+      const taken = onServer()
+        .map(([, day]) => day)
+        .filter((day) => day !== 'удалена');
+      expect(taken).toEqual([...new Set(taken)]);
+    });
+
     describe('два устройства переносят разные сессии одной программы на один день', () => {
       beforeEach(() => {
         pass(MINUTE);
@@ -710,6 +718,67 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
       expect(days(phone)).toEqual(expected);
       expect(days(laptop)).toEqual(expected);
       expect(onServer()).toEqual(expected);
+      expect(laptop.conflicts.map((conflict) => [conflict.local.key, conflict.local.data?.date]).toSorted()).toEqual([
+        ['s1', WED],
+        ['s2', THU],
+      ]);
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+
+    it('новая сессия на день, который не освободился (перенос прежней сессии отклонён): удаляется только она — её нет ни у кого', () => {
+      pass(MINUTE);
+      phone.save('plannedSessions', 's3', session(THU));
+      phone.sync(server);
+      // The laptop, offline: s2 moves from Wednesday to Thursday, a new session takes the freed Wednesday.
+      pass(MINUTE);
+      laptop.save('plannedSessions', 's2', session(THU));
+      pass(MINUTE);
+      laptop.save('plannedSessions', 'laptop-new', session(WED));
+
+      laptop.sync(server);
+      // The server took neither: Thursday is the phone's, so s2 stays on Wednesday, and Wednesday is not free.
+      expect(onServer()).toEqual([
+        ['s1', MON],
+        ['s2', WED],
+        ['s3', THU],
+      ]);
+      syncAll(laptop, phone);
+
+      const expected = [
+        ['s1', MON],
+        ['s2', WED],
+        ['s3', THU],
+      ];
+      expect(days(phone)).toEqual(expected);
+      expect(days(laptop)).toEqual(expected);
+      expect(onServer().filter(([, day]) => day !== 'удалена')).toEqual(expected);
+      expect(laptop.conflicts.map((conflict) => [conflict.local.key, conflict.local.data?.date]).toSorted()).toEqual([
+        ['laptop-new', WED],
+        ['s2', THU],
+      ]);
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+
+    it('перенос проиграл более поздней правке той же сессии: день, который он освобождал, не занимается второй сессией', () => {
+      // The laptop, offline: s2 moves from Wednesday to Thursday, s1 takes the freed Wednesday.
+      pass(MINUTE);
+      laptop.save('plannedSessions', 's2', session(THU));
+      laptop.save('plannedSessions', 's1', session(WED));
+      // Later the phone marks s2 done, on Wednesday as before: by time this is the version of s2 that wins.
+      pass(MINUTE);
+      phone.save('plannedSessions', 's2', { ...session(WED), status: 'done' });
+      phone.sync(server);
+
+      syncAll(laptop, phone);
+
+      const expected = [
+        ['s1', MON],
+        ['s2', WED],
+      ];
+      expect(days(phone)).toEqual(expected);
+      expect(days(laptop)).toEqual(expected);
+      expect(onServer()).toEqual(expected);
+      expect(laptop.read('plannedSessions')).toMatchObject([{ id: 's1' }, { id: 's2', status: 'done' }]);
       expect(laptop.conflicts.map((conflict) => [conflict.local.key, conflict.local.data?.date]).toSorted()).toEqual([
         ['s1', WED],
         ['s2', THU],

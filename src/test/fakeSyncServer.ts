@@ -26,8 +26,10 @@ const isObject = (value: unknown): value is RowData => typeof value === 'object'
  * - last writer wins: a change is taken when its (`updatedAt`, `updatedBy`) is not earlier than the stored one;
  * - a live meal (`mealLogs`) written by another device after the pusher's cursor (`since`) is never overwritten,
  *   not by a meal and not by a deletion: the pusher has not seen it and must merge first;
- * - a live row is not taken when its unique key (`UNIQUE_KEYS`: one session of a program per day) is held by
- *   another live row that another device wrote after the pusher's cursor: the pusher pulls first;
+ * - no two live rows hold one unique key (`UNIQUE_KEYS`: one session of a program per day): a live row is not
+ *   taken when, with the push applied, another live row would hold its key — a stored row that stays as it is
+ *   (the push does not move it, or its own change is not taken) or another change of the push. A whole push is
+ *   judged at once, so rows may swap days in it, and a change that relied on a refused one is refused with it;
  * - `replace` takes every change regardless;
  * - a change that is not taken comes back with the stored version of its row (`current`), when there is one.
  *
@@ -49,21 +51,28 @@ export class FakeSyncServer {
   ): PushResult[] {
     const now = this.now();
     const cut = (time: number): number => (time > now + FUTURE_TOLERANCE_MS ? now : time);
-    // The rows as they were before this push: what `sync_push` reads when it looks for the holder of a unique key.
-    const before = [...this.rows.values()];
-    return changes.map((change): PushResult => {
+    const incoming = changes.map((change): SyncChange => {
       const { table, key, updatedBy } = change;
       const updatedAt = cut(change.updatedAt);
-      const version: SyncChange =
-        change.deletedAt === undefined
-          ? { table, key, updatedAt, updatedBy, data: cutItemTimes(table, structuredClone(change.data ?? {}), cut) }
-          : { table, key, updatedAt, updatedBy, deletedAt: cut(change.deletedAt) };
-      const stored = this.rows.get(idOf(change));
-      const isTaken = replace || (!isKeyHeld(before, version, since) && (!stored || takes(stored, version, since)));
-      if (!isTaken) return refusal(version, stored);
+      return change.deletedAt === undefined
+        ? { table, key, updatedAt, updatedBy, data: cutItemTimes(table, structuredClone(change.data ?? {}), cut) }
+        : { table, key, updatedAt, updatedBy, deletedAt: cut(change.deletedAt) };
+    });
+    // Every change is judged against the rows as they were before the push, like the one statement of `sync_push`.
+    const before = new Map<string, StoredRow>(this.rows);
+    const storedOf = (version: SyncChange) => before.get(idOf(version));
+    const taken = new Set(
+      incoming.filter((version) => {
+        const stored = storedOf(version);
+        return replace || !stored || takes(stored, version, since);
+      }),
+    );
+    if (!replace) refuseTakenKeys(taken, before);
+    return incoming.map((version): PushResult => {
+      if (!taken.has(version)) return refusal(version, storedOf(version));
       this.rev += 1;
-      this.rows.set(idOf(change), { ...version, rev: this.rev, receivedAt: now });
-      return { table, key, rev: this.rev, updatedAt, applied: true };
+      this.rows.set(idOf(version), { ...version, rev: this.rev, receivedAt: now });
+      return { table: version.table, key: version.key, rev: this.rev, updatedAt: version.updatedAt, applied: true };
     });
   }
 
@@ -104,8 +113,23 @@ function takes(stored: StoredRow, change: SyncChange, since: number): boolean {
   return isLater && !isUnseenMeal;
 }
 
-/** Whether the unique key of a live change is held by another live row the pusher has not seen. */
-function isKeyHeld(rows: readonly StoredRow[], change: SyncChange, since: number): boolean {
+/**
+ * The unique keys: drops from `taken` every live change whose key another live row would hold too once the push
+ * is applied, and again while there is one — a row whose change is dropped stays where it was, and that may be the
+ * key of another change.
+ */
+function refuseTakenKeys(taken: Set<SyncChange>, before: ReadonlyMap<string, SyncChange>): void {
+  for (;;) {
+    const after = new Map(before);
+    for (const version of taken) after.set(idOf(version), version);
+    const refused = [...taken].filter((version) => isKeyHeld([...after.values()], version));
+    if (refused.length === 0) return;
+    for (const version of refused) taken.delete(version);
+  }
+}
+
+/** Whether another live row of `rows` holds the unique key of a live change. */
+function isKeyHeld(rows: readonly SyncChange[], change: SyncChange): boolean {
   const unique = uniqueKeyOf(change.table, change.data);
   if (unique === undefined || change.deletedAt !== undefined) return false;
   return rows.some(
@@ -113,8 +137,6 @@ function isKeyHeld(rows: readonly StoredRow[], change: SyncChange, since: number
       held.table === change.table &&
       held.key !== change.key &&
       held.deletedAt === undefined &&
-      held.rev > since &&
-      held.updatedBy !== change.updatedBy &&
       uniqueKeyOf(held.table, held.data) === unique,
   );
 }

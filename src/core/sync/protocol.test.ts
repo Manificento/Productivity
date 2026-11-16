@@ -9,6 +9,7 @@ import {
   merge,
   staleAfterFullPull,
   TOMBSTONE_TTL_MS,
+  YIELDED_AT,
   type LocalRow,
   type PulledChange,
   type SyncChange,
@@ -428,30 +429,66 @@ describe('applyPull(changes, local)', () => {
       expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's1' }]);
     });
 
-    it('своя неотправленная правка держит день: она уступает строке сервера, попадает в конфликты и уходит удалением', () => {
+    describe('своя неотправленная правка держит день, который заняла строка сервера', () => {
       const queued = entry('plannedSessions', 's2', 150);
       const mine = session('s2', THU, { updatedAt: 150, updatedBy: undefined });
       const remote = moved(5, 's1', THU);
-      const plan = applyPull([remote], local([mine], [queued]));
-      expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's2' }]);
-      expect(plan.put).toEqual([session('s1', THU, { updatedAt: 200 })]);
-      expect(plan.conflicts).toEqual([
-        {
-          local: {
-            table: 'plannedSessions',
-            key: 's2',
-            updatedAt: 150,
-            updatedBy: A,
-            data: { programId: 'p1', date: THU, status: 'planned', createdAt: 1 },
-          },
-          remote,
-        },
-      ]);
-      // The queue entry stays: an entry without a row is a deletion, the next push sends the tombstone.
-      expect(plan.settled).toEqual([]);
-      expect(buildPush([queued], [], { deviceId: A })).toEqual([
-        { table: 'plannedSessions', key: 's2', updatedAt: 150, updatedBy: A, deletedAt: 150 },
-      ]);
+      /** What is left of the row that gave up the day: a tombstone older than anything the server may hold. */
+      const yielded: LocalRow = {
+        table: 'plannedSessions',
+        row: { id: 's2', createdAt: 1, updatedAt: YIELDED_AT, deletedAt: YIELDED_AT },
+      };
+      const lost = {
+        table: 'plannedSessions',
+        key: 's2',
+        updatedAt: 150,
+        updatedBy: A,
+        data: { programId: 'p1', date: THU, status: 'planned', createdAt: 1 },
+      };
+
+      it('она уступает день и попадает в конфликты; строка не удаляется, а ждёт версию сервера — запись очереди остаётся', () => {
+        const plan = applyPull([remote], local([mine], [queued]));
+        // Removed first, so the server's row never meets a taken day; then written again as what is left of it.
+        expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's2' }]);
+        expect(plan.put).toEqual([yielded, session('s1', THU, { updatedAt: 200 })]);
+        expect(plan.conflicts).toEqual([{ local: lost, remote }]);
+        expect(plan.settled).toEqual([]);
+      });
+
+      it('на сервер уходит не удаление пользователя, а tombstone раньше любой версии: сервер его не примет, если строка у него есть', () => {
+        expect(YIELDED_AT).toBeLessThan(Date.UTC(2000, 0));
+        expect(buildPush([queued], [yielded], { deviceId: A })).toEqual([
+          { table: 'plannedSessions', key: 's2', updatedAt: YIELDED_AT, updatedBy: A, deletedAt: YIELDED_AT },
+        ]);
+      });
+
+      it('версия этой строки, пришедшая в pull позже, заменяет её: сессия на дне сервера, запись очереди снята, второго конфликта нет', () => {
+        const own = moved(6, 's2', '2026-11-10', 120);
+        const plan = applyPull([remote, own], local([mine], [queued]));
+        expect(plan.put).toEqual([
+          session('s2', '2026-11-10', { updatedAt: 120 }),
+          session('s1', THU, { updatedAt: 200 }),
+        ]);
+        expect(plan.settled).toEqual([queued]);
+        expect(plan.conflicts).toEqual([{ local: lost, remote }]);
+      });
+
+      it('то же в следующей странице pull: уступившая строка возвращается в версии сервера', () => {
+        const own = moved(6, 's2', '2026-11-10', 120);
+        const plan = applyPull([own], local([yielded, session('s1', THU)], [queued]));
+        expect(plan).toMatchObject({
+          put: [session('s2', '2026-11-10', { updatedAt: 120 })],
+          remove: [],
+          settled: [queued],
+          conflicts: [],
+        });
+      });
+
+      it('сервер удалил эту строку — остаётся tombstone, запись очереди снята', () => {
+        const deleted = { ...tombstone({ table: 'plannedSessions', key: 's2', updatedAt: 120, updatedBy: B }), rev: 6 };
+        const plan = applyPull([deleted], local([yielded], [queued]));
+        expect(plan).toMatchObject({ put: [], remove: [], settled: [queued], conflicts: [] });
+      });
     });
 
     it('удалённые строки и строки другой программы день не держат', () => {
@@ -494,7 +531,7 @@ describe('applyPushResult(results, local) — ответ сервера на о�
     expect(plan).toEqual({ put: [], remove: [], settled: [queued], conflicts: [] });
   });
 
-  it('сервер не принял изменение и не прислал версии (день занят строкой, которой устройство не видело) — оно ждёт pull в очереди', () => {
+  it('сервер не принял изменение и не прислал версии (день занят, а самой строки у сервера нет) — оно ждёт в очереди строку, занявшую день', () => {
     const plan = applyPushResult([{ table: 'tasks', key: 't1', rev: 0, updatedAt: 100, applied: false }], local);
     expect(plan).toEqual({ put: [], remove: [], settled: [], conflicts: [] });
   });
@@ -511,6 +548,112 @@ describe('applyPushResult(results, local) — ответ сервера на о�
     expect(plan.settled).toEqual([queued]);
     expect(plan.conflicts).toHaveLength(1);
     expect(plan).not.toHaveProperty('cursor');
+  });
+
+  describe('отказ сервера окончателен: его версия заменяет локальную, даже более позднюю', () => {
+    const WED = '2026-11-11';
+    const THU = '2026-11-12';
+    const session = (id: string, date: string, updatedAt: number): LocalRow => ({
+      table: 'plannedSessions',
+      row: { id, programId: 'p1', date, status: 'planned', createdAt: 1, updatedAt },
+    });
+    const onServer = (rev: number, key: string, date: string, updatedAt: number): PulledChange =>
+      pulled(rev, {
+        table: 'plannedSessions',
+        key,
+        updatedAt,
+        updatedBy: B,
+        data: { programId: 'p1', date, status: 'planned', createdAt: 1 },
+      });
+    const refused = (current: PulledChange) => ({
+      table: current.table,
+      key: current.key,
+      rev: current.rev,
+      updatedAt: current.updatedAt,
+      applied: false,
+      current,
+    });
+
+    it('перенос на занятый день: сессия возвращается на день сервера, а не удаляется; перенос — в конфликтах, запись очереди снята', () => {
+      const queued = entry('plannedSessions', 's2', 300);
+      const current = onServer(2, 's2', WED, 100);
+      const plan = applyPushResult([refused(current)], {
+        rows: [session('s2', THU, 300)],
+        outbox: [queued],
+        deviceId: A,
+      });
+      expect(plan.put).toEqual([{ table: 'plannedSessions', row: { ...session('s2', WED, 100).row, updatedBy: B } }]);
+      expect(plan.remove).toEqual([]);
+      expect(plan.settled).toEqual([queued]);
+      expect(plan.conflicts).toMatchObject([
+        { local: { key: 's2', updatedAt: 300, data: { date: THU } }, remote: current },
+      ]);
+    });
+
+    it('уступившая день строка, отправленная как tombstone раньше любой версии, возвращается версией сервера без второго конфликта', () => {
+      const queued = entry('plannedSessions', 's2', 300);
+      const yielded = { table: 'plannedSessions', row: { id: 's2', updatedAt: YIELDED_AT, deletedAt: YIELDED_AT } };
+      const plan = applyPushResult([refused(onServer(2, 's2', WED, 100))], {
+        rows: [yielded],
+        outbox: [queued],
+        deviceId: A,
+      });
+      expect(plan.put).toMatchObject([{ row: { id: 's2', date: WED } }]);
+      expect(plan).toMatchObject({ settled: [queued], conflicts: [] });
+    });
+
+    it('версия сервера занимает день, который держит другая отклонённая строка: та уступает и получает свою версию из того же ответа', () => {
+      // Offline: s2 moved from Wednesday to Thursday, s1 took the freed Wednesday. The server took neither.
+      const entries = [entry('plannedSessions', 's2', 300), entry('plannedSessions', 's1', 310)];
+      const plan = applyPushResult(
+        [refused(onServer(2, 's2', WED, 100)), refused(onServer(3, 's1', '2026-11-09', 100))],
+        {
+          rows: [session('s2', THU, 300), session('s1', WED, 310)],
+          outbox: entries,
+          deviceId: A,
+        },
+      );
+      // s1 is removed before anything is written: s2 never meets a Wednesday that is still taken.
+      expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's1' }]);
+      expect(plan.put.map(({ row }) => [row.id, row.date, row.deletedAt])).toEqual([
+        ['s1', '2026-11-09', undefined],
+        ['s2', WED, undefined],
+      ]);
+      expect(plan.settled.toSorted((a, b) => a.updatedAt - b.updatedAt)).toEqual(entries);
+      expect(plan.conflicts.map((conflict) => [conflict.local.key, conflict.local.data?.date])).toEqual([
+        ['s2', THU],
+        ['s1', WED],
+      ]);
+    });
+
+    it('принятое изменение — уже не локальная правка: строка, которую сервер принял, уступает день без конфликта и без tombstone', () => {
+      // The answer for s2 is older than the server's state (another device moved s2 between two batches of the push).
+      const entries = [entry('plannedSessions', 's2', 300), entry('plannedSessions', 's1', 310)];
+      const plan = applyPushResult(
+        [
+          refused(onServer(2, 's2', WED, 100)),
+          { table: 'plannedSessions', key: 's1', rev: 9, updatedAt: 310, applied: true },
+        ],
+        { rows: [session('s2', THU, 300), session('s1', WED, 310)], outbox: entries, deviceId: A },
+      );
+      expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's1' }]);
+      expect(plan.put.map(({ row }) => [row.id, row.date])).toEqual([['s2', WED]]);
+      expect(plan.conflicts.map((conflict) => conflict.local.key)).toEqual(['s2']);
+      expect(plan.settled.toSorted((a, b) => a.updatedAt - b.updatedAt)).toEqual(entries);
+    });
+
+    it('приём пищи — исключение: отклонённый приём сливается с версией сервера и остаётся в очереди', () => {
+      const queued = entry('mealLogs', 'meal:2026-11-05:lunch', 300);
+      const mine = meal(300, A, [item('хлеб', 300)]);
+      const current = { ...meal(200, B, [item('суп', 200)]), rev: 4 };
+      const plan = applyPushResult([refused(current)], {
+        rows: [{ table: 'mealLogs', row: { id: mine.key, ...mine.data, updatedAt: 300 } }],
+        outbox: [queued],
+        deviceId: A,
+      });
+      expect(plan.put).toMatchObject([{ row: { updatedAt: 301, items: [{ id: 'хлеб' }, { id: 'суп' }] } }]);
+      expect(plan).toMatchObject({ settled: [], conflicts: [] });
+    });
   });
 });
 
@@ -547,6 +690,8 @@ describe('устройство после долгого офлайна и за�
       { table: 'settings', row: { key: 'time.pomodoro', value: 1 } },
       { table: 'settings', row: { key: 'device.id', value: A } },
       { table: 'tasks', row: { id: 'deleted-here', updatedAt: 20, deletedAt: 20 } },
+      // A row that gave up its unique key is no version of the device: the server's version of it stays.
+      { table: 'plannedSessions', row: { id: 'yielded', updatedAt: YIELDED_AT, deletedAt: YIELDED_AT } },
     ];
     const server = [
       change({ key: 'kept', updatedAt: 500, updatedBy: B }),
@@ -554,6 +699,7 @@ describe('устройство после долгого офлайна и за�
       tombstone({ key: 'already-deleted', updatedBy: B }),
       change({ key: 'deleted-here', updatedBy: B }),
       change({ table: 'settings', key: 'device.id', updatedBy: B }),
+      change({ table: 'plannedSessions', key: 'yielded', updatedBy: B }),
     ];
     expect(buildReplace(server, rows, { deviceId: A, now: 1000 })).toEqual([
       { table: 'tasks', key: 'kept', updatedAt: 10, updatedBy: A, data: { title: 'Из копии', createdAt: 1 } },
