@@ -402,3 +402,84 @@ GitHub `production-kz` (секреты и переменная `DOMAIN`; рек�
 - **Тест миграции** — `src/core/db.migration.test.ts` на фикстуре базы предыдущей версии
   (`src/test/fixtures/dbV7.ts`: снимок прошлого, не обновлять). Следующая миграция данных заводит свою фикстуру.
 - Новая таблица с естественным ключом дополняет `NaturalIdParts` и `NATURAL_KEY_TABLES` контрактной issue.
+
+### Синхронизация (#277, [ADR-0009](adr/0009-backend-sync-health-data.md), [ADR-0012](adr/0012-sync-wire-and-server-schema.md))
+
+Что решено — ADR-0009, раздел «Синхронизация»; как это устроено в коде и в Postgres — ADR-0012. Данные по-прежнему
+не покидают устройство: протокол, транспорт и серверная схема готовы, но их ещё никто не вызывает — движок поверх
+Dexie это #279, включение в интерфейсе — #133.
+
+```mermaid
+sequenceDiagram
+  participant M as Модуль
+  participant DB as Dexie + syncOutbox
+  participant E as Движок (#279)
+  participant P as protocol.ts (чистые функции)
+  participant C as client.ts (fetch)
+  participant S as Postgres: sync_push / changes_since
+
+  M->>DB: запись или softDelete (middleware ставит строку в очередь)
+  Note over E,S: push — очередь уходит пачками
+  E->>DB: читает очередь и её строки
+  E->>P: buildPush(outbox, rows, { deviceId })
+  P-->>E: изменения (SyncChange)
+  E->>C: push(changes, since = lastPulledRev)
+  C->>S: POST /rest/v1/rpc/sync_push
+  S-->>C: rev, подрезанное время, applied; непринятое — с версией сервера
+  E->>P: applyPushResult(results, local)
+  P-->>E: план: снять с очереди, записать победившие версии
+  Note over E,S: pull — изменения после курсора
+  E->>C: pull(lastPulledRev)
+  C->>S: GET /rest/v1/rpc/changes_since?since=rev
+  S-->>C: строки пользователя с rev больше курсора, включая tombstone
+  E->>P: applyPull(changes, local) → merge(local, remote)
+  P-->>E: план: put, remove, settled, conflicts, cursor
+  E->>DB: одна помеченная транзакция (в очередь не попадает), новый lastPulledRev
+```
+
+| Где                                               | Что                                                                                                                                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/sync/protocol.ts`                       | чистые правила: `buildPush`, `applyPull`, `applyPushResult`, `merge`, `isFullSyncDue`, `staleAfterFullPull`, `buildReplace`, `uniqueKeyOf`; типы `SyncChange`, `SyncPlan` |
+| `src/core/sync/client.ts`                         | транспорт: `createSyncClient({ backend, accessToken })` → `push` пачками, `pull` страницами, повтор с экспоненциальной задержкой, ошибка `SyncRequestError`               |
+| `infra/supabase/migrations/0001_sync_schema.sql`  | таблица на каждую таблицу из `TABLE_NAMES` (разделы `sync_rows`), RLS «только свои строки», `sync_push`, `changes_since`; применяет `infra/supabase/migrate.sh`           |
+| `src/test/fakeSyncServer.ts`                      | сервер одного пользователя в памяти с теми же правилами — для тестов протокола и движка без сети                                                                          |
+| `src/core/sync/protocol.scenarios.test.ts`        | таблица сценариев ADR-0009, п. 10: целые устройства, собранные только из чистых функций                                                                                   |
+| `infra/supabase/tests/migrations.test.sh` (Infra) | миграции на пустой базе, RLS на двух пользователях через настоящий API, правила `sync_push`                                                                               |
+
+Правила, на которые опираются следующие контракты:
+
+- **Версия строки на проводе — `SyncChange`**: `{ table, key, updatedAt, updatedBy, deletedAt?, data? }`; `data` —
+  строка без ключа и служебных полей, у tombstone её нет. На сервере запись лежит в `data jsonb` своей таблицы
+  (`tasks`, `sleep_logs`, …) рядом с колонками `user_id`, `id`, `rev`, `updated_at`, `updated_by`, `deleted_at`.
+- **Строка без записи в `syncOutbox` заменяется версией сервера; строка с записью решается `merge`**:
+  last-writer-wins по `updatedAt`, при равенстве — по `updatedBy`; tombstone — такая же версия; приём пищи
+  объединяет `items` по `id` (удалённый элемент — элемент с `deletedAt`), и удалённый приём пищи не побеждает
+  живой — удаление не видело продуктов другой стороны. Проигравшая локальная правка возвращается в `conflicts`.
+  Очередь превращает в изменения `buildPush(outbox, rows, { deviceId })` — `device.id` передаёт движок.
+- **Уникальный ключ не из `id`** (`UNIQUE_KEYS`: одна сессия программы на день и `&date` таблиц «одна на день»):
+  ключ принадлежит строке сервера, локальная строка с тем же ключом уступает — попадает в `remove`; если у неё
+  была неотправленная правка, та уходит в `conflicts`, а строка возвращается к версии сервера — **не удаляется**:
+  до ответа сервера она лежит tombstone со временем `YIELDED_AT`, запись очереди остаётся. Движок передаёт в
+  `applyPull` и строки, которые держат уникальные ключи изменений (`uniqueKeyOf`). Новый уникальный индекс у
+  синхронизируемой таблицы — строка в `UNIQUE_KEYS` и в серверной `sync_unique_key` (иначе падает
+  `src/core/sync/uniqueKeys.test.ts`).
+- **Сервер**: присваивает `rev` (одна последовательность на все таблицы), подрезает время дальше 5 минут вперёд до
+  своего (у записи и у элементов приёма пищи), хранит более позднюю версию, не даёт перезаписать или удалить приём
+  пищи, которого устройство не видело, не хранит двух живых строк одного уникального ключа (отправка оценивается
+  целиком: перестановка внутри неё принимается, изменение на занятый ключ — нет) и возвращает непринятому
+  изменению свою версию. **Отказ окончателен** (`applyPushResult`): версия сервера заменяет локальную, правка
+  уходит в `conflicts`; сливается только приём пищи. Писать в таблицы можно только через `sync_push`;
+  пользователь берётся из токена.
+- **Планы исполняет движок** (`SyncPlan`) в одной транзакции, помеченной для middleware очереди (ADR-0010), в
+  порядке: `remove`, затем `put` по порядку списка (строка может быть в обоих — уступила уникальный ключ и записана
+  заново), затем `settled` — снять запись очереди, только если её `updatedAt` не изменился. План не оставляет
+  запись очереди без строки (это было бы удалением пользователя); если после pull в очереди остались записи,
+  движок сразу повторяет push — слитый приём пищи ждёт отправки, уступившая ключ строка ждёт свою версию с сервера.
+- **Долгий офлайн и замена облака**: дольше 90 дней без синхронизации — полный pull и удаление строк, которых нет
+  ни на сервере, ни в очереди; восстановление копии с аккаунтом — `buildReplace` и отправка с `replace: true`.
+- **Чистота**: `src/core/sync/` не импортирует React, Dexie и `core/db.ts` (правило `logic-is-pure` в
+  `.dependency-cruiser.cjs`); исключения — `outbox.ts`, `tombstones.ts`, `naturalKeys.ts` и тесты. Файл движка с
+  Dexie добавляется в исключения контрактом #279.
+- **Новая синхронизируемая таблица** = строка в `TABLE_NAMES` + миграция с её серверной таблицей
+  (`create table public.<snake_case> partition of public.sync_rows for values in ('<имя>')` и политика RLS);
+  без миграции падает `src/core/sync/serverSchema.test.ts`.
