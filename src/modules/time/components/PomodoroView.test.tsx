@@ -6,6 +6,7 @@ import { db } from '../../../core/db';
 import { newRecord } from '../../../core/ids';
 import { atLocalTime } from '../../../core/logging/sleepTime';
 import type { Task } from '../../../core/types';
+import { RUNNING_SETTING_KEY } from '../data/pomodoroStore';
 import { createDefaultCategories, listCategories, startCategoryTimer } from '../data/timeStore';
 import { PomodoroView } from './PomodoroView';
 import { usePomodoro } from './usePomodoro';
@@ -31,6 +32,18 @@ function returnAfter(minutes: number) {
 async function startFocus(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: 'Начать фокус' }));
   await screen.findByText(/^Фокус · сессия/);
+}
+
+/**
+ * Every change of the timer mirrors the running phase into `settings` in the background (`syncRunningSetting`,
+ * `undefined` = not running). A test that changes the timer waits for that write: otherwise it ends with the write
+ * still going, and the write lands in the next test (#292).
+ */
+async function expectMirrored(phase: 'work' | 'shortBreak' | 'longBreak' | undefined) {
+  await waitFor(async () => {
+    const running = (await db.settings.get(RUNNING_SETTING_KEY))?.value as { phase: string } | undefined;
+    expect(running?.phase).toBe(phase);
+  });
 }
 
 beforeEach(async () => {
@@ -63,6 +76,7 @@ describe('PomodoroView', () => {
 
     returnAfter(5);
     expect(await within(timer).findByText('Готово к фокусу · сессия 2 из 4')).toBeInTheDocument();
+    await expectMirrored(undefined);
   });
 
   it('выбрана невыполненная задача: по завершении фокус-сессии создан TimeEntry с source pomodoro и taskId', async () => {
@@ -89,6 +103,7 @@ describe('PomodoroView', () => {
       end: NOW + 25 * MIN,
       date: '2026-11-02',
     });
+    await expectMirrored('shortBreak');
   });
 
   it('вкладка была в фоне 10 минут: при возврате оставшееся время верное', async () => {
@@ -99,6 +114,7 @@ describe('PomodoroView', () => {
     returnAfter(10);
     const timer = screen.getByRole('timer', { name: 'Pomodoro' });
     expect(await within(timer).findByText('15:00')).toBeInTheDocument();
+    await expectMirrored('work');
   });
 
   it('таймер переживает перезагрузку страницы', async () => {
@@ -111,6 +127,7 @@ describe('PomodoroView', () => {
     render(<Pomodoro />);
     const timer = await screen.findByRole('timer', { name: 'Pomodoro' });
     expect(within(timer).getByText('18:00')).toBeInTheDocument();
+    await expectMirrored('work');
   });
 
   it('меняю длительности: после сохранения значения применяются со следующей сессии и сохраняются', async () => {
@@ -134,6 +151,7 @@ describe('PomodoroView', () => {
     first.unmount();
     render(<Pomodoro />);
     expect(await screen.findByRole('button', { name: 'Длительности: 50 / 10 / 15 мин' })).toBeInTheDocument();
+    await expectMirrored('shortBreak');
   });
 
   it('Given я меняю длительности When нажимаю «Сохранить» Then они пишутся в settings под time.pomodoro, а не в localStorage, и попадают в экспорт', async () => {
@@ -181,6 +199,7 @@ describe('PomodoroView', () => {
     const user = userEvent.setup();
     await startFocus(user);
     expect(within(screen.getByRole('timer', { name: 'Pomodoro' })).getByText('30:00')).toBeInTheDocument();
+    await expectMirrored('work');
   });
 
   it('Given фаза кончилась, пока приложение было закрыто When оно открывается Then следующая фаза строится по сохранённым длительностям, а не по умолчанию', async () => {
@@ -206,6 +225,7 @@ describe('PomodoroView', () => {
       const saved = JSON.parse(localStorage.getItem('lifeos.time.pomodoro.state') ?? '{}');
       expect(saved).toMatchObject({ phase: 'shortBreak', startedAt: NOW - 5 * MIN, endsAt: NOW + 5 * MIN });
     });
+    await expectMirrored('shortBreak');
   });
 
   it('сохранить длительности не удалось: показана ошибка, прежние значения остаются', async () => {
@@ -256,6 +276,7 @@ describe('PomodoroView', () => {
     returnAfter(25);
     await waitFor(() => expect(vibrate).toHaveBeenCalledTimes(1));
     expect(shown).toEqual(['Фокус-сессия завершена — время отдохнуть']);
+    await expectMirrored('shortBreak');
   });
 
   it('уведомления ещё не разрешены: предлагается их включить', async () => {
@@ -278,6 +299,7 @@ describe('PomodoroView', () => {
     render(<Pomodoro />);
     await startFocus(user);
     expect((await db.timeEntries.get(id))?.end).toBe(NOW);
+    await expectMirrored('work');
   });
 
   it('остановка фокуса раньше времени записывает прошедшие минуты', async () => {
@@ -290,6 +312,7 @@ describe('PomodoroView', () => {
     await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
     expect((await db.timeEntries.toArray())[0]).toMatchObject({ source: 'pomodoro', start: NOW, end: NOW + 12 * MIN });
     expect(await screen.findByRole('button', { name: 'Начать фокус' })).toBeInTheDocument();
+    await expectMirrored(undefined);
   });
 
   it('категорий нет: предлагается добавить стартовый набор', async () => {
@@ -314,6 +337,7 @@ describe('PomodoroView', () => {
     await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
     expect(await screen.findByText(/^Перерыв · сессия/)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await expectMirrored('shortBreak');
   });
 
   it('фаза закончилась давно (приложение было закрыто): запись создаётся, но сигнала нет', async () => {
@@ -327,6 +351,7 @@ describe('PomodoroView', () => {
     await waitFor(async () => expect(await db.timeEntries.count()).toBe(1));
     expect(await screen.findByText(/^Готово к фокусу/)).toBeInTheDocument();
     expect(vibrate).not.toHaveBeenCalled();
+    await expectMirrored(undefined);
   });
 
   it('остановка с ошибкой записи оставляет таймер идти', async () => {
@@ -339,6 +364,7 @@ describe('PomodoroView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось записать фокус-сессию');
     expect(screen.getByRole('button', { name: 'Остановить' })).toBeInTheDocument();
     add.mockRestore();
+    await expectMirrored('work');
   });
 
   it('другая вкладка остановила таймер: эта вкладка следует за ней', async () => {
@@ -351,5 +377,6 @@ describe('PomodoroView', () => {
       window.dispatchEvent(new StorageEvent('storage', { key: 'other' }));
     });
     expect(await screen.findByRole('button', { name: 'Начать фокус' })).toBeInTheDocument();
+    await expectMirrored(undefined);
   });
 });

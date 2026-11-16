@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../core/db';
@@ -34,5 +34,13 @@ describe('TrainingPage', () => {
       fireEvent.focus(window);
     });
     expect(await screen.findByText('День отдыха')).toBeInTheDocument();
+    // The new day also marks Wednesday's session «пропущена» and carries its exercises on (#226), in the background:
+    // wait for that write, or it lands in the next test (#292).
+    await waitFor(async () =>
+      expect(await db.plannedSessions.where('date').equals('2026-11-04').first()).toMatchObject({
+        status: 'skipped',
+        carriedOut: expect.any(Array),
+      }),
+    );
   });
 });
