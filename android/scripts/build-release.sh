@@ -11,7 +11,8 @@
 #   LIFEOS_VERSION_NAME        optional versionName; on a tag v* — the tag without «v», else package.json
 #
 # Checks: apksigner verify of the APK, jarsigner of the AAB, both signed by the key from the keystore (not the debug
-# key), versionCode / versionName as asked, and the store checks of check-apk.sh — the same as for the debug APK.
+# key), versionCode / versionName as asked, the store checks of check-apk.sh — the same as for the debug APK — and no
+# «incompatible version of Kotlin» in the lint of the release build (check-kotlin-log.sh, #297).
 set -euo pipefail
 
 scripts=$(cd "$(dirname "$0")" && pwd)
@@ -42,8 +43,14 @@ expected_cert=$(keytool -list -v -keystore "$ANDROID_KEYSTORE_FILE" -storepass:e
   -alias "$ANDROID_KEY_ALIAS" | sed -n 's/^[[:space:]]*SHA256:[[:space:]]*//p' | sed -n 1p | fingerprint)
 
 rm -f "$apk" "$aab"
-(cd "$repo/android" && ./gradlew assembleRelease bundleRelease --no-daemon)
+gradle_log=$(mktemp)
+trap 'rm -f "$gradle_log"' EXIT
+# The lint of the release build runs every time (--rerun), and its log goes to check-kotlin-log.sh (#297): a module
+# compiled by a Kotlin newer than the one inside lint is only logged by Gradle, the check makes it a failure.
+(cd "$repo/android" && ./gradlew :app:lintVitalAnalyzeRelease --rerun assembleRelease bundleRelease --no-daemon \
+  --console=plain) 2>&1 | tee "$gradle_log"
 echo "собрано: $apk, $aab"
+"$scripts/check-kotlin-log.sh" "$gradle_log"
 
 build_tools="$(printf "%s\n" "${ANDROID_HOME:?ANDROID_HOME is not set}"/build-tools/*/ | sort -V | tail -1)"
 

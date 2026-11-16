@@ -268,6 +268,24 @@ tag ruleset на `v*` (создавать, двигать и удалять — 
 действия задания (как и всех workflow, #296, проверка `npm run lint:actions`) закреплены на SHA коммита, release
 собирается без кэшей npm и Gradle, keystore удаляется до выгрузки артефактов.
 
+Версии Kotlin Android-сборки (#297). Своего Kotlin-кода у приложения нет (`android/app` — Java), Kotlin приносят
+нативные плагины: `@capgo/capacitor-health` сам закрепляет Kotlin Gradle plugin и `kotlin-stdlib` (сейчас 2.4.21),
+`@capacitor/local-notifications` берёт `kotlin_version` проекта (без него — 2.0.21). Версия Kotlin проекта —
+`kotlin_version` в `android/variables.gradle`, она равна версии `@capgo/capacitor-health`: оба плагина собираются одним
+Kotlin. Третий Kotlin — внутри lint: AGP 8.13 несёт lint с Kotlin 2.2, а он не читает метаданные Kotlin 2.4 (Kotlin
+читает метаданные не новее своей версии +1), пишет «Module was compiled with an incompatible version of Kotlin» и
+перестаёт видеть код плагина, хотя сборка остаётся зелёной. Поэтому `android/gradle.properties` задаёт
+`android.experimental.lint.version=9.5.1` — lint из AGP 9.5.1 (Kotlin 2.4.20) при прежнем AGP 8.13: APK собирает тот же
+AGP, меняются только проверки lint. Переход на AGP 9 не взят: Capacitor 8 и его плагины рассчитаны на AGP 8.13 (AGP 9
+встраивает Kotlin и ломает `org.jetbrains.kotlin.android` в плагинах). Держат версии согласованными две проверки:
+`check-kotlin-versions.sh` (задание «Android debug APK») падает, если плагин закрепил Kotlin, отличный от
+`kotlin_version`; `check-kotlin-log.sh` (из `build-release.sh`, то есть на каждом PR через `test-release.sh` и в release)
+каждый раз заново запускает `lintVitalAnalyzeRelease` и падает на строке о несовместимом Kotlin. При обновлении плагина с
+новым Kotlin: поднять `kotlin_version` до его версии; если lint пишет о несовместимости — поднять
+`android.experimental.lint.version` до AGP, чей lint несёт Kotlin не старше версии плагина минус один минорный выпуск
+(версия Kotlin внутри lint — `META-INF/compiler.version` артефакта `com.android.tools.external.com-intellij:kotlin-compiler`
+той же версии, что lint: AGP 9.5.1 → lint 32.5.1). Когда AGP проекта догонит эту версию lint, свойство убрать.
+
 Навигация (#106): нижняя панель — «Сегодня», до трёх закреплённых вкладок (`navOrder`; сейчас задачи, привычки,
 время) и «Блоки» → экран «Все блоки» с модулями по группам (`group`: план, тело, ум, знания, система) и строкой
 смысла (`summary`). Открыт незакреплённый блок — подсвечены «Блоки». Настраиваемые закрепления — отдельная issue.
