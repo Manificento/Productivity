@@ -43,7 +43,7 @@ describe('Медитация', () => {
   });
 
   it('Given сессия идёт When время идёт Then круг дыхания анимируется по паттерну, остаток времени виден; пауза вкладки отсчёт не ломает', async () => {
-    const { user } = setup();
+    const { user, unmount } = setup();
     await user.click(screen.getByRole('button', { name: 'Начать' }));
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('05:00');
     const circle = screen.getByTestId('breath-circle');
@@ -61,6 +61,10 @@ describe('Медитация', () => {
       vi.advanceTimersByTime(250);
     });
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('03:00');
+    // Leaving mid-session keeps the 2 minutes: leave on the test's clock and wait for that write. Left to the shared
+    // cleanup, the page would unmount after `useRealTimers()` and write a session days long into the next test (#292).
+    unmount();
+    await vi.waitFor(async () => expect(await db.meditationSessions.count()).toBe(1));
   });
 
   it('Given таймер дошёл до нуля When сессия завершается Then сигнал и запись в meditationSessions с длительностью и видом', async () => {
@@ -164,13 +168,17 @@ describe('Медитация: план и библиотека', () => {
   });
 
   it('Given библиотека When я выбираю сессию вида focus Then текст-гид по шагам с таймингом; не меньше 3 сессий на каждый вид', async () => {
-    const { user } = setup();
+    const { user, unmount } = setup();
     await user.click(screen.getByRole('radio', { name: 'фокус' }));
     await user.click(screen.getByRole('button', { name: /Одна точка/ }));
     expect(screen.getAllByText(/\(\d+ с\)/).length).toBeGreaterThanOrEqual(3);
     await user.click(screen.getByRole('button', { name: /Начать «Одна точка»/ }));
     expect(screen.getByText(/шаг 1 из 3/)).toBeInTheDocument();
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('03:00');
+    // Leave on the test's clock: a session under a minute is not kept, so nothing is written. Left to the shared
+    // cleanup, the page would unmount after `useRealTimers()` and write a session days long into the next test (#292).
+    unmount();
+    expect(await db.meditationSessions.count()).toBe(0);
   });
 
   it('Given план выполнен When день закончился Then meditationMinYesterday доступен движку на следующий день', async () => {
@@ -209,10 +217,14 @@ describe('Медитация: план и библиотека', () => {
     await db.lifeEvents.add(
       newRecord({ title: 'Экзамен', type: 'exam', date: '2026-11-03', importance: 2, prepDays: 7 }, NOW) as never,
     );
-    const { user } = setup();
+    const { user, unmount } = setup();
     await user.click(await screen.findByRole('button', { name: 'Начать по плану' }));
     expect(screen.getByLabelText('Осталось времени')).toHaveTextContent('10:00');
     expect(screen.getByTestId('breath-circle')).toBeInTheDocument();
+    // Leave on the test's clock: a session under a minute is not kept, so nothing is written. Left to the shared
+    // cleanup, the page would unmount after `useRealTimers()` and write a session days long into the next test (#292).
+    unmount();
+    expect(await db.meditationSessions.count()).toBe(0);
   });
 
   async function finishThreeMinutes() {

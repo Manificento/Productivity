@@ -69,6 +69,10 @@ describe('alarm card on «Сон» (#129)', () => {
     // It rings with the app closed; the user switches it off on the alarm screen.
     await act(async () => alarm.dismiss(WINDOW_START + 120_000));
     await waitFor(async () => expect((await db.settings.get('health.alarm.dismissal'))?.value).toBeDefined());
+    // The switch-off is also remembered in the alarm state, the write after the one above (#292: wait for it).
+    await waitFor(async () =>
+      expect(await loadAlarmState()).toMatchObject({ lastDismissedAt: WINDOW_START + 120_000 }),
+    );
   });
 
   it('Given звонит будильник When я нажимаю «Выключить» Then открывается LifeOS на «Сне» (#/health)', async () => {
@@ -89,6 +93,8 @@ describe('alarm card on «Сон» (#129)', () => {
     render(<AlarmBackground />);
     await act(async () => alarm.dismiss(NOW - 2 * 86_400_000));
     await waitFor(async () => expect((await db.settings.get('health.alarm.dismissal'))?.value).toBeDefined());
+    // The switch-off is also remembered in the alarm state, the write after the one above (#292: wait for it).
+    await waitFor(async () => expect(await loadAlarmState()).toMatchObject({ lastDismissedAt: NOW - 2 * 86_400_000 }));
     expect(window.location.hash).toBe('#/tasks');
   });
 
@@ -233,6 +239,8 @@ describe('alarm card on «Сон» (#129)', () => {
     expect(log?.stages?.[0]?.start).toBe(bed);
     await waitFor(() => expect(sensors.running).toBe(false));
     expect(sensors.buffer).toEqual([]);
+    // After the night is saved the switch-off offer is dropped, a write of its own (#292: wait for it).
+    await waitFor(async () => expect(await db.settings.get('health.alarm.dismissal')).toBeUndefined());
   });
 
   it('without night data «Я встал» records the night as before, without stages', async () => {
@@ -246,6 +254,8 @@ describe('alarm card on «Сон» (#129)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Записать сон' }));
     await waitFor(async () => expect(await db.sleepLogs.count()).toBe(1));
     expect((await db.sleepLogs.toArray())[0]?.stages).toBeUndefined();
+    // After the night is saved the switch-off offer is dropped, a write of its own (#292: wait for it).
+    await waitFor(async () => expect(await db.settings.get('health.alarm.dismissal')).toBeUndefined());
   });
 
   it('«Записать сон» tapped at once still saves the stages: the save reads the buffer itself', async () => {
@@ -261,6 +271,8 @@ describe('alarm card on «Сон» (#129)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Я встал' }));
     fireEvent.click(screen.getByRole('button', { name: 'Записать сон' })); // before the preview has loaded
     await waitFor(async () => expect((await db.sleepLogs.toArray())[0]?.stages?.length).toBeGreaterThan(0));
+    // After the night is saved the switch-off offer is dropped, a write of its own (#292: wait for it).
+    await waitFor(async () => expect(await db.settings.get('health.alarm.dismissal')).toBeUndefined());
   });
 
   it('a failing clear still stops the recording; the night stays saved', async () => {
@@ -287,5 +299,7 @@ describe('alarm card on «Сон» (#129)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Записать сон' }));
     await waitFor(async () => expect(await db.sleepLogs.count()).toBe(1));
     await waitFor(() => expect(sensors.running).toBe(false));
+    // After the night is saved the switch-off offer is dropped, a write of its own (#292: wait for it).
+    await waitFor(async () => expect(await db.settings.get('health.alarm.dismissal')).toBeUndefined());
   });
 });

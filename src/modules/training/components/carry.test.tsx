@@ -55,6 +55,9 @@ describe('adaptive plan on the training screen (#226)', () => {
       exercises: [{ name: 'Жим лёжа', sets: [{ reps: 8 }] }],
     });
     render(<ProgramsSection today={TODAY} />);
+    // On opening, the screen carries Monday's missed exercise into today's session (a write in the background): wait
+    // for it, so the test neither reads a half-done plan nor ends with the write still going (#292).
+    await screen.findByText(/перенесено с 2 ноября/);
     fireEvent.click(await screen.findByRole('button', { name: 'Баланс групп мышц' }));
     const dialog = await screen.findByRole('dialog', { name: 'Баланс групп мышц' });
     const current = await within(dialog).findByRole('region', { name: 'Эта неделя' });
