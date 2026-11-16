@@ -6,7 +6,8 @@ name: Infra
 # runs over SSH against a test server (the runner itself, MinIO instead of the bucket) — issue #284. The SQL
 # migrations of infra/supabase/migrations/ are applied to an empty database and row level security is checked with
 # two users through the real API — issue #277. The account — the sign-in letter (caught by a mail trap, no real mail),
-# profiles, the consent journal, the age rule and account deletion — is checked the same way — issue #278.
+# profiles, the consent journal, the age rule and account deletion — is checked the same way — issue #278; the
+# counters of sign-in attempts are also run by themselves in the pinned Kong image, with their memory zone full.
 on:
   pull_request:
     paths: ['infra/**', '.github/workflows/infra.yml', '.github/workflows/deploy-kz.yml']
@@ -72,6 +73,14 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: infra/supabase/tests/account.test.sh
+
+  otp-attempts:
+    name: Sign-in attempts — the limit per client, the counters in a full memory zone
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: infra/supabase/tests/otp-attempts.test.sh
 
   deploy-remote:
     name: Deploy KZ over SSH to a test server

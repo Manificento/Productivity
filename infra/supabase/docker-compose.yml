@@ -40,8 +40,11 @@ services:
       KONG_DNS_VALID_TTL: 5
       KONG_PLUGINS: cors,key-auth,acl,rate-limiting,request-termination,otp-attempts
       KONG_LUA_PACKAGE_PATH: /home/kong/plugins/?.lua;;
-      # The counters of `otp-attempts`: an address and a number each, about a hundred thousand of them.
-      KONG_NGINX_HTTP_LUA_SHARED_DICT: lifeos_otp_attempts 10m
+      # The counters of `otp-attempts`, one per e-mail address and one per client address under sign-in attempts. Every
+      # counter takes the same room whatever the length of the address: 32m holds at least 250 000 of them
+      # (tests/otp-attempts.test.sh measures it in this image). A full zone refuses new addresses and keeps the
+      # counters it has; with 60 attempts an hour per client it takes more than four thousand client addresses.
+      KONG_NGINX_HTTP_LUA_SHARED_DICT: lifeos_otp_attempts 32m
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       # One more nginx server inside Kong, on a port that is not published: http://kong:8088/mail/<template>.
@@ -94,7 +97,7 @@ services:
       # a trusted reverse proxy named (KONG_TRUSTED_IPS above). Without this header Auth applies no such limit at all.
       # These limits are a token bucket of 30 per address and route, refilled at 30 per 5 minutes (150 for token
       # refreshes). What they do not give is added in Kong (volumes/api/kong.yml): sign-in attempts per ACCOUNT and
-      # letter requests per client per hour.
+      # per client per hour, letter requests per client per hour.
       GOTRUE_RATE_LIMIT_HEADER: X-Real-IP
       # Letters per hour for the whole region — one counter for everybody, in fixed hours from the start of Auth.
       GOTRUE_RATE_LIMIT_EMAIL_SENT: ${RATE_LIMIT_EMAIL_SENT:-100}

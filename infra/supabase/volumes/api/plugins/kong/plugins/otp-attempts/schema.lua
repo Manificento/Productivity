@@ -13,6 +13,9 @@ return {
           { limit = { type = "integer", required = true, default = 10, gt = 0 } },
           -- The window, seconds: the lifetime of a code (OTP_EXPIRY).
           { window = { type = "integer", required = true, default = 900, gt = 0 } },
+          -- How many sign-in attempts one client address gets per its window, whatever accounts they name.
+          { client_limit = { type = "integer", required = true, default = 60, gt = 0 } },
+          { client_window = { type = "integer", required = true, default = 3600, gt = 0 } },
           -- Digits in the code of the letter (GOTRUE_MAILER_OTP_LENGTH).
           { otp_length = { type = "integer", required = true, default = 6, between = { 6, 10 } } },
         },

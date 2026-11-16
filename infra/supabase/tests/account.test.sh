@@ -2,7 +2,8 @@
 # Infra checks of issue #278 — the account, against a real stack: sign-in by e-mail (one letter with a six-digit
 # code and a link, read from the mail trap — no real mail is sent), the session, profiles with the region, the
 # append-only consent journal with row level security on two users, the age rule on the server, delete_account();
-# no passwords, sign-in attempts counted per account, letters limited per client and per region.
+# no passwords, sign-in attempts counted per account and limited per client, letters limited per client and per region.
+# The counter of attempts in a full memory zone is checked without a stack — otp-attempts.test.sh.
 # Needs Docker, jq and openssl. Run: infra/supabase/tests/account.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -18,7 +19,11 @@ same() {
 section 'подготовка: пустой стек kz с почтовой ловушкой (профиль test), миграции'
 # Users are NOT confirmed automatically here: the only way in is the code or the link of the letter.
 # RATE_LIMIT_EMAIL_SENT is not the default on purpose: the region's budget of letters is a setting.
+# The stack stands as on a server behind the reverse proxy: Kong takes the client's address from X-Real-IP
+# (KONG_TRUSTED_IPS, as provision.sh sets it). The test plays the proxy and names the client in every request — so a
+# check can come from another client. Without a proxy the header means nothing: the last section.
 new_region kz 8000 COMPOSE_PROFILES=test MAIL_TRAP_PORT="$MAIL_TRAP_PORT" SITE_URL="$SITE" \
+  KONG_TRUSTED_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 \
   SMTP_HOST=mail SMTP_PORT=1025 SMTP_ADMIN_EMAIL=noreply@lifeos.test SMTP_MAX_FREQUENCY=1s RATE_LIMIT_EMAIL_SENT=60
 use_region kz
 "$INFRA_DIR/deploy.sh" || exit 1
@@ -32,11 +37,13 @@ as_user() {
   sql -q -c 'set role authenticated' \
     -c "set \"request.jwt.claims\" = '{\"sub\":\"$1\",\"role\":\"authenticated\"}'" -c "$2" 2>&1
 }
+# The client address the «proxy» names; `client=<address> <function> …` makes one request come from another client.
+client=203.0.113.1
 # call <token or ''> <method> <path> [json]: prints the HTTP status, leaves the response in $WORK/body.json.
 call() {
   local token=$1 method=$2 path=$3 json=${4:-}
   local args=(-s -m 20 -o "$WORK/body.json" -w '%{http_code}' -X "$method" "$api$path" -H "apikey: $ANON_KEY"
-    -H 'Prefer: return=representation')
+    -H 'Prefer: return=representation' -H "X-Real-IP: $client" -H "X-Forwarded-For: $client")
   [[ -n $token ]] && args+=(-H "Authorization: Bearer $token")
   [[ -n $json ]] && args+=(-H 'Content-Type: application/json' -d "$json")
   curl "${args[@]}" || true
@@ -78,7 +85,11 @@ letter_link() {
 verify_code() { call '' POST /auth/v1/verify "{\"type\":\"email\",\"email\":\"$1\",\"token\":\"$2\"}"; }
 # open_link <url> [curl options…]: opens a link of a letter the way a browser does, without following the redirect.
 # Prints the HTTP status.
-open_link() { curl -s -m 10 -o /dev/null -w '%{http_code}' "${@:2}" "$1"; }
+open_link() { curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-Real-IP: $client" "${@:2}" "$1"; }
+# per_client: after a sign-in attempt — « клиент» when the gateway's limit per client refused it, else nothing.
+per_client() { if [[ $(field '.msg') == *'из вашей сети'* ]]; then echo ' клиент'; else echo; fi; }
+# tally: the different lines of stdin with their numbers — "15 429 клиент", several joined by a comma.
+tally() { sort | uniq -c | sed -E 's/^ +//' | paste -sd ','; }
 # auth_directly <path> <json>: a POST straight to Auth inside the Docker network, past Kong. Prints the response.
 auth_directly() {
   compose exec -T auth wget -q -O - --header 'Content-Type: application/json' --post-data "$2" "http://localhost:9999$1"
@@ -153,7 +164,7 @@ boris_verifier=$(new_verifier)
 request_letter boris@example.com "$boris_verifier" > /dev/null
 check 'письмо Борису пришло' wait_letters boris@example.com 1
 last_letter boris@example.com
-redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' "$(letter_link)")
+redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' -H "X-Real-IP: $client" "$(letter_link)")
 check 'ссылка возвращает в приложение с ?code= в запросе адреса — до #, фрагмент остаётся маршруту' \
   grep -qE "^$SITE/?\?code=[0-9a-f-]{36}\$" <<< "$redirect"
 link_code=${redirect##*code=}
@@ -172,7 +183,7 @@ sleep 1 # SMTP_MAX_FREQUENCY
 request_letter boris@example.com "$boris_verifier2" > /dev/null
 check 'повторный вход Бориса (адрес уже известен): письмо пришло' wait_letters boris@example.com 2
 last_letter boris@example.com
-redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' "$(letter_link)")
+redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' -H "X-Real-IP: $client" "$(letter_link)")
 same '…ссылка из него (type=magiclink) так же возвращает в приложение с ?code=, и код меняется на сессию' \
   "$(grep -c 'type=magiclink' <<< "$(letter_link)")$(exchange "${redirect##*code=}" "$boris_verifier2" && body '.user.email')" \
   '1200"boris@example.com"'
@@ -395,6 +406,7 @@ check '…id нового аккаунта другой' test "$(field '.user.id
 section 'перебор кода одного аккаунта: 10 попыток входа на адрес за 15 минут, от кого бы они ни шли'
 # Auth counts code checks per client address only, and a wrong code changes nothing: with many addresses the whole
 # six-digit space could be tried. The gateway counts the attempts per account (plugin otp-attempts in kong.yml).
+# Every guess below comes from another client address.
 target_verifier=$(new_verifier)
 request_letter target@example.com "$target_verifier" > /dev/null
 check 'письмо для адреса-цели пришло' wait_letters target@example.com 1
@@ -421,17 +433,19 @@ same '…код цели при этом цел: сессий у неё нет' 
   "$(sql -c "select count(*) from auth.sessions s join auth.users u on u.id = s.user_id where u.email = 'target@example.com'")" 0
 # Twelve wrong codes for one address, written in different case: ten are checked, the rest are not.
 guesses=$(for i in $(seq 1 12); do
-  if ((i % 2)); then verify_code target@example.com "$(wrong_guess "$i")"; else verify_code Target@Example.COM "$(wrong_guess "$i")"; fi
+  if ((i % 2)); then address=target@example.com; else address=Target@Example.COM; fi
+  client=198.51.100.$i verify_code "$address" "$(wrong_guess "$i")"
   echo
 done)
-same 'двенадцать неверных кодов для одного адреса: десять проверены (403), дальше 429' \
+same 'двенадцать неверных кодов для одного адреса от двенадцати клиентов: десять проверены (403), дальше 429' \
   "$(paste -sd ' ' <<< "$guesses")" '403 403 403 403 403 403 403 403 403 403 429 429'
 same '…после этого не проходит и верный код' "$(verify_code target@example.com "$target_code")" 429
 same '…и ссылка из письма' "$(open_link "$target_link")" 429
 bypass=$(for path in /auth/v1//verify /auth/v1/./verify /auth/v1/%76erify /auth/v1/x/../verify /auth/v1/verify/ \
   /auth/v1/%2Fverify /auth/v1/verify%2F /auth/v1/x/..%2Fverify /auth/v1/VERIFY //auth/v1/verify; do
   curl -s -m 10 -o /dev/null -w '%{http_code}\n' --path-as-is -X POST "$api$path" -H "apikey: $ANON_KEY" \
-    -H 'Content-Type: application/json' -d "{\"type\":\"email\",\"email\":\"target@example.com\",\"token\":\"$target_code\"}"
+    -H "X-Real-IP: $client" -H 'Content-Type: application/json' \
+    -d "{\"type\":\"email\",\"email\":\"target@example.com\",\"token\":\"$target_code\"}"
 done)
 same '…и другой записью того же пути счётчик не обойти: каждая — 429 или 404, ни одна не дошла до проверки кода' \
   "$(grep -cvE '^(429|404)$' <<< "$bypass")" 0
@@ -439,10 +453,40 @@ same '…сессий у цели по-прежнему нет' \
   "$(sql -c "select count(*) from auth.sessions s join auth.users u on u.id = s.user_id where u.email = 'target@example.com'")" 0
 same 'другого адреса это не касается: его попытка проверена → 403' "$(verify_code boris@example.com 000000)" 403
 
+section 'попытки входа одного клиента: 60 в час, на какие бы аккаунты они ни шли'
+# Without a limit per client one address could send attempts for ever new accounts — each a new counter in the
+# gateway's memory — or use up the ten attempts of any number of accounts it knows. The gateway gives a client
+# address 60 attempts an hour (client_limit of otp-attempts in kong.yml) and counts what it refuses for no account.
+# Each line of the flood: the HTTP status and « клиент» when the limit per client refused the attempt.
+flooder=203.0.113.60
+flood=$(for i in $(seq 1 75); do
+  client=$flooder verify_code "nobody-$i@example.com" 000000
+  per_client
+done)
+same 'один клиент шлёт 75 попыток, каждую для нового аккаунта: первые 60 шлюз передаёт Auth' \
+  "$(head -n 60 <<< "$flood" | grep -c 'клиент')" 0
+same '…61-й и следующим отвечает шлюз, до Auth: 429 «слишком много попыток входа из вашей сети»' \
+  "$(tail -n 15 <<< "$flood" | tally)" '15 429 клиент'
+flood=$(for i in $(seq 1 12); do
+  client=$flooder verify_code bystander@example.com 000000
+  per_client
+done)
+same '…и ещё 12 его попыток для одного аккаунта — тоже' "$(tally <<< "$flood")" '12 429 клиент'
+same '…этому аккаунту они не засчитаны: его попытка от другого клиента проверена → 403' \
+  "$(client=203.0.113.70 verify_code bystander@example.com 000000)" 403
+same '…а счётчик цели никуда не делся: её верный код по-прежнему → 429 «слишком много попыток для этого адреса»' \
+  "$(client=203.0.113.70 verify_code target@example.com "$target_code" && body '.msg | startswith("Слишком много попыток входа для этого адреса")')" \
+  429true
+# A burst is counted like a row: every attempt is counted before it goes on, not after an answer (burst.py opens all
+# the connections first and then sends all the requests).
+burst=$(python3 -I "$TESTS_DIR/burst.py" "$KONG_HTTP_PORT" 600 203.0.113.80)
+same '600 попыток одного клиента разом, каждая для нового аккаунта: Auth переданы ровно 60, остальным 540 — 429 «из вашей сети»' \
+  "$(grep -vc 'из вашей сети' <<< "$burst") и $(grep -c '^429 .*из вашей сети' <<< "$burst")" '60 и 540'
+
 section 'письма: один клиент не оставляет регион без писем входа'
 # Auth sends RATE_LIMIT_EMAIL_SENT letters an hour for the whole region and lets one client address ask for 30 at
 # once — on each of several routes. The gateway gives a client address 10 letter requests per clock hour and closes
-# the other routes (checked above). Every request of this test comes from one address.
+# the other routes (checked above). Every request for a letter in this test comes from one client address.
 same 'бюджет писем региона — настройка RATE_LIMIT_EMAIL_SENT' \
   "$(compose exec -T auth printenv GOTRUE_RATE_LIMIT_EMAIL_SENT | tr -d '\r')" 60
 # ask_letters <tag>: 15 requests for letters to 15 new addresses. Prints the HTTP statuses, one per line.
@@ -469,24 +513,32 @@ check "…писем на эти адреса ушло не больше 10 за
 same '…записать запрос другим путём — тот же предел или 404' \
   "$(for path in /auth/v1//otp /auth/v1/otp/ /auth/v1/%6ftp /auth/v1/%2Fotp /auth/v1/x/../otp; do
     curl -s -m 10 -o /dev/null -w '%{http_code}\n' --path-as-is -X POST "$api$path" -H "apikey: $ANON_KEY" \
-      -H 'Content-Type: application/json' -d '{"email":"flood-path@example.com","create_user":true}'
+      -H "X-Real-IP: $client" -H 'Content-Type: application/json' \
+      -d '{"email":"flood-path@example.com","create_user":true}'
   done | grep -cvE '^(429|404)$')" 0
 # «Another client» is a request that reaches Auth from another address — here from inside the Docker network.
 same 'письма региона при этом не кончились: запрос другого клиента Auth принимает' \
   "$(auth_directly /otp '{"email":"other-client@example.com"}')" '{}'
 check '…и его письмо приходит' wait_letters other-client@example.com 1
 
-section 'перебор кода с одного адреса клиента: Auth ограничивает число проверок, подделать адрес заголовком нельзя'
-# Last on purpose: it uses up the attempts of this address for the next five minutes. Every guess names another
-# account, so the limit per account (above) is not what answers here.
-guesses=$(for i in $(seq 1 45); do
-  curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST "$api/auth/v1/verify" -H "apikey: $ANON_KEY" \
-    -H 'Content-Type: application/json' -H "X-Real-IP: 10.0.0.$i" -H "X-Forwarded-For: 10.0.0.$i" \
-    -d "{\"type\":\"email\",\"email\":\"nobody$i@example.com\",\"token\":\"$(printf '%06d' "$i")\"}"
+section 'без обратного прокси (KONG_TRUSTED_IPS пуст) адрес клиента — тот, с которого он подключился: заголовком его не подделать'
+# Last on purpose: Kong is started anew (its counters with it), and the attempts of this machine's address are used
+# up. Every guess names another client address in the headers and another account, so the limit per account (above)
+# is not what answers here.
+sed -i 's/^KONG_TRUSTED_IPS=.*/KONG_TRUSTED_IPS=/' "$WORK/kz.env"
+use_region kz
+check 'deploy.sh с пустым KONG_TRUSTED_IPS завершается успешно' env SKIP_PULL=1 "$INFRA_DIR/deploy.sh"
+same '…Kong больше не верит ничьему X-Real-IP' "$(compose exec -T kong printenv KONG_TRUSTED_IPS | tr -d '\r')" ''
+# 65 wrong codes from this machine; each line — the HTTP status and « клиент» when the limit per client refused it.
+guesses=$(for i in $(seq 1 65); do
+  client=10.0.0.$i verify_code "nobody$i@example.com" "$(printf '%06d' "$i")"
+  per_client
 done)
-check 'после 30 попыток за 5 минут сервер отвечает 429, хотя каждая попытка называет другой адрес клиента и другой аккаунт' \
-  test "$(grep -c '^403$' <<< "$guesses")" -le 30 -a "$(grep -c '^429$' <<< "$guesses")" -ge 15
-same '…и ни одна попытка не угадала' "$(grep -c '^200$' <<< "$guesses")" 0
+check 'Auth: после 30 проверок кода за 5 минут отвечает 429, хотя каждая попытка называет другой адрес клиента и другой аккаунт' \
+  test "$(head -n 45 <<< "$guesses" | grep -c '^403$')" -le 30 -a "$(head -n 45 <<< "$guesses" | grep -c '^429$')" -ge 15
+same 'шлюз: для него все попытки — одного клиента: первые 60 переданы Auth, с 61-й по 65-ю — 429 «из вашей сети»' \
+  "$(head -n 60 <<< "$guesses" | grep -c 'клиент') и $(tail -n 5 <<< "$guesses" | tally)" '0 и 5 429 клиент'
+same '…и ни одна попытка не угадала' "$(grep -c '^200' <<< "$guesses")" 0
 
 same 'после всех входов этого теста ни у одной учётной записи нет пароля' "$(users_with_password)" 0
 

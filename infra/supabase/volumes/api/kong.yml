@@ -22,8 +22,10 @@ acls:
 services:
   ## The code and the link of the sign-in letter. No API key: a link opened from a letter has none.
   ## The plugin otp-attempts (plugins/kong/plugins/otp-attempts/) counts the attempts per ACCOUNT — Auth counts them
-  ## only per client address — and lets through only requests that name their account: limit attempts per address
-  ## in window seconds (the lifetime of a code, OTP_EXPIRY); otp_length is GOTRUE_MAILER_OTP_LENGTH.
+  ## only per client address — and lets through only requests that name their account: limit attempts per e-mail
+  ## address in window seconds (the lifetime of a code, OTP_EXPIRY); otp_length is GOTRUE_MAILER_OTP_LENGTH.
+  ## Before that it gives one client address client_limit attempts in client_window seconds, whatever accounts they
+  ## name: what it refuses there is counted for no account.
   - name: auth-v1-open
     url: http://auth:9999/verify
     routes:
@@ -36,6 +38,8 @@ services:
         config:
           limit: 10
           window: 900
+          client_limit: 60
+          client_window: 3600
           otp_length: 6
   - name: auth-v1-open-callback
     url: http://auth:9999/callback
