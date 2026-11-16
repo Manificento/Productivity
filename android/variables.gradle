@@ -14,4 +14,8 @@ ext {
     androidxJunitVersion = '1.3.0'
     androidxEspressoCoreVersion = '3.7.0'
     cordovaAndroidVersion = '14.0.1'
+    // One Kotlin for the project and the native plugins (#297): the version @capgo/capacitor-health pins; the plugins
+    // that take the project's (@capacitor/local-notifications) build with it. check-kotlin-versions.sh keeps them
+    // equal, docs/architecture.md, «Release-сборка Android» — what to change on an update.
+    kotlin_version = '2.4.21'
 }
