@@ -27,7 +27,8 @@ import {
  */
 export async function requestSignIn(email: string, options: { redirectTo?: string; now?: number } = {}): Promise<void> {
   const backend = requireSignInBackend();
-  const address = email.trim();
+  // Auth keeps addresses in lower case; the code is later checked against the address as it was sent.
+  const address = email.trim().toLowerCase();
   if (!address.includes('@')) throw new AccountError('invalid_email');
   // Asking for a letter while signed in is «sign in as somebody else»: the current session ends first.
   if ((await readStoredAccount())?.state === 'signedIn') await signOut(options.now);
@@ -72,10 +73,15 @@ export async function completeSignIn(
   if (pending?.state !== 'pending') throw new AccountError('no_pending_sign_in');
   const backend = backendFor(pending.region);
   if (!backend) throw new AccountError('unavailable');
-  const issued =
-    'code' in proof
-      ? await verifyCode(backend, pending.email, proof.code.trim())
-      : await exchangeLinkCode(backend, proof.linkCode, pending.verifier);
+  let issued;
+  if ('code' in proof) {
+    // «123 456» is the same code; anything that is not six digits is not worth one of the server's few attempts.
+    const code = proof.code.replace(/\s+/g, '');
+    if (!/^\d{6}$/.test(code)) throw new AccountError('invalid_code');
+    issued = await verifyCode(backend, pending.email, code);
+  } else {
+    issued = await exchangeLinkCode(backend, proof.linkCode, pending.verifier);
+  }
   await writeStoredAccount(sessionFrom(issued, backend, now));
   // The consents given on another device: without them the sign-in still stands — `refreshConsents()` can be
   // called again when the network is back.

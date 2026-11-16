@@ -54,7 +54,7 @@ describe('contract #278: вход по email', () => {
     await waitFor(() => expect(account.result.current).toEqual({ status: 'signedOut' }));
 
     // One request for one letter, to the Auth of the region the build is configured for.
-    await requestSignIn(` ${ANNA} `, { now: NOW });
+    await requestSignIn(' Anna@Example.com ', { now: NOW });
     expect(server.requests).toHaveLength(1);
     const [asked] = server.requests;
     expect(`${backendFor('kz')?.url}${asked.path}`).toBe('https://api.kz.example/auth/v1/otp');
@@ -71,7 +71,8 @@ describe('contract #278: вход по email', () => {
     await waitFor(() => expect(account.result.current).toEqual({ status: 'pending', email: ANNA, region: 'kz' }));
 
     // The six digits, typed in the app (the native shell has no other way).
-    await completeSignIn({ code: ` ${server.letterTo(ANNA).code} ` }, NOW);
+    const { code } = server.letterTo(ANNA);
+    await completeSignIn({ code: ` ${code.slice(0, 3)} ${code.slice(3)} ` }, NOW);
     expect(server.requests[1]).toMatchObject({
       method: 'POST',
       path: '/auth/v1/verify',
@@ -139,6 +140,15 @@ describe('contract #278: вход по email', () => {
   it('неверный или использованный код: вход не выполнен, можно ввести код ещё раз', async () => {
     await requestSignIn(ANNA, { now: NOW });
     await expect(completeSignIn({ code: '000000' }, NOW)).rejects.toMatchObject({ kind: 'invalid_code', status: 403 });
+    // What is not six numerals never reaches the server: its attempts are few.
+    const before = server.requests.length;
+    for (const typed of ['', '12345', '1234567', 'abcdef', '12345a']) {
+      await expect(completeSignIn({ code: typed }, NOW)).rejects.toMatchObject({
+        kind: 'invalid_code',
+        status: undefined,
+      });
+    }
+    expect(server.requests).toHaveLength(before);
     expect(await storedSession()).toMatchObject({ state: 'pending', email: ANNA });
     await completeSignIn({ code: server.letterTo(ANNA).code }, NOW);
     expect(await storedSession()).toMatchObject({ state: 'signedIn', email: ANNA });
