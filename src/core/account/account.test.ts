@@ -49,6 +49,14 @@ const storedSession = async () => (await db.settings.get('account.session'))?.va
 const accountKeys = async () =>
   (await db.settings.toArray()).map((row) => row.key).filter((key) => key.startsWith('account.'));
 const paths = () => server.requests.map((request) => `${request.method} ${request.path}`);
+// Captured before any test installs fake timers: the wait below runs on the real clock, like the database.
+const realSetTimeout = globalThis.setTimeout;
+/** Waits until the app has sent its `count`-th request. */
+async function sent(count: number): Promise<void> {
+  while (vi.mocked(globalThis.fetch).mock.calls.length < count) {
+    await new Promise((resolve) => realSetTimeout(resolve, 1));
+  }
+}
 const addTask = () => db.tasks.add({ id: 't1', title: 'Задача', priority: 2, tags: [], createdAt: 1, updatedAt: 1 });
 
 describe('contract #278: вход по email', () => {
@@ -185,13 +193,52 @@ describe('contract #278: вход по email', () => {
     expect(await storedSession()).toMatchObject({ state: 'pending' });
   });
 
-  it('без Web Crypto (не HTTPS) проверочная строка уходит как plain — ссылка всё равно работает', async () => {
+  it('без Web Crypto (страница не в защищённом контексте) вход недоступен: проверочная строка не уходит на сервер в открытом виде, письмо не запрашивается', async () => {
     const subtle = vi.spyOn(globalThis.crypto, 'subtle', 'get').mockReturnValue(undefined as unknown as SubtleCrypto);
-    await requestSignIn(ANNA, { now: NOW });
+    await expect(requestSignIn(ANNA, { now: NOW })).rejects.toMatchObject({ kind: 'unavailable' });
     subtle.mockRestore();
-    expect(server.letterTo(ANNA).method).toBe('plain');
-    await completeSignIn({ linkCode: server.letterTo(ANNA).linkCode }, NOW);
-    expect(await storedSession()).toMatchObject({ state: 'signedIn' });
+    expect(server.requests).toHaveLength(0);
+    expect(server.letters).toHaveLength(0);
+    expect(await db.settings.get('account.session')).toBeUndefined();
+  });
+
+  it('сервер молчит: запрос обрывается через 15 секунд — ошибка network, а не вечное ожидание', async () => {
+    // A connection that is open and silent: the request ends only when it is aborted.
+    const silent = (signal?: AbortSignal | null) =>
+      new Promise<never>((_resolve, reject) =>
+        signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted', 'AbortError'))),
+      );
+    vi.mocked(globalThis.fetch).mockImplementation((_input, init) => silent(init?.signal));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let settled = false;
+      const asking = requestSignIn(ANNA, { now: NOW }).catch((error: unknown) => {
+        settled = true;
+        return error;
+      });
+      await sent(1);
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await asking).toMatchObject({ kind: 'network', status: undefined });
+      expect(await db.settings.get('account.session')).toBeUndefined();
+
+      // The headers came and the body never does: the same.
+      vi.mocked(globalThis.fetch).mockImplementation((_input, init) =>
+        Promise.resolve({ status: 200, ok: true, json: () => silent(init?.signal) } as unknown as Response),
+      );
+      const halfAnswered = requestSignIn(ANNA, { now: NOW }).catch((error: unknown) => error);
+      await sent(2);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await halfAnswered).toMatchObject({ kind: 'network' });
+      expect(await db.settings.get('account.session')).toBeUndefined();
+      // An answer in time leaves no timer behind.
+      vi.mocked(globalThis.fetch).mockImplementation(server.fetch);
+      await requestSignIn(ANNA, { now: NOW });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -276,6 +323,46 @@ describe('contract #278: сессия', () => {
     expect(await db.tasks.count()).toBe(1);
   });
 
+  it.each([
+    ['refresh_token_not_found', 400],
+    ['refresh_token_already_used', 400],
+    ['session_not_found', 400],
+    ['session_expired', 400],
+    ['user_banned', 400],
+  ])(
+    'Auth отвечает на обновление токена «%s»: сессия закончилась — она стирается на устройстве',
+    async (code, status) => {
+      await signIn();
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: status, error_code: code, msg: 'Invalid Refresh Token' }), { status }),
+      );
+      await expect(getAccessToken(NOW + 2 * HOUR)).rejects.toMatchObject({ kind: 'session_expired', status });
+      expect(await accountKeys()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['шлюз не нашёл маршрут во время деплоя', 404, { message: 'no Route matched with those values' }],
+    ['шлюз не узнал ключ', 401, { message: 'No API key found in request' }],
+    ['шлюз закрыл маршрут', 403, { message: 'You cannot consume this service' }],
+    ['Auth не разобрал запрос', 400, { code: 400, error_code: 'validation_failed', msg: 'Refresh token is not valid' }],
+    ['ответ без тела', 400, undefined],
+  ])(
+    'обновление токена, %s (%i): это не приговор сессии — ошибка server, сессия на устройстве остаётся',
+    async (_name, status, body) => {
+      await signIn();
+      await db.settings.put({ key: 'account.consents', value: { userId: 'user-1', consents: {} } });
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+        new Response(body === undefined ? null : JSON.stringify(body), { status }),
+      );
+      await expect(getAccessToken(NOW + 2 * HOUR)).rejects.toMatchObject({ kind: 'server', status });
+      expect(await storedSession()).toMatchObject({ state: 'signedIn', refreshToken: 'refresh-token-1' });
+      expect(await accountKeys()).toEqual(['account.consents', 'account.session']);
+      // The next request tries again, and the server — back in order — refreshes the token.
+      expect(await getAccessToken(NOW + 2 * HOUR)).toBe('access-token-2');
+    },
+  );
+
   it('нет связи при обновлении токена: ошибка network, сессия остаётся — следующий запрос попробует снова', async () => {
     await signIn();
     server.offline = true;
@@ -289,6 +376,28 @@ describe('contract #278: сессия', () => {
     await signIn();
     server.offline = true;
     expect(await signOut(NOW)).toEqual({ revokedOnServer: false });
+    expect(await accountKeys()).toEqual([]);
+    expect(server.hasSession('refresh-token-1')).toBe(true);
+  });
+
+  it('выход, когда сервер молчит: через 15 секунд сессия на устройстве стёрта, revokedOnServer: false', async () => {
+    await signIn();
+    vi.mocked(globalThis.fetch).mockImplementation(
+      (_input, init) =>
+        new Promise<never>((_resolve, reject) =>
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))),
+        ),
+    );
+    const before = vi.mocked(globalThis.fetch).mock.calls.length;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const leaving = signOut(NOW);
+      await sent(before + 1);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(await leaving).toEqual({ revokedOnServer: false });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(await accountKeys()).toEqual([]);
     expect(server.hasSession('refresh-token-1')).toBe(true);
   });

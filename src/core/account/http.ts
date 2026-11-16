@@ -21,26 +21,44 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
-/** Sends the request and reads the answer; no answer at all is `AccountError('network')`. */
+/**
+ * How long a request may take. A connection that is open and silent would otherwise wait for ever — and `signOut()`
+ * waits for the server before it erases the session on the device.
+ */
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Sends the request and reads the answer; no answer at all — or none within `REQUEST_TIMEOUT_MS` — is
+ * `AccountError('network')`.
+ */
 export async function send(backend: BackendConfig, path: string, options: RequestOptions): Promise<Answer> {
   const { method, accessToken, body, headers } = options;
-  let response: Response;
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS);
   try {
-    response = await globalThis.fetch(`${backend.url}${path}`, {
-      method,
-      headers: {
-        apikey: backend.anonKey,
-        Authorization: `Bearer ${accessToken ?? backend.anonKey}`,
-        ...(body !== undefined && { 'Content-Type': 'application/json' }),
-        ...headers,
-      },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    });
-  } catch {
-    throw new AccountError('network');
+    let response: Response;
+    try {
+      response = await globalThis.fetch(`${backend.url}${path}`, {
+        method,
+        headers: {
+          apikey: backend.anonKey,
+          Authorization: `Bearer ${accessToken ?? backend.anonKey}`,
+          ...(body !== undefined && { 'Content-Type': 'application/json' }),
+          ...headers,
+        },
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+        signal: timeout.signal,
+      });
+    } catch {
+      throw new AccountError('network');
+    }
+    const parsed: unknown = await response.json().catch(() => undefined);
+    // The headers came in time and the body did not: that is no answer either.
+    if (timeout.signal.aborted) throw new AccountError('network');
+    return { status: response.status, ok: response.ok, body: parsed };
+  } finally {
+    clearTimeout(timer);
   }
-  const parsed: unknown = await response.json().catch(() => undefined);
-  return { status: response.status, ok: response.ok, body: parsed };
 }
 
 /** A string field of an error body (`error_code` of Auth, `code` and `details` of PostgREST), if it is there. */

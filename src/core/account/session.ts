@@ -132,7 +132,8 @@ async function refresh(backend: BackendConfig, session: SignedIn, now: number): 
   try {
     issued = await refreshSession(backend, session.refreshToken);
   } catch (error) {
-    // The server no longer knows the session: it is over on this device too. The user's data is not touched.
+    // Auth itself says the session is over (`refreshSession`): it is over on this device too. Any other failure —
+    // no network, a gateway without its route during a deploy — keeps it. The user's data is never touched.
     if (error instanceof AccountError && error.kind === 'session_expired') await ifUnchanged(eraseAccountOnDevice);
     throw error;
   }
@@ -143,7 +144,8 @@ async function refresh(backend: BackendConfig, session: SignedIn, now: number): 
 /**
  * The access token of the signed-in user for a request to the region's API — refreshed first when it has expired
  * (or is about to). This is the `accessToken` of `createSyncClient`. Fails with `AccountError`: `signed_out`,
- * `session_expired` (the session is erased on the device), `network` (the session stays), `unavailable`.
+ * `session_expired` (Auth says the session is over — it is erased on the device), `network`, `server` or
+ * `rate_limited` (the session stays: the next call tries again), `unavailable`.
  */
 export async function getAccessToken(now: number = Date.now()): Promise<string> {
   const { session, backend } = await requireSession();

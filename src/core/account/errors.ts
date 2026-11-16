@@ -1,15 +1,17 @@
 /**
  * Why an account request did not succeed — the screens choose their text by `kind`, never by the message.
  *
- * - `unavailable` — this build has no cloud backend (or none for the region of the stored session);
- * - `network` — no answer from the server: the same call may work later;
+ * - `unavailable` — this build has no cloud backend (or none for the region of the stored session), or the page
+ *   is not in a secure context (no HTTPS — no Web Crypto), where the app does not sign in;
+ * - `network` — no answer from the server, or none in time: the same call may work later;
  * - `rate_limited` — too many letters or attempts, try in a minute;
  * - `invalid_email` — the server did not accept the address;
  * - `sign_up_closed` — the region does not register new accounts now;
  * - `invalid_code` — the code or the link is wrong, used or expired;
  * - `no_pending_sign_in` — a code or a link came, but this device did not ask for a letter;
  * - `signed_out` — the call needs a session and there is none;
- * - `session_expired` — the server no longer knows the session: it is erased on the device, sign in again;
+ * - `session_expired` — the server no longer knows the session, sign in again (when Auth says so to a token
+ *   refresh, the session is erased on the device);
  * - `age_required` — the server takes no consent and no data until the age is confirmed;
  * - `server` — anything else the server refused.
  */

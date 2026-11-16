@@ -6,8 +6,8 @@ import type { PkcePair } from './pkce';
 
 /**
  * The Auth server of a region (`/auth/v1`, GoTrue) — sign-in by e-mail only (ADR-0009, design p. 9): one letter
- * with a link and a six-digit code, no passwords, no Google or other outside providers. No Dexie and no React
- * here: `session.ts` stores what these calls return.
+ * with a link and a six-digit code, no passwords (the database keeps none — ADR-0013, p. 1), no Google or other
+ * outside providers. No Dexie and no React here: `session.ts` stores what these calls return.
  */
 
 /** A session as the server issued it. The tokens are credentials: never log them, never put them into an error. */
@@ -44,8 +44,10 @@ function toSession(answer: Answer): IssuedSession {
 const SIGN_UP_CLOSED = new Set(['signup_disabled', 'otp_disabled', 'email_provider_disabled']);
 
 /**
- * Asks the server to send the sign-in letter: one letter with a link and a six-digit code; a new address gets an
- * account (and its profile with the region of this deployment) when the sign-in is completed.
+ * Asks the server to send the sign-in letter: one letter with a link and a six-digit code. For a new address the
+ * server creates the account — the Auth user and its profile with the region of this deployment — right here, when
+ * the letter is asked for (`create_user: true`), not when the sign-in is completed: that is why the age rule is
+ * applied on the device BEFORE this call (`requestSignIn`).
  * `redirectTo` — where the link brings the user back; without it the server uses the region's `SITE_URL`.
  */
 export async function requestLetter(
@@ -97,14 +99,35 @@ export async function exchangeLinkCode(
   return toSession(answer);
 }
 
-/** A new access token for a session whose token has expired. A refused refresh token — the session is over. */
+/**
+ * Auth's own verdicts that the session is over, as GoTrue v2.197.0 words them for a refresh
+ * (`internal/tokens/service.go`, all with status 400): the refresh token is unknown (revoked, or the account was
+ * deleted) or was used before, its session is gone or has expired, the user is banned.
+ */
+const SESSION_OVER = new Set([
+  'refresh_token_not_found',
+  'refresh_token_already_used',
+  'session_not_found',
+  'session_expired',
+  'user_banned',
+]);
+
+/**
+ * A new access token for a session whose token has expired. `session_expired` — only when Auth itself says the
+ * session is over (`SESSION_OVER`): the caller then erases it on the device. Any other refusal — the gateway's 404
+ * while the stack is being deployed, a 401 or 403 of the gateway, an answer nobody expected — is `server` and
+ * decides nothing about the session.
+ */
 export async function refreshSession(backend: BackendConfig, refreshToken: string): Promise<IssuedSession> {
   const answer = await send(backend, '/auth/v1/token?grant_type=refresh_token', {
     method: 'POST',
     body: { refresh_token: refreshToken },
   });
-  if (!answer.ok) throw commonFailure(answer) ?? new AccountError('session_expired', answer.status);
-  return toSession(answer);
+  if (answer.ok) return toSession(answer);
+  const common = commonFailure(answer);
+  if (common) throw common;
+  const over = [400, 401, 403].includes(answer.status) && SESSION_OVER.has(errorField(answer.body, 'error_code') ?? '');
+  throw new AccountError(over ? 'session_expired' : 'server', answer.status);
 }
 
 /** Revokes THIS session on the server (`scope=local`): the user's other devices stay signed in. */
