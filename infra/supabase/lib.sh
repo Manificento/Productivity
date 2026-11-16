@@ -51,11 +51,17 @@ require() {
   ((${#missing[@]} == 0)) || die "не заданы переменные: ${missing[*]}"
 }
 
-# A container that reads a config file mounted from the code (kong.yml, Caddyfile) carries the file's sha256 as a label
+# sha256 of a directory: of the names and the contents of all its files.
+dir_sha256() {
+  (cd "$1" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) | sha256sum | cut -d' ' -f1
+}
+
+# A container that reads files mounted from the code (kong: everything in volumes/api/ — kong.yml, the nginx include
+# and the e-mail templates it serves to Auth; proxy: the Caddyfile) carries their sha256 as a label
 # (docker-compose.yml): a new revision with a changed file is a changed service, so `up` recreates that container and
 # leaves the others. The init SQL of db is not hashed on purpose: it acts only on an empty database (provision.sh).
 compose() {
-  KONG_CONFIG_SHA256=$(sha256sum < "$SUPABASE_DIR/volumes/api/kong.yml" | cut -d' ' -f1) \
+  KONG_CONFIG_SHA256=$(dir_sha256 "$SUPABASE_DIR/volumes/api") \
     PROXY_CONFIG_SHA256=$(sha256sum < "$SUPABASE_DIR/volumes/proxy/Caddyfile" | cut -d' ' -f1) \
     docker compose --project-directory "$SUPABASE_DIR" -f "$SUPABASE_DIR/docker-compose.yml" \
     --env-file "$ENV_FILE" -p "lifeos-$REGION" "$@"

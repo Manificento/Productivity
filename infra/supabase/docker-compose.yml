@@ -3,6 +3,9 @@
 # Analytics or Supavisor. Postgres has no published port: it is reachable only inside this project's Docker network.
 # Run through the scripts (deploy.sh …), which pass `--env-file` and the per-region project name.
 #
+# The mail trap (`mail`, profile `test`) exists only for the infra tests: it catches the letters of Auth and delivers
+# none. It is never started on a server.
+#
 # Studio (database admin UI) is opt-in: `compose --profile studio up -d studio` through lib.sh (README.md), then an SSH
 # tunnel to 127.0.0.1:3000.
 
@@ -20,8 +23,12 @@ services:
         condition: service_healthy
     volumes:
       - ./volumes/api/kong.yml:/home/kong/temp.yml:ro
+      # The e-mail templates of Auth and the nginx include that serves them to it inside the Docker network.
+      - ./volumes/api/mail.conf:/home/kong/mail.conf:ro
+      - ./volumes/api/mail:/home/kong/mail:ro
     labels:
-      # sha256 of kong.yml (lib.sh, `compose`): a changed file recreates the container, which reads it only at start.
+      # sha256 of the files of volumes/api/ (lib.sh, `compose`): a changed file recreates the container, which reads
+      # kong.yml and mail.conf only at start and keeps the mounts of the previous revision's files.
       lifeos.config-sha256: ${KONG_CONFIG_SHA256:-}
     environment:
       KONG_DATABASE: 'off'
@@ -32,6 +39,8 @@ services:
       KONG_PLUGINS: cors,key-auth,acl
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      # One more nginx server inside Kong, on a port that is not published: http://kong:8088/mail/<template>.
+      KONG_NGINX_HTTP_INCLUDE: /home/kong/mail.conf
       SUPABASE_ANON_KEY: ${ANON_KEY:?}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?}
     # Substitutes the API keys into the declarative config, then starts Kong.
@@ -68,6 +77,8 @@ services:
       GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?}
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL:?}
+      # Sign-in by e-mail only (ADR-0009, design p. 9): no Google or other outside provider is configured — with
+      # one, the App Store would require Sign in with Apple.
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
       GOTRUE_EXTERNAL_PHONE_ENABLED: 'false'
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: 'false'
@@ -78,6 +89,16 @@ services:
       GOTRUE_SMTP_USER: ${SMTP_USER:-}
       GOTRUE_SMTP_PASS: ${SMTP_PASS:-}
       GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME:-LifeOS}
+      # One letter per address in this time, whatever the app asks for.
+      GOTRUE_SMTP_MAX_FREQUENCY: ${SMTP_MAX_FREQUENCY:-60s}
+      # The sign-in letter: a six-digit code and a link, both good for OTP_EXPIRY seconds and for one use. A new
+      # address gets the «confirmation» letter, a returning one the «magic link» letter — the same template.
+      GOTRUE_MAILER_OTP_LENGTH: 6
+      GOTRUE_MAILER_OTP_EXP: ${OTP_EXPIRY:-900}
+      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: Вход в LifeOS
+      GOTRUE_MAILER_SUBJECTS_MAGIC_LINK: Вход в LifeOS
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://kong:8088/mail/sign-in.html
+      GOTRUE_MAILER_TEMPLATES_MAGIC_LINK: http://kong:8088/mail/sign-in.html
       GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
@@ -131,6 +152,17 @@ services:
       POSTGRES_DB: postgres
       JWT_EXP: ${JWT_EXPIRY:-3600}
     command: ['postgres', '-c', 'config_file=/etc/postgresql/postgresql.conf', '-c', 'log_min_messages=fatal']
+
+  # Mail trap for the infra tests (opt-in profile `test`, never on a server): takes every letter Auth sends
+  # (SMTP_HOST=mail, SMTP_PORT=1025) and delivers none; the tests read the letters from its API on 127.0.0.1.
+  mail:
+    image: axllent/mailpit:v1.27.10
+    profiles: [test]
+    ports:
+      - 127.0.0.1:${MAIL_TRAP_PORT:-8025}:8025/tcp
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
   # HTTPS reverse proxy in front of Kong (opt-in profile `proxy`, turned on on the server by provision.sh through
   # COMPOSE_PROFILES): Caddy gets and renews a Let's Encrypt certificate for API_DOMAIN on ports 80 and 443.
