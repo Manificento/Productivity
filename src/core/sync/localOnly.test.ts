@@ -4,6 +4,9 @@ import { DEVICE_ID_KEY, isLocalOnlySetting, LOCAL_ONLY_SETTING_KEYS } from './lo
 describe('contract #274: ключи состояния устройства', () => {
   it('Given список ключей состояния устройства (adaptation.morning, adaptation.onboardingDone, device.id, time.pomodoro.running) When читаю src/core/sync/localOnly.ts Then они перечислены', () => {
     expect([...LOCAL_ONLY_SETTING_KEYS].sort()).toEqual([
+      // contract #278: the account's session and the cached consents of this device.
+      'account.consents',
+      'account.session',
       'adaptation.morning',
       'adaptation.onboardingDone',
       'device.id',
