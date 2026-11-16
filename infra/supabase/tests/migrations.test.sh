@@ -261,35 +261,71 @@ same '…у записи не из mealLogs содержимое не меняе
     sql -c "select data -> 'items' -> 0 ->> 'updatedAt' from public.tasks where user_id = '$anna_id' and id = 'items'")" "$far"
 
 section 'sync_push: уникальный ключ не из id — одна сессия программы на день (plannedSessions)'
-thursday='{"programId":"p1","date":"2026-11-12","status":"planned"}'
-push "$anna" "[$(change plannedSessions s1 1000 dev-phone "$thursday")]" > /dev/null
+# on <day of November 2026>: the content of a session of program p1 on that day.
+on() { echo "{\"programId\":\"p1\",\"date\":\"2026-11-$1\",\"status\":\"planned\"}"; }
+# sessions: the live sessions of program p1 as the server holds them, "<key>@<day>" in the order of the keys.
+sessions() {
+  sql -c "select coalesce(string_agg(id || '@' || right(data ->> 'date', 2), ' ' order by id collate \"C\"), '')
+    from public.planned_sessions
+    where user_id = '$anna_id' and deleted_at is null and data ->> 'programId' = 'p1' and data ? 'date'"
+}
+push "$anna" "[$(change plannedSessions s1 1000 dev-phone "$(on 12)")]" > /dev/null
 s1_rev=$(body '.[0].rev')
 same 'первая сессия дня принята' "$(body '.[0].applied')" true
-push "$anna" "[$(change plannedSessions s2 2000 dev-laptop "$thursday")]" "$((s1_rev - 1))" > /dev/null
-same 'сессия на день, занятый строкой другого устройства после курсора, не принята; версии строки у сервера нет — rev 0, без содержимого' \
+push "$anna" "[$(change plannedSessions s2 2000 dev-laptop "$(on 12)")]" "$((s1_rev - 1))" > /dev/null
+same 'сессия на занятый день не принята, хотя она позже; версии строки у сервера нет — rev 0, без содержимого' \
   "$(body '.[0] | [.applied, .key, .rev, .data, .deletedAt]')" '[false,"s2",0,null,null]'
 same '…и не сохранена' \
   "$(sql -c "select count(*) from public.planned_sessions where user_id = '$anna_id' and id = 's2'")" 0
-push "$anna" "[$(change plannedSessions s3 1000 dev-laptop '{"programId":"p1","date":"2026-11-11"}')]" > /dev/null
-push "$anna" "[$(change plannedSessions s3 2000 dev-laptop "$thursday")]" "$((s1_rev - 1))" > /dev/null
-same '…у сервера есть версия самой строки — она в ответе и осталась как была' \
-  "$(body '.[0] | [.applied, .updatedAt, .data.date]')" '[false,1000,"2026-11-11"]'
+push "$anna" "[$(change plannedSessions s3 1000 dev-laptop "$(on 11)")]" > /dev/null
+push "$anna" "[$(change plannedSessions s3 2000 dev-laptop "$(on 12)")]" "$((s1_rev - 1))" > /dev/null
+same '…у сервера есть версия самой строки — она в ответе и осталась как была: сессия не удалена, а стоит на прежнем дне' \
+  "$(body '.[0] | [.applied, .updatedAt, .data.date]') $(sessions)" '[false,1000,"2026-11-11"] s1@12 s3@11'
 others="[$(change plannedSessions s4 2000 dev-laptop '{"programId":"p2","date":"2026-11-12"}'),
-  $(change plannedSessions s5 2000 dev-phone "$thursday"),
+  $(change plannedSessions s5 2000 dev-phone "$(on 12)"),
   $(change plannedSessions s6 2000 dev-laptop deleted),
   $(change plannedSessions s7 2000 dev-laptop '{"programId":"p1"}')]"
 push "$anna" "$others" "$((s1_rev - 1))" > /dev/null
-same '…другая программа, строка того же устройства, удаление и строка без ключа приняты' \
-  "$(body 'map(.applied)')" '[true,true,true,true]'
-push "$anna" "[$(change plannedSessions s2 2000 dev-laptop "$thursday")]" "$(body 'map(.rev) | max')" > /dev/null
-same '…после того как устройство увидело занявшие день строки (курсор догнал), сервер отправке не мешает' \
-  "$(body '.[0].applied')" true
-push "$anna" "[$(change plannedSessions s8 2000 dev-tablet "$thursday")]" 0 true > /dev/null
-same '…и replace принимает всё' "$(body '.[0].applied')" true
+same '…другая программа, удаление и строка без ключа приняты; строка того же устройства, что держит день, — нет' \
+  "$(body 'map(.applied)')" '[true,false,true,true]'
+same '…ответы идут в порядке отправки' "$(body 'map(.key)')" '["s4","s5","s6","s7"]'
+push "$anna" "[$(change plannedSessions s2 2000 dev-laptop "$(on 12)")]" "$(body 'map(.rev) | max')" > /dev/null
+same '…и после того как устройство увидело занявшую день строку (курсор догнал), день остаётся за ней' \
+  "$(body '.[0].applied') $(sessions)" 'false s1@12 s3@11'
+
+# One call is judged as a whole: s3 takes the day s1 leaves in the same call, and is sent before it.
+push "$anna" "[$(change plannedSessions s3 3000 dev-laptop "$(on 12)"), $(change plannedSessions s1 3000 dev-laptop "$(on 11)")]" > /dev/null
+same 'перестановка в одной отправке принята: сессии меняются днями' \
+  "$(body 'map(.applied)') $(sessions)" '[true,true] s1@11 s3@12'
+same '…rev выданы в порядке отправки' "$(body '.[0].rev < .[1].rev')" true
+# s9 holds the 13th. In one call s3 is to move there and s1 is to take the 12th that s3 would leave.
+push "$anna" "[$(change plannedSessions s9 3000 dev-phone "$(on 13)")]" > /dev/null
+push "$anna" "[$(change plannedSessions s1 4000 dev-laptop "$(on 12)"), $(change plannedSessions s3 4000 dev-laptop "$(on 13)")]" > /dev/null
+same 'перенос на занятый день не принят — и вместе с ним перенос на день, который он должен был освободить; в ответе версии сервера' \
+  "$(body 'map([.applied, .data.date])')" '[[false,"2026-11-11"],[false,"2026-11-12"]]'
+same '…ни одна сессия не сдвинута и не удалена' "$(sessions)" 's1@11 s3@12 s9@13'
+push "$anna" "[$(change plannedSessions s10 4000 dev-laptop "$(on 14)"), $(change plannedSessions s11 4000 dev-laptop "$(on 14)")]" > /dev/null
+same 'две сессии одной отправки на один свободный день: не принята ни одна' \
+  "$(body 'map(.applied)') $(sessions)" '[false,false] s1@11 s3@12 s9@13'
+push "$anna" "[$(change plannedSessions s3 5000 dev-laptop "$(on 13)"), $(change plannedSessions s9 5000 dev-laptop deleted)]" > /dev/null
+same 'день, который в той же отправке освобождён удалением, занять можно' \
+  "$(body 'map(.applied)') $(sessions)" '[true,true] s1@11 s3@13'
+# What a device sends for a row that gave up its key (YIELDED_AT in protocol.ts): a tombstone older than any version.
+push "$anna" "[$(change plannedSessions s1 1 dev-laptop deleted), $(change plannedSessions s12 1 dev-laptop deleted)]" > /dev/null
+same 'tombstone раньше любой версии: строку, которая есть у сервера, не удаляет — в ответе её версия; неизвестную — сохраняет' \
+  "$(body 'map([.applied, .deletedAt, .data.date])') $(sessions)" '[[false,null,"2026-11-11"],[true,1,null]] s1@11 s3@13'
+same 'ни один день программы не занят двумя живыми сессиями' "$(sql -c "select count(*) from (
+  select 1 from public.planned_sessions
+  where user_id = '$anna_id' and deleted_at is null and data ? 'date'
+  group by data ->> 'programId', data ->> 'date' having count(*) > 1) taken_twice")" 0
+push "$anna" "[$(change plannedSessions s8 2000 dev-tablet "$(on 11)")]" 0 true > /dev/null
+same '…а replace принимает всё' "$(body '.[0].applied')" true
 check 'служебные функции sync_push пользователю недоступны' grep -q 'permission denied for function sync_unique_key' \
   <<< "$(as_user "$anna_id" "select public.sync_unique_key('tasks', '{}')")"
 check '…и sync_cut_item_times' grep -q 'permission denied for function sync_cut_item_times' \
   <<< "$(as_user "$anna_id" "select public.sync_cut_item_times('{}', 0)")"
+check '…и sync_incoming' grep -q 'permission denied for function sync_incoming' \
+  <<< "$(as_user "$anna_id" "select count(*) from public.sync_incoming('[]', 0)")"
 
 section 'sync_push: пачка с ошибкой отклоняется целиком'
 count_before=$(sql -c "select count(*) from public.sync_rows where user_id = '$anna_id'")
@@ -297,6 +333,10 @@ same 'неизвестная таблица: вся пачка отклонен�
   "$(push "$anna" "[$(change tasks ok 1 dev-anna), $(change noSuchTable x 1 dev-anna)]")" 400
 same 'строка без содержимого и без deletedAt отклонена' \
   "$(push "$anna" '[{"table":"tasks","key":"empty","updatedAt":1,"updatedBy":"dev-anna"}]')" 400
+same '…и тогда, когда она всё равно проиграла бы сохранённой версии' \
+  "$(push "$anna" '[{"table":"tasks","key":"t1","updatedAt":0,"updatedBy":"dev-anna"}]')" 400
+same 'изменение без updatedAt отклонено' \
+  "$(push "$anna" '[{"table":"tasks","key":"t1","updatedBy":"dev-anna","data":{}}]')" 400
 same 'больше 500 изменений за вызов отклонено' "$(push "$anna" \
   "$(jq -nc '[range(501) | {table: "tasks", key: "k\(.)", updatedAt: 1, updatedBy: "dev-anna", data: {}}]')")" 400
 same '…ни одна строка отклонённых пачек не сохранена' \
