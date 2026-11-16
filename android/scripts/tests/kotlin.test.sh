@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# Tests for the Kotlin versions of the Android build (#297) that need no Android SDK: the check of the release build log
+# (check-kotlin-log.sh), the check that the project and the native plugins pin one Kotlin version
+# (check-kotlin-versions.sh) and where the build and the workflow run them. Run by .github/workflows/android.yml and
+# locally:
+#   android/scripts/tests/kotlin.test.sh
+# The release build itself (Gradle, lint) runs in the same workflow, in test-release.sh.
+set -uo pipefail
+
+SCRIPTS=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$SCRIPTS/../.." && pwd)
+WORKFLOW="$REPO/.github/workflows/android.yml"
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+failures=0
+
+pass() { printf '  ✓ %s\n' "$1"; }
+fail() {
+  printf '  ✗ %s\n' "$1"
+  failures=$((failures + 1))
+}
+# check "<name>" <command…>: runs the command, reports the name as passed or failed.
+check() {
+  local name=$1
+  shift
+  if "$@"; then pass "$name"; else fail "$name"; fi
+}
+
+# run <script> <args…>: runs a script of android/scripts, leaves its output in $WORK/out and the exit code in $status.
+status=0
+run() {
+  local script=$1
+  shift
+  "$SCRIPTS/$script" "$@" > "$WORK/out" 2>&1
+  status=$?
+}
+succeeds() { [ "$status" -eq 0 ]; }
+fails() { [ "$status" -ne 0 ]; }
+out_has() { grep -q -- "$1" "$WORK/out"; }
+
+INCOMPATIBLE='Module was compiled with an incompatible version of Kotlin. The binary version of its metadata is 2.4.0, expected version is 2.2.0.'
+# A Gradle log as `--console=plain` prints it: the lint of the release build ran, with or without the line.
+gradle_log() {
+  printf '> Task :capgo-capacitor-health:lintVitalAnalyzeRelease\n'
+  printf '> Task :app:lintVitalAnalyzeRelease\n'
+  [ "${1:-}" = incompatible ] &&
+    printf 'e: file:///root/.gradle/caches/kotlin-stdlib-2.4.21.jar!/META-INF/kotlin-stdlib.kotlin_module %s\n' \
+      "$INCOMPATIBLE"
+  printf '> Task :app:assembleRelease\n\nBUILD SUCCESSFUL in 2m 10s\n'
+}
+
+printf '\nGiven release-сборка Android в CI When выполняется lintVitalAnalyzeRelease Then в журнале нет строк «Module was compiled with an incompatible version of Kotlin»; проверка CI падает, если такая строка появится\n'
+gradle_log > "$WORK/clean.log"
+run check-kotlin-log.sh "$WORK/clean.log"
+check 'журнал без строки о несовместимом Kotlin: проверка проходит' succeeds
+gradle_log incompatible > "$WORK/incompatible.log"
+run check-kotlin-log.sh "$WORK/incompatible.log"
+check 'строка «Module was compiled with an incompatible version of Kotlin» в журнале: проверка падает' fails
+check 'ошибка проверки — аннотация ::error для GitHub' out_has '::error title=Несовместимая версия Kotlin'
+check 'ошибка показывает строку журнала' out_has 'kotlin-stdlib-2.4.21.jar'
+check 'ошибка ведёт в docs/architecture.md' out_has 'docs/architecture.md'
+grep -v ':app:lintVitalAnalyzeRelease' "$WORK/clean.log" > "$WORK/no-lint.log"
+run check-kotlin-log.sh "$WORK/no-lint.log"
+check 'lintVitalAnalyzeRelease не выполнялся: проверка падает, а не проходит впустую' fails
+sed 's/:app:lintVitalAnalyzeRelease$/:app:lintVitalAnalyzeRelease UP-TO-DATE/' "$WORK/clean.log" > "$WORK/up-to-date.log"
+run check-kotlin-log.sh "$WORK/up-to-date.log"
+check 'lintVitalAnalyzeRelease UP-TO-DATE (анализ не запускался): проверка падает' fails
+run check-kotlin-log.sh "$WORK/missing.log"
+check 'журнала нет: проверка падает' fails
+
+build_release="$SCRIPTS/build-release.sh"
+# The release build runs the lint analysis every time and hands its whole log to the check.
+lint_always_runs() { grep -q -- ':app:lintVitalAnalyzeRelease --rerun' "$build_release"; }
+# shellcheck disable=SC2016 # the text of build-release.sh, not a shell expansion
+log_goes_to_check() {
+  grep -q -- '--console=plain' "$build_release" && grep -q -- '| tee "$gradle_log"' "$build_release" &&
+    grep -q -- '"$scripts/check-kotlin-log.sh" "$gradle_log"' "$build_release"
+}
+check 'build-release.sh каждый раз заново выполняет lintVitalAnalyzeRelease (--rerun)' lint_always_runs
+check 'build-release.sh отдаёт журнал Gradle проверке check-kotlin-log.sh (и PR через test-release.sh, и release)' \
+  log_goes_to_check
+
+printf '\nGiven причина несовпадения When читаю docs/architecture.md Then одна версия Kotlin у проекта и плагинов, и проверка её держит\n'
+# fixture <project kotlin_version> <health plugin version>: android/ and node_modules/ as `cap sync` leaves them, with
+# one plugin that pins Kotlin (as @capgo/capacitor-health) and one that takes the project's (as local-notifications).
+fixture() {
+  rm -rf "$WORK/repo"
+  mkdir -p "$WORK/repo/android" "$WORK/repo/node_modules/@capgo/capacitor-health/android" \
+    "$WORK/repo/node_modules/@capacitor/local-notifications/android"
+  [ -n "$1" ] && printf "ext {\n    minSdkVersion = 26\n    kotlin_version = '%s'\n}\n" "$1" > "$WORK/repo/android/variables.gradle"
+  [ -z "$1" ] && printf 'ext {\n    minSdkVersion = 26\n}\n' > "$WORK/repo/android/variables.gradle"
+  cat > "$WORK/repo/android/capacitor.settings.gradle" << 'EOF'
+// DO NOT EDIT THIS FILE! IT IS GENERATED EACH TIME "capacitor update" IS RUN
+include ':capacitor-local-notifications'
+project(':capacitor-local-notifications').projectDir = new File('../node_modules/@capacitor/local-notifications/android')
+
+include ':capgo-capacitor-health'
+project(':capgo-capacitor-health').projectDir = new File('../node_modules/@capgo/capacitor-health/android')
+EOF
+  printf "def kotlinVersion = '%s'\nbuildscript {\n    dependencies {\n        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:%s'\n    }\n}\n" \
+    "$2" "$2" > "$WORK/repo/node_modules/@capgo/capacitor-health/android/build.gradle"
+  # shellcheck disable=SC2016 # the Groovy of the plugin, not a shell expansion
+  printf 'buildscript {\n    ext.kotlin_version = project.hasProperty("kotlin_version") ? rootProject.ext.kotlin_version : "2.0.21"\n    dependencies {\n        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"\n    }\n}\n' \
+    > "$WORK/repo/node_modules/@capacitor/local-notifications/android/build.gradle"
+}
+versions() { run check-kotlin-versions.sh "$WORK/repo/android"; }
+
+fixture 2.4.21 2.4.21
+versions
+check 'kotlin_version проекта совпадает с Kotlin плагина: проверка проходит' succeeds
+check 'проверка называет версию Kotlin проекта' out_has '2.4.21'
+fixture 2.4.21 2.5.0
+versions
+check 'плагин обновился на другой Kotlin: проверка падает' fails
+check 'ошибка называет плагин и обе версии' \
+  eval 'out_has "::error title=Kotlin плагина" && out_has capgo-capacitor-health && out_has 2.5.0 && out_has 2.4.21'
+check 'ошибка ведёт в docs/architecture.md' out_has 'docs/architecture.md'
+fixture '' 2.4.21
+versions
+check 'в variables.gradle нет kotlin_version: проверка падает' fails
+
+# The real android/ and node_modules/ (skipped without `npm ci`, as in the job «Release signing gate»).
+real_versions_agree() {
+  [ -d "$REPO/node_modules/@capgo/capacitor-health" ] || return 0
+  run check-kotlin-versions.sh
+  succeeds
+}
+check 'настоящий android/: kotlin_version проекта совпадает с Kotlin плагинов (если есть node_modules)' real_versions_agree
+apk_job() { awk '/^  apk:/ { on = 1; print; next } on && /^  [a-z][a-z-]*:/ { exit } on' "$WORKFLOW"; }
+gate_job() { awk '/^  signing-gate:/ { on = 1; print; next } on && /^  [a-z][a-z-]*:/ { exit } on' "$WORKFLOW"; }
+check 'задание «Android debug APK» запускает check-kotlin-versions.sh' \
+  eval 'apk_job | grep -q "run: android/scripts/check-kotlin-versions.sh"'
+check 'задание «Release signing gate» запускает эти тесты' eval 'gate_job | grep -q "run: android/scripts/tests/kotlin.test.sh"'
+
+printf '\n'
+if [ "$failures" -gt 0 ]; then
+  echo "$failures check(s) failed"
+  exit 1
+fi
+echo 'all checks passed'
