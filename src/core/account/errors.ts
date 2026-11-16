@@ -5,7 +5,8 @@
  *   is not in a secure context (no HTTPS — no Web Crypto), where the app does not sign in;
  * - `network` — no answer from the server, or none in time: the same call may work later;
  * - `rate_limited` — too many letters or attempts: the server's limits run from five minutes (requests of one client)
- *   through fifteen (sign-in attempts of one account) to an hour (letters of one client, letters of the region);
+ *   through fifteen (sign-in attempts of one account) to an hour (sign-in attempts and letters of one client, letters
+ *   of the region);
  * - `invalid_email` — the server did not accept the address;
  * - `sign_up_closed` — the region does not register new accounts now;
  * - `invalid_code` — the code or the link is wrong, used or expired;
