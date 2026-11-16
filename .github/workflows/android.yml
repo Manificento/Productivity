@@ -50,12 +50,17 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx cap sync android
+      # One Kotlin for the project and the native plugins (#297): a plugin update with another Kotlin fails here.
+      - name: Kotlin проекта совпадает с Kotlin нативных плагинов
+        run: android/scripts/check-kotlin-versions.sh
       - run: ./gradlew testDebugUnitTest assembleDebug --no-daemon
         working-directory: android
       # Health permissions are only READ_SLEEP and READ_EXERCISE (#141); the privacy policy is in the APK and the
       # policy URL points at it (#214). The release build passes the same script in the next step.
       - name: Health permissions and privacy policy of the debug APK
         run: android/scripts/check-apk.sh android/app/build/outputs/apk/debug/app-debug.apk
+      # build-release.sh also fails on «Module was compiled with an incompatible version of Kotlin» in the lint of the
+      # release build (check-kotlin-log.sh, #297).
       - name: Подпись release проверена на одноразовом keystore (apksigner verify), release проходит те же проверки, что debug
         run: android/scripts/test-release.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -75,6 +80,8 @@ jobs:
       - run: shellcheck -x android/scripts/*.sh android/scripts/tests/*.sh
       - name: Ключи подписи — только из секретов, keystore-файлов в репозитории нет, шлюз release-задания
         run: android/scripts/tests/signing.test.sh
+      - name: Lint release-сборки без строк о несовместимом Kotlin, одна версия Kotlin у проекта и плагинов
+        run: android/scripts/tests/kotlin.test.sh
       # No secrets in this job: on a PR the gate only says why the release is skipped.
       - name: Release на PR не собирается
         if: github.event_name == 'pull_request'
