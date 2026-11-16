@@ -38,7 +38,7 @@ test.describe('delete a day record and create it again', () => {
   test.fixme('Given записан вес за сегодня When я удаляю запись и ввожу вес снова Then на экране одна запись с новым значением; после перезагрузки страницы она на месте', async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00+05:00'));
     await page.goto('/#/nutrition');
     await page.getByLabel('Вес, кг').fill('72,4');
     await page.getByRole('button', { name: 'Записать' }).click();
@@ -69,7 +69,7 @@ test.describe('delete a day record and create it again', () => {
   test('Given записан сон за прошлую ночь When я удаляю запись и добавляю сон за ту же ночь Then на экране одна запись с новым значением; после перезагрузки она на месте', async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00'));
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00+05:00'));
     await page.goto('/#/health');
     await expect(page.getByRole('heading', { name: 'Сон', level: 1 })).toBeVisible();
     await page.getByLabel('Отбой', { exact: true }).fill('23:30');
@@ -113,7 +113,7 @@ test.describe('delete a day record and create it again', () => {
   test('Given запланирована тренировка на дату When я удаляю её и планирую на ту же дату снова Then в плане одна тренировка', async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00')); // Wednesday
+    await page.clock.setFixedTime(new Date('2026-11-04T08:00:00+05:00')); // Wednesday
     await page.goto('/#/training');
     await page.getByRole('button', { name: 'Шаблон: Сила 3 раза в неделю' }).click();
     await page.getByRole('button', { name: 'Сохранить программу' }).click();
