@@ -34,6 +34,8 @@ export type ConsentDetails = Record<string, unknown>;
 
 /** One row of the journal. */
 export interface Consent {
+  /** Number of the row: the server numbers the rows in the order it stored them — the greater, the later. */
+  id: number;
   kind: ConsentKind;
   granted: boolean;
   /** Version of the text the user saw (the texts live in the settings module). */
@@ -61,6 +63,7 @@ export type JournalRow = z.infer<typeof journalRow>;
 
 export function toConsent(row: JournalRow): Consent {
   return {
+    id: row.id,
     kind: row.kind,
     granted: row.granted,
     textVersion: row.text_version,
@@ -84,6 +87,30 @@ export function effectiveConsents(rows: readonly JournalRow[]): EffectiveConsent
   return effective;
 }
 
+/**
+ * The device's copy of what is in force after the server answered `told` — the journal as it was at some moment
+ * WHILE the device was asking. `before` is the copy when the question was sent, `current` the copy now.
+ *
+ * The answer replaces the copy, with one exception: a consent recorded while the answer was on its way (here or in
+ * another tab — its row in `current` is not the one of `before`) may be later than what the answer knows. Of those
+ * two rows the later one of the journal — the greater `id` — stays, so an old answer never undoes a new consent
+ * or a new withdrawal.
+ */
+export function consentsAfterAnswer(
+  before: EffectiveConsents,
+  current: EffectiveConsents,
+  told: EffectiveConsents,
+): EffectiveConsents {
+  const consents: EffectiveConsents = { ...told };
+  for (const kind of CONSENT_KINDS) {
+    const recorded = current[kind];
+    if (recorded && recorded.id !== before[kind]?.id && recorded.id > (told[kind]?.id ?? 0)) {
+      consents[kind] = recorded;
+    }
+  }
+  return consents;
+}
+
 /** Whether a consent is in force: its last row says «granted». Never answered or taken back — no. */
 export function isGranted(consents: EffectiveConsents, kind: ConsentKind): boolean {
   return consents[kind]?.granted === true;
@@ -95,6 +122,7 @@ export const cachedConsents = z.object({
   consents: z.partialRecord(
     z.enum(CONSENT_KINDS),
     z.object({
+      id: z.number(),
       kind: z.enum(CONSENT_KINDS),
       granted: z.boolean(),
       textVersion: z.string(),

@@ -12,5 +12,9 @@
 }
 
 {$API_DOMAIN} {
-	reverse_proxy 127.0.0.1:{$KONG_HTTP_PORT}
+	reverse_proxy 127.0.0.1:{$KONG_HTTP_PORT} {
+		# The client's address for Kong and Auth, which counts its limits per address (KONG_TRUSTED_IPS in
+		# env.example). It replaces whatever the client sent in this header.
+		header_up X-Real-IP {remote_host}
+	}
 }

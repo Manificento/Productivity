@@ -5,7 +5,7 @@
 #
 # 1. Writes the region's settings file <deploy dir>/<region>.env (mode 600) from env.example, the values on stdin and
 #    the database secrets. The file lives outside the code directory, so a new release replaces the code, not it.
-# 2. Runs deploy.sh with the HTTPS reverse proxy (Compose profile `proxy`).
+# 2. Runs deploy.sh with the HTTPS reverse proxy (Compose profile `proxy`), which tells Kong the clients' addresses.
 # 3. Installs the cron schedule: backup.sh nightly, healthcheck.sh every 5 minutes.
 # 4. Checks GET /auth/v1/health and GET /rest/v1/ through the public HTTPS address.
 # 5. Prints the public values for the app's build on stdout: SUPABASE_PUBLIC_URL=… and ANON_KEY=… (deploy-remote.sh
@@ -72,6 +72,9 @@ write_settings() {
     die "нет $ENV_FILE, а том базы lifeos-${region}_db-data уже есть: верните файл из менеджера паролей (chmod 600) и запустите деплой снова — новые секреты закрыли бы стеку доступ к его данным"
   fi
   given[COMPOSE_PROFILES]=proxy
+  # Kong is reached only through that proxy, from the gateway of the stack's Docker network: Kong takes the client's
+  # address from the header the proxy sets (Caddyfile), so Auth counts its limits per client, not for all at once.
+  given[KONG_TRUSTED_IPS]=172.16.0.0/12,192.168.0.0/16
 
   # env.example with fresh secrets: they are used on the first run only.
   base=$("$here/gen-env.sh" REGION="$region")

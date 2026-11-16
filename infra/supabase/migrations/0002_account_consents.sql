@@ -345,9 +345,11 @@ $$;
 
 -- ---------------------------------------------------------------------------------------------------------------
 -- Account deletion (ADR-0009, «Удаление»; Google Play: deletion from inside the app). Removes everything the
--- server holds of the CALLER — the rows of every data table, the consent journal, the profile and the Auth user
--- with its sessions — in one transaction. It takes no arguments: the user is the one of the token, nobody else can
--- be named. What is on the user's devices is not the server's to remove and stays there.
+-- database holds of the CALLER — the rows of every data table, the consent journal, the profile, the Auth user
+-- with its sessions, and what Auth keeps about the user without a foreign key (its audit log, the states of
+-- unfinished sign-ins) — in one transaction. It takes no arguments: the user is the one of the token, nobody else
+-- can be named. What is on the user's devices is not the server's to remove and stays there. Backups made before
+-- the deletion leave with their rotation (backup.sh keeps BACKUP_KEEP daily copies).
 -- ---------------------------------------------------------------------------------------------------------------
 create function public.delete_account()
 returns void
@@ -357,6 +359,7 @@ set search_path = ''
 as $$
 declare
   caller constant uuid := auth.uid();
+  address text;
 begin
   if caller is null then
     raise exception 'delete_account: sign in first' using errcode = '28000';
@@ -367,8 +370,19 @@ begin
   delete from public.sync_rows where user_id = caller;
   delete from public.consents where user_id = caller;
   delete from public.profiles where user_id = caller;
-  -- Auth's own tables (sessions, refresh tokens, identities) go with the user.
+  -- Auth's own tables (sessions, refresh tokens, identities, one-time codes) go with the user…
+  select u.email into address from auth.users u where u.id = caller;
   delete from auth.users where id = caller;
+  -- …except two that have no foreign key to the user. Auth's audit log has a row for every sign-in, with the
+  -- user's id and e-mail in its JSON payload (and the client's address next to it); `flow_state` keeps the PKCE
+  -- state of every sign-in by letter. Left alone, both would keep the address of a deleted account for good — and
+  -- put it into every new backup.
+  delete from auth.flow_state where user_id = caller;
+  delete from auth.audit_log_entries entry
+  where entry.payload ->> 'actor_id' = caller::text
+    or entry.payload ->> 'actor_username' = address
+    or entry.payload -> 'traits' ->> 'user_id' = caller::text
+    or entry.payload -> 'traits' ->> 'user_email' = address;
 end
 $$;
 

@@ -238,6 +238,24 @@ check 'обратный прокси отдаёт API по HTTPS для доме
   test "$(https_status /auth/v1/health "$ANON_KEY")" == 200
 check '…GET /rest/v1/ с ключом service_role → 200' test "$(https_status /rest/v1/ "$SERVICE_ROLE_KEY")" == 200
 
+# Auth counts its limits (code checks, token refreshes, letters) per client address. Behind the proxy that must be the
+# address of the CLIENT, not of the proxy: with one address for everybody, anyone could use up the limit of the whole
+# region (#278). Two clients here are two source addresses of this machine — all of 127.0.0.0/8 is local.
+# wrong_code <source address> [curl options…]: a wrong sign-in code sent through the proxy. Prints the HTTP status.
+wrong_code() {
+  curl -s -o /dev/null -w '%{http_code}\n' -m 10 --cacert "$WORK/proxy-ca.crt" --interface "$1" "${@:2}" \
+    -X POST https://localhost:8443/auth/v1/verify -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+    -d '{"type":"email","email":"nobody@example.com","token":"000000"}'
+}
+check 'проверка кода входа через прокси: неверный код → 403' test "$(wrong_code 127.0.0.2)" == 403
+flood=$(for i in $(seq 1 40); do wrong_code 127.0.0.1 -H "X-Real-IP: 10.0.0.$i" -H "X-Forwarded-For: 10.0.0.$i"; done)
+check 'один клиент исчерпал свой предел проверок кода (30 за 5 минут): дальше 429, хотя каждый запрос называет в заголовке другой адрес' \
+  test "$(grep -c '^403$' <<< "$flood")" -le 30 -a "$(grep -c '^429$' <<< "$flood")" -ge 10
+check '…другого клиента это не касается: у его адреса свой предел — снова 403, а не 429' \
+  test "$(wrong_code 127.0.0.2)" == 403
+check '…Kong видит адрес клиента, который назвал прокси, а не адрес шлюза Docker' \
+  grep -q '^127\.0\.0\.2 .*"POST /auth/v1/verify' <<< "$(compose logs --no-log-prefix kong 2>&1)"
+
 schedule=$(crontab -l 2> /dev/null)
 backup_line=$(grep -E '^0 22 \* \* \* .*\./backup\.sh' <<< "$schedule")
 health_line=$(grep -E '^\*/5 \* \* \* \* .*\./healthcheck\.sh' <<< "$schedule")

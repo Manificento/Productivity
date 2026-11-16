@@ -289,8 +289,19 @@ left() {
     || (select count(*) from auth.users where id = '$1') || ' / '
     || (select count(*) from auth.sessions where user_id = '$1')"
 }
+# mentions <user id> <e-mail>: the tables of `auth` and `public` that still hold a row with the user's id or address
+# in ANY column — with a foreign key to the user or without one, inside a JSON payload too — as "schema.table …".
+mentions() {
+  local scan
+  scan=$(sql -c "select string_agg(format('select %L, count(*) from %I.%I t where t::text like %L or t::text ilike %L',
+      schemaname || '.' || tablename, schemaname, tablename, '%$1%', '%$2%'), ' union all ')
+    from pg_tables where schemaname in ('auth', 'public')")
+  sql -c "select coalesce(string_agg(name, ' ' order by name), '') from ($scan) found (name, rows) where rows > 0"
+}
 same 'до удаления у Анны есть данные в трёх таблицах, профиль, журнал, пользователь и сессия' \
   "$(left "$anna_id")" '4 / 1 / 9 / 1 / 1'
+check '…а её адрес хранит ещё и журнал Auth (auth.audit_log_entries: строка на каждый вход), у которого нет внешнего ключа' \
+  grep -qw 'auth.audit_log_entries' <<< "$(mentions "$anna_id" anna@example.com)"
 boris_before=$(left "$boris_id")
 same 'без входа функция закрыта' "$(call '' POST /rest/v1/rpc/delete_account '{}')" 401
 same 'назвать другого пользователя нельзя: у функции нет аргументов' \
@@ -299,6 +310,8 @@ same '…данные Анны на месте' "$(left "$anna_id")" '4 / 1 / 9 
 same 'Анна удаляет свой аккаунт: POST /rest/v1/rpc/delete_account → 204' \
   "$(call "$anna" POST /rest/v1/rpc/delete_account '{}')" 204
 same '…на сервере от неё не осталось ничего' "$(left "$anna_id")" '0 / 0 / 0 / 0 / 0'
+same '…ни в одной таблице auth и public нет строки с её id или адресом: журнал Auth и состояния входа тоже очищены' \
+  "$(mentions "$anna_id" anna@example.com)" ''
 same '…и ни одной строки в таблицах-разделах (tasks, sleep_logs, settings)' \
   "$(sql -c "select (select count(*) from public.tasks where user_id = '$anna_id') + (select count(*) from public.sleep_logs where user_id = '$anna_id') + (select count(*) from public.settings where user_id = '$anna_id')")" 0
 same '…аккаунт Бориса не тронут' "$(left "$boris_id")" "$boris_before"
@@ -306,7 +319,7 @@ same 'сессия удалённого аккаунта не обновляет
 same 'ещё не истёкший токен удалённого аккаунта: данные не принимаются' "$(push "$anna" "[$(task t3)]")" 403
 same '…согласия тоже' \
   "$([[ $(consent "$anna" age true '{"rule":"16+"}') =~ ^4 ]] && echo отклонено)" отклонено
-same '…и ничего не появилось' "$(left "$anna_id")" '0 / 0 / 0 / 0 / 0'
+same '…и ничего не появилось' "$(left "$anna_id") $(mentions "$anna_id" anna@example.com)" '0 / 0 / 0 / 0 / 0 '
 anna_verifier3=$(new_verifier)
 same 'тот же адрес может завести аккаунт заново: письмо уходит' "$(request_letter anna@example.com "$anna_verifier3")" 200
 check '…в письме снова код' wait_letters anna@example.com 3

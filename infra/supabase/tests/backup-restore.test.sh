@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Infra checks of issues #172 and #265 for backups: backup.sh to S3 (a local MinIO container), encrypted, 14 newest
 # copies kept, unencrypted copies made before #265 re-encrypted in place; restore.sh of the latest copy on an empty
-# stack brings back synthetic users and data.
+# stack brings back synthetic users and data. The app's migrations are applied before the copy is made (#278): a
+# restored database must go on creating a profile for every new account — the trigger for it sits on `auth.users`,
+# outside the schema the copy is made of.
 # Needs Docker. Run: infra/supabase/tests/backup-restore.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -11,11 +13,21 @@ MINIO_IMAGE=pgsty/minio:RELEASE.2026-08-04T00-00-00Z
 EMAIL=synthetic-user@example.com
 PASSWORD=synthetic-password-1
 
-section 'подготовка: стек kz с синтетическими данными, MinIO с бакетом'
+section 'подготовка: стек kz с миграциями и синтетическими данными, MinIO с бакетом'
 new_region kz 8000 ENABLE_EMAIL_AUTOCONFIRM=true
 use_region kz
 "$INFRA_DIR/deploy.sh" || exit 1
+"$INFRA_DIR/migrate.sh" || exit 1
 api=$(local_api_url)
+sql() { compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -tA -c "$1"; }
+# The app's triggers on tables of other schemas (auth.users), as the database defines them.
+outside_triggers() {
+  sql "select coalesce(string_agg(pg_get_triggerdef(t.oid), '; ' order by t.tgname), '')
+    from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc p on p.oid = t.tgfoid
+    where not t.tgisinternal and c.relnamespace <> 'public'::regnamespace and p.pronamespace = 'public'::regnamespace"
+}
+# profile_of <e-mail>: the region in the user's profile, or nothing.
+profile_of() { sql "select p.region from public.profiles p join auth.users u on u.id = p.user_id where u.email = '$1'"; }
 
 export S3_ENDPOINT=http://127.0.0.1:9100 S3_BUCKET=lifeos-backups S3_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=ci-access-key AWS_SECRET_ACCESS_KEY=ci-secret-key-1234
@@ -55,6 +67,10 @@ for body in первая вторая третья; do
   json_post /rest/v1/synthetic_notes "{\"body\":\"$body\"}" -H "Authorization: Bearer $token" > /dev/null
 done
 check 'синтетический пользователь видит свои 3 заметки' test "$(notes "$token")" == 'первая,вторая,третья'
+check '…и получил профиль с регионом развёртывания (триггер миграции 0002 на auth.users)' test "$(profile_of "$EMAIL")" == kz
+triggers_before=$(outside_triggers)
+check '…триггер приложения на таблице чужой схемы есть: lifeos_create_profile на auth.users' \
+  grep -q 'lifeos_create_profile AFTER INSERT ON auth.users' <<< "$triggers_before"
 
 section 'backup.sh: pg_dump сжат, зашифрован и загружен в S3 (MinIO), хранятся 14 последних копий'
 # 15 older encrypted copies plus 2 unencrypted ones made before #265 (newer than the rest) are already in the bucket:
@@ -92,6 +108,8 @@ decrypt "$BACKUP_ENCRYPTION_KEY" > "$WORK/plain.sql.gz"
 check 'с ключом — gzip' gzip -t "$WORK/plain.sql.gz"
 check 'внутри — pg_dump с данными auth и public' \
   bash -c "gunzip -c '$WORK/plain.sql.gz' | grep -q 'COPY auth.users' && gunzip -c '$WORK/plain.sql.gz' | grep -q 'COPY public.synthetic_notes'"
+check '…и триггеры приложения на таблицах других схем (pg_dump --schema=public их не берёт): создание профиля на auth.users' \
+  bash -c "gunzip -c '$WORK/plain.sql.gz' | grep -q '^CREATE TRIGGER lifeos_create_profile AFTER INSERT ON auth.users '"
 
 section 'backup.sh не смог сделать копию → уведомление в webhook (заглушка)'
 hooks="$WORK/hooks.log"
@@ -163,5 +181,17 @@ check 'его 3 заметки на месте' test "$(notes "$token")" == 'п�
 check 'RLS работает: без входа заметок не видно' test -z "$(notes)"
 status=$(json_post /rest/v1/synthetic_notes '{"body":"после восстановления"}' -H "Authorization: Bearer $token" -o /dev/null -w '%{http_code}')
 check 'новые записи после восстановления сохраняются' test "$status" == 201
+
+section 'восстановленная база ведёт себя как исходная: миграции учтены, новый аккаунт получает профиль с регионом ячейки'
+check 'migrate.sh после восстановления ничего не применяет: журнал миграций приехал с копией' \
+  bash -c "'$INFRA_DIR/migrate.sh' 2>&1 | grep -q 'применено миграций — 0'"
+check 'триггеры приложения на таблицах других схем — те же, что в исходной базе (создание профиля на auth.users)' \
+  test "$(outside_triggers)" == "$triggers_before"
+check 'профиль восстановленного пользователя на месте' test "$(profile_of "$EMAIL")" == kz
+json_post /auth/v1/signup "{\"email\":\"after-restore@example.com\",\"password\":\"$PASSWORD\"}" > /dev/null
+check 'новый аккаунт после восстановления получает профиль с регионом ячейки' \
+  test "$(profile_of after-restore@example.com)" == kz
+check '…пользователей без профиля нет' \
+  test "$(sql 'select count(*) from auth.users u where not exists (select 1 from public.profiles p where p.user_id = u.id)')" == 0
 
 finish

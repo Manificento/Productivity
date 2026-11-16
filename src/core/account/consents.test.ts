@@ -4,6 +4,7 @@ import { FakeAccountServer } from '../../test/fakeAccountServer';
 import { exportAll } from '../backup';
 import { db } from '../db';
 import { isLocalOnlySetting } from '../sync/localOnly';
+import { consentsAfterAnswer, type Consent } from './consents';
 import {
   AGE_RULES,
   completeSignIn,
@@ -57,6 +58,7 @@ describe('contract #278: согласия', () => {
 
     const age = await recordConsent('age', true, TEXT, { rule: 'kz18+' }, NOW);
     expect(age).toEqual({
+      id: 1,
       kind: 'age',
       granted: true,
       textVersion: TEXT,
@@ -88,6 +90,7 @@ describe('contract #278: согласия', () => {
     ]);
     await waitFor(() => expect(consents.result.current.isGranted('cloud_health')).toBe(false));
     expect(consents.result.current.consents.cloud_health).toEqual({
+      id: 4,
       kind: 'cloud_health',
       granted: false,
       textVersion: '2026-12',
@@ -132,13 +135,21 @@ describe('contract #278: согласия', () => {
     ]);
     expect(effective).toEqual({
       age: {
+        id: 1,
         kind: 'age',
         granted: true,
         textVersion: 'v1',
         details: { rule: '16+' },
         createdAt: '2026-11-16T04:00:00+00:00',
       },
-      cloud: { kind: 'cloud', granted: true, textVersion: 'v7', details: null, createdAt: '2026-11-16T04:00:00+00:00' },
+      cloud: {
+        id: 7,
+        kind: 'cloud',
+        granted: true,
+        textVersion: 'v7',
+        details: null,
+        createdAt: '2026-11-16T04:00:00+00:00',
+      },
       analytics: expect.objectContaining({ granted: false, textVersion: 'v4' }),
     });
     expect(isGranted(effective, 'cloud')).toBe(true);
@@ -172,6 +183,98 @@ describe('contract #278: согласия', () => {
     await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(false));
   });
 
+  it('ответ сервера, прочитавшего журнал ДО нового согласия, приходит после него: копия на устройстве не теряет новую строку — отзыв остаётся отзывом', async () => {
+    await signIn();
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    await recordConsent('cloud', true, TEXT, undefined, NOW);
+    const consents = renderHook(() => useConsents());
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(true));
+
+    // A refresh (another tab, the sign-in) whose GET the server answered before the withdrawal below — and whose
+    // answer reaches the device only after it.
+    const real = server.fetch;
+    let deliver = (): void => undefined;
+    const delivered = new Promise<void>((resolve) => (deliver = resolve));
+    vi.mocked(globalThis.fetch).mockImplementationOnce(async (input, init) => {
+      const old = await real(input, init);
+      await delivered;
+      return old;
+    });
+    const refreshing = refreshConsents(NOW);
+    await waitFor(() => expect(consentRequests().at(-1)).toBe('GET'));
+
+    const revoked = await recordConsent('cloud', false, TEXT, undefined, NOW);
+    expect(revoked).toMatchObject({ id: 3, granted: false });
+    deliver();
+    // The old answer still says «granted» (row 2); the journal's last row of the kind is the withdrawal (row 3).
+    expect((await refreshing).cloud).toMatchObject({ id: 3, granted: false });
+    expect(consents.result.current.isGranted('cloud')).toBe(false);
+    expect((await db.settings.get('account.consents'))?.value).toMatchObject({
+      consents: { age: { id: 1, granted: true }, cloud: { id: 3, granted: false } },
+    });
+    // The next answer is the whole journal again: nothing was lost and nothing is stuck.
+    expect(await refreshConsents(NOW)).toMatchObject({ age: { id: 1 }, cloud: { id: 3, granted: false } });
+  });
+
+  it('копия на устройстве опережает журнал (сервер восстановлен из резервной копии): новое согласие не теряется — копия сверяется с журналом', async () => {
+    await signIn();
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    // The device remembers a row of the journal that the server no longer has.
+    const cached = await db.settings.get('account.consents');
+    const value = cached?.value as { userId: string; consents: Record<string, unknown> };
+    const lost = { id: 50, kind: 'cloud', granted: true, textVersion: TEXT, details: null, createdAt: '' };
+    await db.settings.put({
+      key: 'account.consents',
+      value: { ...value, consents: { ...value.consents, cloud: lost } },
+    });
+    const consents = renderHook(() => useConsents());
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(true));
+
+    await expect(recordConsent('cloud', false, TEXT, undefined, NOW)).resolves.toMatchObject({ id: 2, granted: false });
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(false));
+    expect(consents.result.current.consents).toMatchObject({ age: { id: 1 }, cloud: { id: 2, granted: false } });
+
+    // Without the network the consent is stored all the same; the copy catches up at the next refresh.
+    await db.settings.put({
+      key: 'account.consents',
+      value: { ...value, consents: { ...value.consents, cloud: lost } },
+    });
+    const real = server.fetch;
+    vi.mocked(globalThis.fetch).mockImplementation((input, init) =>
+      init?.method === 'GET' ? Promise.reject(new TypeError('Failed to fetch')) : real(input, init),
+    );
+    await expect(recordConsent('cloud', true, TEXT, undefined, NOW)).resolves.toMatchObject({ id: 3, granted: true });
+    vi.mocked(globalThis.fetch).mockImplementation(real);
+    expect(await refreshConsents(NOW)).toMatchObject({ cloud: { id: 3, granted: true } });
+  });
+
+  it('consentsAfterAnswer: ответ сервера заменяет копию; строка, записанная, пока ответ шёл, остаётся, если она позже ответа', () => {
+    const row = (id: number, kind: Consent['kind'], granted: boolean): Consent => ({
+      id,
+      kind,
+      granted,
+      textVersion: TEXT,
+      details: null,
+      createdAt: '',
+    });
+    const before = { age: row(1, 'age', true), cloud: row(2, 'cloud', true) };
+    // Nothing was recorded meanwhile: the answer is the truth, even where it knows less or an earlier row (a
+    // server restored from a backup) — the copy never holds on to what the server does not have.
+    expect(consentsAfterAnswer(before, before, { age: row(1, 'age', true) })).toEqual({ age: row(1, 'age', true) });
+    // Recorded meanwhile and later than the answer: kept. Recorded meanwhile, but the answer knows a later row
+    // (another device): the answer wins.
+    const current = { ...before, cloud: row(5, 'cloud', false), analytics: row(6, 'analytics', true) };
+    expect(consentsAfterAnswer(before, current, { age: row(1, 'age', true), cloud: row(2, 'cloud', true) })).toEqual({
+      age: row(1, 'age', true),
+      cloud: row(5, 'cloud', false),
+      analytics: row(6, 'analytics', true),
+    });
+    expect(consentsAfterAnswer(before, current, { cloud: row(7, 'cloud', true) })).toEqual({
+      cloud: row(7, 'cloud', true),
+      analytics: row(6, 'analytics', true),
+    });
+  });
+
   it('вход без связи с журналом: состояние unknown — ничего не считается разрешённым, пока сервер не ответил', async () => {
     await requestSignIn(ANNA, { now: NOW });
     const real = server.fetch;
@@ -195,7 +298,7 @@ describe('contract #278: согласия', () => {
       key: 'account.consents',
       value: {
         userId: 'somebody-else',
-        consents: { cloud: { kind: 'cloud', granted: true, textVersion: TEXT, details: null, createdAt: '' } },
+        consents: { cloud: { id: 1, kind: 'cloud', granted: true, textVersion: TEXT, details: null, createdAt: '' } },
       },
     });
     const consents = renderHook(() => useConsents());

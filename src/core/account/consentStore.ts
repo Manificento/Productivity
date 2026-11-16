@@ -3,6 +3,7 @@ import { db } from '../db';
 import type { BackendConfig } from '../sync/config';
 import { ACCOUNT_CONSENTS_KEY } from '../sync/localOnly';
 import {
+  consentsAfterAnswer,
   consentsOf,
   effectiveConsents,
   isGranted,
@@ -55,12 +56,24 @@ async function fetchConsents(backend: BackendConfig, accessToken: string): Promi
   return effectiveConsents(rows.data);
 }
 
-/** Reads the journal from the server and replaces the device's copy of what is in force. */
+/**
+ * Asks the server for the journal and brings the device's copy up to the answer. A consent recorded while the answer
+ * was on its way is kept (`consentsAfterAnswer`): the answer may be older than that row.
+ */
+async function askServer(backend: BackendConfig, accessToken: string, userId: string): Promise<EffectiveConsents> {
+  const before = (await readCache(userId)) ?? {};
+  const told = await fetchConsents(backend, accessToken);
+  return db.transaction('rw', db.settings, async () => {
+    const consents = consentsAfterAnswer(before, (await readCache(userId)) ?? {}, told);
+    await writeCache(userId, consents);
+    return consents;
+  });
+}
+
+/** Reads the journal from the server and brings the device's copy of what is in force up to it. */
 export async function refreshConsents(now: number = Date.now()): Promise<EffectiveConsents> {
   const { backend, accessToken, userId } = await authorized(now);
-  const consents = await fetchConsents(backend, accessToken);
-  await writeCache(userId, consents);
-  return consents;
+  return askServer(backend, accessToken, userId);
 }
 
 /**
@@ -83,10 +96,7 @@ export async function recordConsent(
   if (granted && kind !== 'age') {
     // The copy on the device may be behind another device: ask the server before saying no.
     let known = await readCache(userId);
-    if (!known || !isGranted(known, 'age')) {
-      known = await fetchConsents(backend, accessToken);
-      await writeCache(userId, known);
-    }
+    if (!known || !isGranted(known, 'age')) known = await askServer(backend, accessToken, userId);
     if (!isGranted(known, 'age')) throw new AccountError('age_required');
   }
   const answer = await send(backend, `/rest/v1/consents?${SELECT}`, {
@@ -99,8 +109,15 @@ export async function recordConsent(
   const stored = z.array(journalRow).length(1).safeParse(answer.body);
   if (!stored.success) throw new AccountError('server', answer.status);
   const consent = toConsent(stored.data[0]);
-  await db.transaction('rw', db.settings, async () => {
-    await writeCache(userId, { ...(await readCache(userId)), [kind]: consent });
+  const behind = await db.transaction('rw', db.settings, async () => {
+    const known = (await readCache(userId)) ?? {};
+    // The row just stored is the last of its kind — unless the copy already holds a later one: another tab recorded
+    // the same kind at the same moment, or the server lost rows (a restored backup). Then only the journal can tell.
+    if ((known[kind]?.id ?? 0) >= consent.id) return true;
+    await writeCache(userId, { ...known, [kind]: consent });
+    return false;
   });
+  // The consent is stored either way; without the network the copy catches up at the next `refreshConsents()`.
+  if (behind) await askServer(backend, accessToken, userId).catch(() => undefined);
   return consent;
 }

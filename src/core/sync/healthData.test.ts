@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TABLE_NAMES } from '../db';
-import { HEALTH_SETTING_PREFIXES, HEALTH_TABLES, isHealthData } from './healthData';
+import { BASELINE_SETTING_KEY } from '../adaptation/rules';
+import { HEALTH_SETTING_KEYS, HEALTH_SETTING_PREFIXES, HEALTH_TABLES, isHealthData } from './healthData';
 
 /** The synced tables that are NOT health data. A new table of `TABLE_NAMES` must be put here or in HEALTH_TABLES. */
 const NOT_HEALTH = ['projects', 'tasks', 'timeCategories', 'timeEntries', 'lifeEvents', 'notes', 'settings'];
@@ -39,10 +40,20 @@ describe('contract #278: что такое данные о здоровье дл
     for (const key of ['health.alarm', 'health.import.workouts', 'nutrition.goal', 'nutrition.profile']) {
       expect(isHealthData('settings', key)).toBe(true);
     }
-    for (const key of ['adaptation.baseline', 'time.pomodoro', 'healthy', 'nutritionist', 'theme', 42, undefined]) {
+    for (const key of ['time.pomodoro', 'healthy', 'nutritionist', 'theme', 42, undefined]) {
       expect(isHealthData('settings', key)).toBe(false);
     }
     // The prefix means something only in `settings`: a task with such an id is still a task.
     expect(isHealthData('tasks', 'health.alarm')).toBe(false);
+  });
+
+  it('adaptation.baseline — обычный день пользователя (часы сна, отбой и подъём, предел тренировок, медитация, кофеин) — данные о здоровье: уходит только с согласием cloud_health', () => {
+    expect(HEALTH_SETTING_KEYS).toEqual([BASELINE_SETTING_KEY]);
+    expect(isHealthData('settings', 'adaptation.baseline')).toBe(true);
+    // The key is matched exactly; the state of the device next to it is never synced at all (localOnly.ts).
+    for (const key of ['adaptation.baselines', 'adaptation.morning', 'adaptation']) {
+      expect(isHealthData('settings', key)).toBe(false);
+    }
+    expect(isHealthData('tasks', 'adaptation.baseline')).toBe(false);
   });
 });

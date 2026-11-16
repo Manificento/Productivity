@@ -21,9 +21,15 @@ import {
 
 /**
  * Asks the region's Auth server for the sign-in letter — ONE letter with a link and a six-digit code — and
- * remembers on this device that the sign-in is waiting (`useAccount()` → `pending`). A new address gets an account
- * when the sign-in is completed. `redirectTo` — the address of the app the link returns to (the server's
- * `SITE_URL` when omitted); it must be on the server's allow list.
+ * remembers on this device that the sign-in is waiting (`useAccount()` → `pending`). `redirectTo` — the address of
+ * the app the link returns to (the server's `SITE_URL` when omitted); it must be on the server's allow list.
+ *
+ * THE AGE COMES BEFORE THIS CALL. For a new address the server creates the account — an Auth user with the address
+ * and its profile — when the letter is asked for, not when the code is entered. So the screen applies the age rule
+ * on the device first (year of birth and country, #283) and calls this only for a user who passes it: under the
+ * age the app stays local-first without an account and nothing is collected (ADR-0009, design p. 6). The server
+ * cannot check this — it never learns the year of birth; what it does check is that no consent and no data are
+ * taken before the `age` row (`recordConsent`).
  */
 export async function requestSignIn(email: string, options: { redirectTo?: string; now?: number } = {}): Promise<void> {
   const backend = requireSignInBackend();

@@ -41,6 +41,13 @@ services:
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       # One more nginx server inside Kong, on a port that is not published: http://kong:8088/mail/<template>.
       KONG_NGINX_HTTP_INCLUDE: /home/kong/mail.conf
+      # The client's address, which Kong passes on to Auth in X-Real-IP (Auth counts its limits per address). By
+      # default it is the address the connection comes from, and a header sent by the client changes nothing. Behind
+      # a reverse proxy every connection comes from the proxy: KONG_TRUSTED_IPS names the addresses whose X-Real-IP
+      # Kong believes instead (env.example). Empty — nobody's.
+      KONG_REAL_IP_HEADER: X-Real-IP
+      KONG_REAL_IP_RECURSIVE: 'off'
+      KONG_TRUSTED_IPS: ${KONG_TRUSTED_IPS:-}
       SUPABASE_ANON_KEY: ${ANON_KEY:?}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?}
     # Substitutes the API keys into the declarative config, then starts Kong.
@@ -78,8 +85,9 @@ services:
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?}
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL:?}
       # Auth limits attempts (codes, letters, token refreshes) per client address — the one Kong reports in X-Real-IP,
-      # which a client cannot set. Without this header Auth applies no such limit at all, and the six-digit code of
-      # the sign-in letter could simply be guessed.
+      # which a client cannot set: Kong overwrites the header with the address it sees, or with the one a trusted
+      # reverse proxy named (KONG_TRUSTED_IPS above). Without this header Auth applies no such limit at all, and the
+      # six-digit code of the sign-in letter could simply be guessed.
       GOTRUE_RATE_LIMIT_HEADER: X-Real-IP
       # Sign-in by e-mail only (ADR-0009, design p. 9): no Google or other outside provider is configured — with
       # one, the App Store would require Sign in with Apple.
