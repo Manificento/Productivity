@@ -36,6 +36,22 @@ const pass = (ms: number): void => {
 const idOf = (table: string, key: string): string => `${table}\u0000${key}`;
 const keyOf = ({ table, row }: LocalRow): string => String(table === 'settings' ? row.key : row.id);
 
+/**
+ * The unique indexes of `core/db.ts` besides the primary key (`&date`, `&[programId+date]`). IndexedDB refuses a
+ * second live row with the same values — and the transaction of the whole plan with it.
+ */
+const UNIQUE_INDEXES: Record<string, readonly string[]> = {
+  sleepLogs: ['date'],
+  checkIns: ['date'],
+  weightLogs: ['date'],
+  plannedSessions: ['programId', 'date'],
+};
+const indexed = ({ table, row }: LocalRow): string | undefined => {
+  const fields = UNIQUE_INDEXES[table];
+  if (!fields || fields.some((field) => typeof row[field] !== 'string')) return undefined;
+  return fields.map((field) => String(row[field])).join('\u0000');
+};
+
 class Device {
   readonly rows = new Map<string, LocalRow>();
   readonly outbox = new Map<string, SyncOutboxEntry>();
@@ -59,6 +75,16 @@ class Device {
     this.outbox.set(idOf(table, key), { table, key, updatedAt: this.now() });
   }
 
+  /** `put`: like IndexedDB, fails when another live row of the table holds the row's unique key. */
+  private store(row: LocalRow): void {
+    const unique = indexed(row);
+    for (const other of this.rows.values()) {
+      if (unique === undefined || other.table !== row.table || keyOf(other) === keyOf(row)) continue;
+      if (indexed(other) === unique) throw new Error(`ConstraintError: ${row.table} ${keyOf(row)} / ${keyOf(other)}`);
+    }
+    this.rows.set(idOf(row.table, keyOf(row)), row);
+  }
+
   private state(): LocalState {
     return { rows: [...this.rows.values()], outbox: [...this.outbox.values()], deviceId: this.id };
   }
@@ -69,7 +95,7 @@ class Device {
   save(table: string, key: string, fields: RowData): void {
     const stored = this.rows.get(idOf(table, key))?.row;
     const createdAt = stored?.deletedAt === undefined ? (stored?.createdAt ?? this.now()) : this.now();
-    this.rows.set(idOf(table, key), { table, row: { ...fields, id: key, createdAt, updatedAt: this.now() } });
+    this.store({ table, row: { ...fields, id: key, createdAt, updatedAt: this.now() } });
     this.queue(table, key);
   }
 
@@ -115,9 +141,10 @@ class Device {
 
   // ---- what the engine does ----
 
+  /** One transaction: the removals first, then the writes in the order of the plan (`SyncPlan`). */
   private execute(plan: SyncPlan): void {
-    for (const row of plan.put) this.rows.set(idOf(row.table, keyOf(row)), row);
     for (const { table, key } of plan.remove) this.rows.delete(idOf(table, key));
+    for (const row of plan.put) this.store(row);
     for (const { table, key, updatedAt } of plan.settled) {
       if (this.outbox.get(idOf(table, key))?.updatedAt === updatedAt) this.outbox.delete(idOf(table, key));
     }
@@ -179,6 +206,21 @@ beforeEach(() => {
 });
 
 const everywhere = (table: string): RowData[][] => [phone.read(table), laptop.read(table)];
+/** Every device syncs until nothing is left to send or to get. */
+const syncAll = (...devices: Device[]): void => {
+  const order = devices.length > 0 ? devices : [phone, laptop];
+  for (let round = 0; round < 3; round += 1) for (const device of order) device.sync(server);
+};
+
+const mealId = naturalId('meal', '2026-11-05', 'lunch');
+const lunch = (items: RowData[]): RowData => ({ date: '2026-11-05', kind: 'lunch', time: START, items });
+/** A meal item written at `at` — the clock of the device that writes it. */
+const item = (id: string, grams = 100, at = worldNow): RowData => ({ id, foodId: `food-${id}`, grams, updatedAt: at });
+const itemsOf = (meal: RowData | undefined): RowData[] => (meal?.items ?? []) as RowData[];
+const liveItems = (device: Device): RowData[] =>
+  itemsOf(device.read('mealLogs')[0]).filter((i) => i.deletedAt === undefined);
+const itemIds = (device: Device): string[] => liveItems(device).map((i) => String(i.id));
+const gramsOf = (device: Device, id: string): unknown => liveItems(device).find((i) => i.id === id)?.grams;
 
 describe('таблица сценариев ADR-0009, п. 10', () => {
   it('два устройства: запись, созданная на одном, появляется на другом; правка возвращается обратно', () => {
@@ -335,6 +377,34 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
     expect(behind.conflicts).toMatchObject([{ local: { data: { title: 'Правка со старыми часами' } } }]);
   });
 
+  describe('часы в будущем: время элемента приёма пищи сервер подрезает вместе со временем записи', () => {
+    for (const first of ['ноутбук', 'телефон'] as const) {
+      it(`поздняя правка веса с верными часами не проигрывает элементу «из будущего» (первым синхронизируется ${first})`, () => {
+        const ahead = new Device('device-phone', DAY);
+        ahead.save('mealLogs', mealId, lunch([item('суп', 300, worldNow + DAY)]));
+        ahead.sync(server);
+        laptop.sync(server);
+        expect(itemsOf(server.changesSince(0)[0].data)).toMatchObject([{ id: 'суп', updatedAt: START }]);
+        // The echo of the push brings the device the item time the server stored.
+        expect(liveItems(ahead)).toMatchObject([{ id: 'суп', updatedAt: START }]);
+
+        pass(120 * MINUTE);
+        // The laptop (its clock is right) changes the soup's weight; the phone, not knowing that, adds tea.
+        laptop.save('mealLogs', mealId, lunch([{ ...liveItems(laptop)[0], grams: 200, updatedAt: worldNow }]));
+        ahead.save('mealLogs', mealId, lunch([...liveItems(ahead), item('чай', 100, worldNow + DAY)]));
+
+        syncAll(...(first === 'ноутбук' ? [laptop, ahead] : [ahead, laptop]));
+
+        for (const device of [ahead, laptop]) {
+          expect(itemIds(device).toSorted()).toEqual(['суп', 'чай']);
+          expect(gramsOf(device, 'суп')).toBe(200);
+        }
+        expect(laptop.read('mealLogs')).toEqual(ahead.read('mealLogs'));
+        expect([ahead.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+      });
+    }
+  });
+
   describe('один и тот же день на двух устройствах', () => {
     const day = '2026-11-05';
     const id = naturalId('checkIn', day);
@@ -377,24 +447,6 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
   });
 
   describe('два устройства добавляют в один приём пищи', () => {
-    const mealId = naturalId('meal', '2026-11-05', 'lunch');
-    const lunch = (items: RowData[]): RowData => ({ date: '2026-11-05', kind: 'lunch', time: START, items });
-    const item = (id: string, grams = 100, extra: RowData = {}): RowData => ({
-      id,
-      foodId: `food-${id}`,
-      grams,
-      updatedAt: worldNow,
-      ...extra,
-    });
-    const itemsOf = (meal: RowData | undefined): RowData[] => (meal?.items ?? []) as RowData[];
-    const itemIds = (device: Device): string[] =>
-      itemsOf(device.read('mealLogs')[0])
-        .filter((i) => i.deletedAt === undefined)
-        .map((i) => String(i.id));
-    const syncAll = (): void => {
-      for (const device of [phone, laptop, phone, laptop, phone]) device.sync(server);
-    };
-
     it('оба продукта остаются на обоих устройствах и на сервере', () => {
       phone.save('mealLogs', mealId, lunch([item('суп')]));
       pass(MINUTE);
@@ -455,8 +507,168 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
       syncAll();
 
       expect(itemIds(phone).toSorted()).toEqual(['суп', 'чай', 'яблоко']);
-      expect((phone.read('mealLogs')[0].items as RowData[]).find((i) => i.id === 'суп')?.grams).toBe(350);
+      expect(gramsOf(phone, 'суп')).toBe(350);
       expect(laptop.read('mealLogs')).toEqual(phone.read('mealLogs'));
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+  });
+
+  describe('удаление последнего продукта против продукта, добавленного на другом устройстве', () => {
+    beforeEach(() => {
+      phone.save('mealLogs', mealId, lunch([item('суп')]));
+      phone.sync(server);
+      laptop.sync(server);
+
+      pass(MINUTE);
+      laptop.save('mealLogs', mealId, lunch([...liveItems(laptop), item('яблоко')]));
+      pass(MINUTE);
+      // The phone, not knowing that, removes the soup: the meal is left without items, and nutrition removes a
+      // meal with its last item (ADR-0011, p. 9) — a tombstone that says nothing about the apple.
+      phone.softDelete('mealLogs', mealId);
+    });
+
+    it('продукт другого устройства остаётся везде; удаление, которое его не видело, попадает в конфликты', () => {
+      laptop.sync(server);
+      phone.sync(server);
+      syncAll();
+
+      expect(itemIds(laptop)).toContain('яблоко');
+      expect(phone.read('mealLogs')).toEqual(laptop.read('mealLogs'));
+      expect(server.changesSince(0)).toMatchObject([{ key: mealId, updatedBy: 'device-laptop' }]);
+      expect(server.changesSince(0)[0].deletedAt).toBeUndefined();
+      expect(phone.conflicts).toMatchObject([{ local: { key: mealId, deletedAt: START + 2 * MINUTE } }]);
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+
+    it('тот же исход, если удаление пришло на сервер первым: приём пищи с продуктом возвращается', () => {
+      phone.sync(server);
+      laptop.sync(server);
+      syncAll();
+
+      expect(itemIds(laptop)).toContain('яблоко');
+      expect(phone.read('mealLogs')).toEqual(laptop.read('mealLogs'));
+      expect(server.changesSince(0)).toHaveLength(1);
+      expect(server.changesSince(0)[0].deletedAt).toBeUndefined();
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+  });
+
+  describe('уникальный ключ не из id: одна сессия программы на день (plannedSessions, &[programId+date])', () => {
+    const [MON, TUE, WED, THU, FRI] = ['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'];
+    const session = (date: string): RowData => ({ programId: 'p1', date, status: 'planned', exercises: [] });
+    const days = (device: Device): unknown[][] => device.read('plannedSessions').map((row) => [row.id, row.date]);
+    const onServer = (): unknown[][] =>
+      server
+        .changesSince(0)
+        .filter((change) => change.table === 'plannedSessions')
+        .map(({ key, deletedAt, data }) => [key, deletedAt === undefined ? data?.date : 'удалена'])
+        .toSorted();
+
+    beforeEach(() => {
+      phone.save('plannedSessions', 's1', session(MON));
+      phone.save('plannedSessions', 's2', session(WED));
+      phone.sync(server);
+      laptop.sync(server);
+    });
+
+    describe('два устройства переносят разные сессии одной программы на один день', () => {
+      beforeEach(() => {
+        pass(MINUTE);
+        phone.save('plannedSessions', 's1', session(THU));
+        pass(MINUTE);
+        laptop.save('plannedSessions', 's2', session(THU));
+      });
+
+      it('день остаётся за сессией, которая пришла на сервер первой; перенос второй попадает в конфликты, синхронизация не останавливается', () => {
+        phone.sync(server);
+        laptop.sync(server);
+        syncAll();
+
+        expect(days(phone)).toEqual([['s1', THU]]);
+        expect(days(laptop)).toEqual(days(phone));
+        // The server holds what the devices hold: the session that lost the day is deleted, not left as a second
+        // live row of that day.
+        expect(onServer()).toEqual([
+          ['s1', THU],
+          ['s2', 'удалена'],
+        ]);
+        expect(laptop.conflicts).toMatchObject([
+          { local: { key: 's2', data: { date: THU } }, remote: { key: 's1', data: { date: THU } } },
+        ]);
+        expect(phone.conflicts).toEqual([]);
+        expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+      });
+
+      it('тот же исход при другом порядке синхронизации: первым пришёл перенос с ноутбука', () => {
+        laptop.sync(server);
+        phone.sync(server);
+        syncAll();
+
+        expect(days(phone)).toEqual([['s2', THU]]);
+        expect(days(laptop)).toEqual(days(phone));
+        expect(onServer()).toEqual([
+          ['s1', 'удалена'],
+          ['s2', THU],
+        ]);
+        expect(phone.conflicts).toMatchObject([{ local: { key: 's1', data: { date: THU } }, remote: { key: 's2' } }]);
+        expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+      });
+
+      it('новое устройство после такого конфликта получает то же, что остальные', () => {
+        phone.sync(server);
+        laptop.sync(server);
+        syncAll();
+        const tablet = new Device('device-tablet');
+        tablet.sync(server);
+        expect(days(tablet)).toEqual(days(phone));
+      });
+    });
+
+    for (const pages of ['в одной странице pull', 'в разных страницах pull'] as const) {
+      it(`одно устройство переставляет сессии: получатель освобождает занятый день и не теряет ни одной (${pages})`, () => {
+        // s2 leaves Wednesday, s1 takes it, s2 moves once more: s1 reaches the server before the last move of s2.
+        pass(MINUTE);
+        phone.save('plannedSessions', 's2', session(FRI));
+        pass(MINUTE);
+        phone.save('plannedSessions', 's1', session(WED));
+        // A pull page is two changes: one more change in between puts the two sessions on different pages.
+        if (pages === 'в разных страницах pull') phone.save('tasks', 't1', { title: 'между переносами' });
+        pass(MINUTE);
+        phone.save('plannedSessions', 's2', session(TUE));
+
+        phone.sync(server);
+        laptop.sync(server);
+
+        expect(days(laptop)).toEqual([
+          ['s1', WED],
+          ['s2', TUE],
+        ]);
+        expect(days(laptop)).toEqual(days(phone));
+        expect([phone.conflicts, laptop.conflicts]).toEqual([[], []]);
+        expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+      });
+    }
+
+    it('два устройства продлевают одну программу на те же дни: остаются сессии первого, второе не упирается в занятые дни', () => {
+      pass(MINUTE);
+      phone.save('plannedSessions', 'phone-thu', session(THU));
+      phone.save('plannedSessions', 'phone-fri', session(FRI));
+      pass(MINUTE);
+      laptop.save('plannedSessions', 'laptop-thu', session(THU));
+      laptop.save('plannedSessions', 'laptop-fri', session(FRI));
+
+      phone.sync(server);
+      laptop.sync(server);
+      syncAll();
+
+      expect(days(phone)).toEqual([
+        ['phone-fri', FRI],
+        ['phone-thu', THU],
+        ['s1', MON],
+        ['s2', WED],
+      ]);
+      expect(days(laptop)).toEqual(days(phone));
+      expect(laptop.conflicts.map((conflict) => conflict.local.key).toSorted()).toEqual(['laptop-fri', 'laptop-thu']);
       expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
     });
   });

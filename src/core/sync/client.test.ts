@@ -116,6 +116,13 @@ describe('createSyncClient — тонкий транспорт синхрони�
     ]);
   });
 
+  it('push: непринятое изменение без версии сервера (ни содержимого, ни deletedAt) приходит без current', async () => {
+    // The row's unique key is held by a row the device has not seen, and the server has no version of the row.
+    const { client } = setup([ok([row('s2', 0, { applied: false, deletedAt: null, data: null })])]);
+    const [{ results }] = await collect(client.push([change('s2')], { since: 0 }));
+    expect(results).toEqual([{ table: 'tasks', key: 's2', rev: 0, updatedAt: 100, applied: false }]);
+  });
+
   it('push с replace: «заменить данные в облаке» передаётся серверу', async () => {
     const { client, requests } = setup([ok([row('a', 1, { applied: true })])]);
     await collect(client.push([change('a')], { since: 3, replace: true }));

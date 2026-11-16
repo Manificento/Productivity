@@ -89,20 +89,84 @@ $$;
 
 revoke all on sequence public.sync_rev from public, anon, authenticated;
 
+-- The unique key a row holds on the device besides its primary key — the unique indexes of src/core/db.ts
+-- (`&date`, `&[programId+date]`), UNIQUE_KEYS in src/core/sync/protocol.ts; null — the table has none, or a field
+-- of the key is neither a string nor a number (IndexedDB does not index such a row). The one place where the
+-- server reads fields of a record: src/core/sync/uniqueKeys.test.ts fails when the three lists differ.
+create function public.sync_unique_key(table_name text, data jsonb)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when sync_unique_key.table_name = 'plannedSessions'
+      and jsonb_typeof(sync_unique_key.data -> 'programId') in ('string', 'number')
+      and jsonb_typeof(sync_unique_key.data -> 'date') in ('string', 'number')
+      then jsonb_build_array(sync_unique_key.data -> 'programId', sync_unique_key.data -> 'date')::text
+    when sync_unique_key.table_name in ('sleepLogs', 'checkIns', 'weightLogs')
+      and jsonb_typeof(sync_unique_key.data -> 'date') in ('string', 'number')
+      then jsonb_build_array(sync_unique_key.data -> 'date')::text
+  end
+$$;
+
+-- A meal with the times of its items (`items[].updatedAt`, `items[].deletedAt`) cut to the server's time when
+-- they are more than 5 minutes ahead of it — the rule of the row's own `updatedAt`. Anything else is left as sent.
+create function public.sync_cut_item_times(data jsonb, server_now bigint)
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when jsonb_typeof(sync_cut_item_times.data -> 'items') = 'array' then
+      jsonb_set(sync_cut_item_times.data, '{items}', coalesce((
+        select jsonb_agg(
+          case
+            when jsonb_typeof(e.item) <> 'object' then e.item
+            else e.item
+              || case
+                when jsonb_typeof(e.item -> 'updatedAt') = 'number'
+                  and (e.item ->> 'updatedAt')::numeric > sync_cut_item_times.server_now + 300000
+                  then jsonb_build_object('updatedAt', sync_cut_item_times.server_now)
+                else '{}'::jsonb
+              end
+              || case
+                when jsonb_typeof(e.item -> 'deletedAt') = 'number'
+                  and (e.item ->> 'deletedAt')::numeric > sync_cut_item_times.server_now + 300000
+                  then jsonb_build_object('deletedAt', sync_cut_item_times.server_now)
+                else '{}'::jsonb
+              end
+          end
+          order by e.ord
+        )
+        from jsonb_array_elements(sync_cut_item_times.data -> 'items') with ordinality as e(item, ord)
+      ), '[]'::jsonb))
+    else sync_cut_item_times.data
+  end
+$$;
+
 -- Push (ADR-0009, sync p. 3 and 5). `changes` — a JSON array of
 --   { "table", "key", "updatedAt", "updatedBy", "deletedAt"?, "data"? }      (SyncChange in src/core/sync/protocol.ts)
 -- `since` — the caller's pull cursor (`lastPulledRev`); `replace` — «replace the data in the cloud» (sync p. 9).
 --
 -- For every change, in one transaction:
 --   1. `updatedAt` (and `deletedAt`) more than 5 minutes ahead of the server's clock is cut to the server's time —
---      not rejected, or the row would be stuck in the device's queue forever;
+--      not rejected, or the row would be stuck in the device's queue forever. The items of a meal carry the
+--      writer's clock too (`data.items[].updatedAt`, the item-level last-writer-wins of `merge`): they are cut
+--      the same way, or a device with a fast clock would win every merge of an item;
 --   2. last writer wins: the change is stored when its (updatedAt, updatedBy) is not earlier than the stored one;
---   3. a meal (`mealLogs`) written by ANOTHER device after `since` is never overwritten: the caller has not seen
---      that version and must unite the items first (`merge` in protocol.ts) — the server itself merges nothing;
---   4. `replace` stores every change regardless of 2 and 3;
---   5. a stored change gets the next `rev`.
+--   3. a live meal (`mealLogs`) written by ANOTHER device after `since` is never overwritten — not by a meal and
+--      not by a deletion: the caller has not seen that version and must merge first (`merge` in protocol.ts) —
+--      the server itself merges nothing;
+--   4. a live row is not stored when its unique key (`sync_unique_key`: one session of a program per day) is held
+--      by another live row that ANOTHER device wrote after `since`: the device could not hold both rows, and it
+--      has not seen the holder — it pulls first (`applyPull` in protocol.ts decides which row gives way);
+--   5. `replace` stores every change regardless of 2, 3 and 4;
+--   6. a stored change gets the next `rev`.
 -- Answers one row per change: `applied` and the row as the server now holds it — for a change that was not taken
--- this is the version that won, with its `data`, so the device can resolve the conflict without waiting for a pull.
+-- this is the stored version of its row, with its `data`, so the device can resolve the conflict without waiting
+-- for a pull; no version (rule 4 for a row the server has never stored) — `data` and `deletedAt` are both null.
 --
 -- SECURITY DEFINER, because users have no write access to the tables: the user is taken from the token
 -- (`auth.uid()`), never from the arguments, and `search_path` is empty — every name below is schema-qualified.
@@ -148,9 +212,33 @@ begin
       case when c."updatedAt" > server_now + 300000 then server_now else c."updatedAt" end as updated_at,
       c."updatedBy" as updated_by,
       case when c."deletedAt" > server_now + 300000 then server_now else c."deletedAt" end as deleted_at,
-      case when c."deletedAt" is null then c.data end as data
+      case
+        when c."deletedAt" is not null then null
+        when c."table" = 'mealLogs' then public.sync_cut_item_times(c.data, server_now)
+        else c.data
+      end as data
     from jsonb_to_recordset(sync_push.changes)
       as c("table" text, key text, "updatedAt" bigint, "updatedBy" text, "deletedAt" bigint, data jsonb)
+  ),
+  -- Rule 4: the changes whose unique key is held by a row the caller has not seen (the rows as they were before
+  -- this statement).
+  blocked as (
+    select i.table_name, i.id
+    from incoming i
+    where not sync_push.replace
+      and i.deleted_at is null
+      and public.sync_unique_key(i.table_name, i.data) is not null
+      and exists (
+        select 1
+        from public.sync_rows held
+        where held.user_id = caller
+          and held.table_name = i.table_name
+          and held.id <> i.id
+          and held.deleted_at is null
+          and held.rev > coalesce(sync_push.since, 0)
+          and held.updated_by <> i.updated_by
+          and public.sync_unique_key(held.table_name, held.data) = public.sync_unique_key(i.table_name, i.data)
+      )
   ),
   written as (
     insert into public.sync_rows as stored
@@ -159,6 +247,7 @@ begin
       caller, i.table_name, i.id, nextval('public.sync_rev'::regclass), i.updated_at, i.updated_by, i.deleted_at,
       i.data, now()
     from incoming i
+    where not exists (select 1 from blocked b where b.table_name = i.table_name and b.id = i.id)
     on conflict (user_id, table_name, id) do update
       set rev = excluded.rev,
           updated_at = excluded.updated_at,
@@ -174,7 +263,6 @@ begin
             and stored.rev > coalesce(sync_push.since, 0)
             and stored.updated_by <> excluded.updated_by
             and stored.deleted_at is null
-            and excluded.deleted_at is null
           )
         )
     returning stored.table_name, stored.id, stored.rev, stored.updated_at, stored.updated_by, stored.deleted_at
@@ -182,15 +270,16 @@ begin
   select
     i.table_name,
     i.id,
-    coalesce(w.rev, kept.rev),
-    coalesce(w.updated_at, kept.updated_at),
-    coalesce(w.updated_by, kept.updated_by),
+    coalesce(w.rev, kept.rev, 0),
+    coalesce(w.updated_at, kept.updated_at, i.updated_at),
+    coalesce(w.updated_by, kept.updated_by, i.updated_by),
     case when w.rev is null then kept.deleted_at else w.deleted_at end,
     case when w.rev is null then kept.data end,
     w.rev is not null
   from incoming i
   left join written w on w.table_name = i.table_name and w.id = i.id
-  -- The rows as they were before this statement: what the server keeps when it does not take a change.
+  -- The rows as they were before this statement: what the server keeps when it does not take a change. A change
+  -- of rule 4 for a row the server has never stored has none: it is answered with `rev` 0 and no content.
   left join public.sync_rows kept
     on kept.user_id = caller and kept.table_name = i.table_name and kept.id = i.id;
 end
@@ -223,7 +312,9 @@ as $$
 $$;
 
 -- Functions are callable by everyone by default (and Supabase grants them to the API roles): only a signed-in
--- user may call these two.
+-- user may call `sync_push` and `changes_since`; the two helpers of `sync_push` are called by nobody but it.
+revoke all on function public.sync_unique_key(text, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.sync_cut_item_times(jsonb, bigint) from public, anon, authenticated, service_role;
 revoke all on function public.sync_push(jsonb, bigint, boolean) from public, anon, authenticated, service_role;
 revoke all on function public.changes_since(bigint, integer) from public, anon, authenticated, service_role;
 grant execute on function public.sync_push(jsonb, bigint, boolean) to authenticated;

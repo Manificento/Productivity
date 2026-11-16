@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Infra checks of issue #277: the SQL migrations of migrations/ apply to an empty database and give every synced
 # table of the app a server table; row level security is checked with two users through the real API; the rules of
-# `sync_push` (rev, future time, last writer wins, meals, replace) and of `changes_since` are checked the same way.
+# `sync_push` (rev, future time, last writer wins, meals, unique keys, replace) and of `changes_since` are checked the
+# same way.
 # Needs Docker and jq. Run: infra/supabase/tests/migrations.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -234,7 +235,63 @@ push "$anna" "[$later]" "$meal_rev" > /dev/null
 same '…после того как устройство его увидело (курсор догнал) — принимается' "$(body '.[0].applied')" true
 push "$anna" "[$(change mealLogs "$meal" 3000 dev-laptop '{"items":[]}')]" 0 > /dev/null
 same '…своя же предыдущая версия отправке не мешает' "$(body '.[0].applied')" true
+meal_rev=$(body '.[0].rev')
+push "$anna" "[$(change mealLogs "$meal" 9000 dev-phone deleted)]" "$((meal_rev - 1))" > /dev/null
+same 'удаление приёма пищи устройством, которое не видело запись другого устройства, не принято; в ответе — живая запись' \
+  "$(body '.[0] | [.applied, .updatedBy, .deletedAt, (.data.items | length)]')" '[false,"dev-laptop",null,0]'
+push "$anna" "[$(change mealLogs "$meal" 9000 dev-phone deleted)]" "$meal_rev" > /dev/null
+same '…после того как устройство её увидело (курсор догнал) — удаление принимается' \
+  "$(body '.[0] | [.applied, .deletedAt]')" '[true,9000]'
 
+far=$((now_ms + 86400000))
+items="[{\"id\":\"суп\",\"grams\":300,\"updatedAt\":$far},
+  {\"id\":\"хлеб\",\"updatedAt\":$((now_ms + 120000)),\"deletedAt\":$far},
+  {\"id\":\"чай\",\"updatedAt\":1000}, \"не элемент\"]"
+push "$anna" "[$(change mealLogs meal:2026-11-06:lunch "$now_ms" dev-phone "{\"kind\":\"lunch\",\"items\":$items}")]" > /dev/null
+pull "$anna" > /dev/null
+stored_items=$(body 'map(select(.key == "meal:2026-11-06:lunch")) | .[0].data.items')
+soup_at=$(jq '.[0].updatedAt' <<< "$stored_items")
+check 'время элемента приёма пищи на сутки вперёд подрезано до серверного, как и время записи' \
+  test "$soup_at" -ge "$((now_ms - 60000))" -a "$soup_at" -le "$((now_ms + 300000))"
+same '…deletedAt элемента — тоже; остальное в элементах и их порядок не тронуты' \
+  "$(jq -c --argjson cut "$soup_at" '[.[0].grams, .[1].updatedAt, .[1].deletedAt == $cut, .[2], .[3]]' <<< "$stored_items")" \
+  "[300,$((now_ms + 120000)),true,{\"id\":\"чай\",\"updatedAt\":1000},\"не элемент\"]"
+same '…у записи не из mealLogs содержимое не меняется' \
+  "$(push "$anna" "[$(change tasks items 1000 dev-anna "{\"items\":[{\"updatedAt\":$far}]}")]" > /dev/null
+    sql -c "select data -> 'items' -> 0 ->> 'updatedAt' from public.tasks where user_id = '$anna_id' and id = 'items'")" "$far"
+
+section 'sync_push: уникальный ключ не из id — одна сессия программы на день (plannedSessions)'
+thursday='{"programId":"p1","date":"2026-11-12","status":"planned"}'
+push "$anna" "[$(change plannedSessions s1 1000 dev-phone "$thursday")]" > /dev/null
+s1_rev=$(body '.[0].rev')
+same 'первая сессия дня принята' "$(body '.[0].applied')" true
+push "$anna" "[$(change plannedSessions s2 2000 dev-laptop "$thursday")]" "$((s1_rev - 1))" > /dev/null
+same 'сессия на день, занятый строкой другого устройства после курсора, не принята; версии строки у сервера нет — rev 0, без содержимого' \
+  "$(body '.[0] | [.applied, .key, .rev, .data, .deletedAt]')" '[false,"s2",0,null,null]'
+same '…и не сохранена' \
+  "$(sql -c "select count(*) from public.planned_sessions where user_id = '$anna_id' and id = 's2'")" 0
+push "$anna" "[$(change plannedSessions s3 1000 dev-laptop '{"programId":"p1","date":"2026-11-11"}')]" > /dev/null
+push "$anna" "[$(change plannedSessions s3 2000 dev-laptop "$thursday")]" "$((s1_rev - 1))" > /dev/null
+same '…у сервера есть версия самой строки — она в ответе и осталась как была' \
+  "$(body '.[0] | [.applied, .updatedAt, .data.date]')" '[false,1000,"2026-11-11"]'
+others="[$(change plannedSessions s4 2000 dev-laptop '{"programId":"p2","date":"2026-11-12"}'),
+  $(change plannedSessions s5 2000 dev-phone "$thursday"),
+  $(change plannedSessions s6 2000 dev-laptop deleted),
+  $(change plannedSessions s7 2000 dev-laptop '{"programId":"p1"}')]"
+push "$anna" "$others" "$((s1_rev - 1))" > /dev/null
+same '…другая программа, строка того же устройства, удаление и строка без ключа приняты' \
+  "$(body 'map(.applied)')" '[true,true,true,true]'
+push "$anna" "[$(change plannedSessions s2 2000 dev-laptop "$thursday")]" "$(body 'map(.rev) | max')" > /dev/null
+same '…после того как устройство увидело занявшие день строки (курсор догнал), сервер отправке не мешает' \
+  "$(body '.[0].applied')" true
+push "$anna" "[$(change plannedSessions s8 2000 dev-tablet "$thursday")]" 0 true > /dev/null
+same '…и replace принимает всё' "$(body '.[0].applied')" true
+check 'служебные функции sync_push пользователю недоступны' grep -q 'permission denied for function sync_unique_key' \
+  <<< "$(as_user "$anna_id" "select public.sync_unique_key('tasks', '{}')")"
+check '…и sync_cut_item_times' grep -q 'permission denied for function sync_cut_item_times' \
+  <<< "$(as_user "$anna_id" "select public.sync_cut_item_times('{}', 0)")"
+
+section 'sync_push: пачка с ошибкой отклоняется целиком'
 count_before=$(sql -c "select count(*) from public.sync_rows where user_id = '$anna_id'")
 same 'неизвестная таблица: вся пачка отклонена' \
   "$(push "$anna" "[$(change tasks ok 1 dev-anna), $(change noSuchTable x 1 dev-anna)]")" 400

@@ -6,13 +6,15 @@ import { isLocalOnlySetting } from './localOnly';
  * clock. The engine (Dexie + network) reads the local state, calls these functions and executes the plans they
  * return; the transport is `client.ts`, the server side is `infra/supabase/migrations/`.
  *
- *   push:  buildPush(outbox, rows)        → changes for the server → applyPushResult(results, local) → plan
- *   pull:  changes from the server        → applyPull(changes, local)                               → plan
+ *   push:  buildPush(outbox, rows, { deviceId }) → changes for the server → applyPushResult(results, local) → plan
+ *   pull:  changes from the server               → applyPull(changes, local)                               → plan
  *   both resolve a row changed on both sides with merge(localRow, remoteRow)
  *
  * The one rule behind every plan: **a row with no entry in `syncOutbox` has no local change, so the server's
  * version replaces it; a row with an entry is merged** — last writer wins by `updatedAt`, then by `updatedBy`;
- * a meal (`mealLogs`) unites its `items` by `id`.
+ * a meal (`mealLogs`) unites its `items` by `id` and is never lost to a deletion that has not seen it. The same
+ * rule for a unique key that is not the primary key (`UNIQUE_KEYS`): the server's row takes it, the local row
+ * that holds it gives way.
  */
 
 /** How long the server keeps a tombstone (ADR-0009, sync p. 2); a device offline for longer needs a full sync. */
@@ -60,7 +62,12 @@ export interface PushResult extends RowRef {
   rev: number;
   /** `updatedAt` of the row on the server after the push (the pushed one, cut to server time when from the future). */
   updatedAt: Millis;
-  /** `false`: the server holds a later version and kept it — it comes in `current`. */
+  /**
+   * `false`: the server did not store the change. It holds a later version of the row (or a meal the device has
+   * not seen) and kept it — that version comes in `current`. Or the row's unique key (`UNIQUE_KEYS`) is held by a
+   * row the device has not seen: then `current` is the server's version of the pushed row, absent when the server
+   * has none; the change stays queued and the next pull, which brings the holder, resolves it (`applyPull`).
+   */
   applied: boolean;
   current?: PulledChange;
 }
@@ -80,11 +87,16 @@ export interface SyncConflict {
 
 /**
  * What the engine does with the answer of a push or with pulled changes, in ONE transaction marked so that the
- * outbox middleware does not queue these writes again (ADR-0010):
- * - `put` — write the rows as they are;
- * - `remove` — delete the rows physically (the server says they are deleted; nothing is left to send);
- * - `settled` — drop these `syncOutbox` entries, each only if it still has the same `updatedAt` (a newer local
- *   change of the row must stay queued).
+ * outbox middleware does not queue these writes again (ADR-0010), in this order:
+ * 1. `remove` — delete the rows physically. The server says they are deleted, or they give up a unique key to a
+ *    row of `put` (`UNIQUE_KEYS`). A row may be in `remove` and in `put`: it is deleted and then written again,
+ *    so no write of `put` meets a unique key that is still taken;
+ * 2. `put` — write the rows as they are;
+ * 3. `settled` — drop these `syncOutbox` entries, each only if it still has the same `updatedAt` (a newer local
+ *    change of the row must stay queued).
+ *
+ * A removed row whose queue entry is not in `settled` stays queued: an entry without a row is a deletion, the
+ * next push sends its tombstone.
  */
 export interface SyncPlan {
   put: LocalRow[];
@@ -101,11 +113,42 @@ export interface PullPlan extends SyncPlan {
 const SETTINGS = 'settings';
 const MEAL_LOGS = 'mealLogs';
 
+/**
+ * The unique indexes of the synced tables besides the primary key (`&date`, `&[programId+date]` in `core/db.ts`):
+ * the fields whose values only one live row of the table may hold. IndexedDB refuses a second such row, so a plan
+ * never writes one (`applyPull`), and the server does not take one over a row the device has not seen
+ * (`sync_unique_key` in `infra/supabase/migrations/`). `uniqueKeys.test.ts` keeps the three lists equal.
+ *
+ * The «one per day» tables are here although their `id` is made of the same day (ADR-0011): a row without its
+ * natural key keeps a random `id`.
+ */
+export const UNIQUE_KEYS: Readonly<Record<string, readonly string[]>> = {
+  sleepLogs: ['date'],
+  checkIns: ['date'],
+  weightLogs: ['date'],
+  plannedSessions: ['programId', 'date'],
+};
+
+/**
+ * What a row holds of its table's unique key, or `undefined` — the table has none, or a field of the key is not a
+ * string or a number (IndexedDB does not index such a row). `fields` — the row or the `data` of its version. Two
+ * live rows of one table may not have the same value; the engine reads the stored holders by it for `applyPull`.
+ */
+export function uniqueKeyOf(table: string, fields: RowData | undefined): string | undefined {
+  const names = UNIQUE_KEYS[table];
+  if (!names || !fields) return undefined;
+  const values = names.map((name) => fields[name]);
+  const isIndexed = values.every((value) => typeof value === 'string' || isTime(value));
+  return isIndexed ? JSON.stringify(values) : undefined;
+}
+
 const keyFieldOf = (table: string): string => (table === SETTINGS ? 'key' : 'id');
 const refOf = ({ table, row }: LocalRow): RowRef => ({ table, key: String(row[keyFieldOf(table)]) });
 const idOf = ({ table, key }: RowRef): string => `${table}\u0000${key}`;
 const isDeviceState = ({ table, key }: RowRef): boolean => table === SETTINGS && isLocalOnlySetting(key);
 const isTime = (value: unknown): value is Millis => typeof value === 'number' && Number.isFinite(value);
+const isDeleted = (change: SyncChange): boolean => change.deletedAt !== undefined;
+const isLive = (local: LocalRow): boolean => !isTime(local.row.deletedAt);
 
 /** The version of a stored row; a row that carries no `updatedAt` (a setting) takes `fallbackTime`. */
 function toChange(local: LocalRow, deviceId: string, fallbackTime: Millis): SyncChange {
@@ -142,22 +185,35 @@ const isSameVersion = (a: SyncChange, b: SyncChange): boolean =>
  * - **A meal (`mealLogs`) unites its `items` by `id`** instead of dropping one side: an item changed on both
  *   sides is taken with the later item `updatedAt`, a removed item stays in the list as a tombstone (an item with
  *   `deletedAt`), so the union does not bring it back. The other fields come from the later version.
+ * - **A deleted meal never beats a live meal of another device.** The two versions were written without knowing
+ *   of each other, and a meal tombstone is not «delete this meal with all it holds»: it carries no list of what
+ *   its device saw, and the app makes one when the last item the device KNEW is removed (ADR-0011, p. 9). So the
+ *   live meal stays, with the items the deleting device has never seen, and the deletion is the change that loses.
+ * - Two versions of a meal written by ONE device are not concurrent — the server's is the echo of this device's
+ *   own earlier push: the later one wins as it is, nothing is united and its own deletion stands.
  *
  * Returns `localRow` itself (keep it, it is still to be pushed), `remoteRow` itself (the local change lost), or —
- * only for a meal whose union differs from both — a NEW version of this device, one millisecond later than both:
- * it has to be written and pushed, and the server accepts it over the version it holds.
+ * only for a meal — a NEW version of this device, one millisecond later than both: the union of the items when it
+ * differs from both versions, or the local meal when the server's later deletion lost to it. A new version has
+ * to be written and pushed, and the server accepts it over the version it holds.
  */
 export function merge(localRow: SyncChange, remoteRow: SyncChange): SyncChange {
   const [winner, loser] = isLater(localRow, remoteRow) ? [localRow, remoteRow] : [remoteRow, localRow];
-  if (localRow.table !== MEAL_LOGS || winner.deletedAt !== undefined || loser.deletedAt !== undefined) return winner;
+  if (localRow.table !== MEAL_LOGS || localRow.updatedBy === remoteRow.updatedBy) return winner;
+  if (!isDeleted(localRow) && !isDeleted(remoteRow)) return unitedMeal(winner, loser, localRow.updatedBy);
+  if (isDeleted(localRow)) return isDeleted(remoteRow) ? winner : remoteRow;
+  return winner === localRow ? localRow : { ...localRow, updatedAt: remoteRow.updatedAt + 1 };
+}
 
+/** Two live versions of a meal: the later one when it already holds every item, or a new version with the union. */
+function unitedMeal(winner: SyncChange, loser: SyncChange, deviceId: string): SyncChange {
   const items = uniteItems(itemsOf(winner), itemsOf(loser));
   if (hasSameItems(items, itemsOf(winner))) return winner;
   return {
     table: winner.table,
     key: winner.key,
     updatedAt: winner.updatedAt + 1,
-    updatedBy: localRow.updatedBy,
+    updatedBy: deviceId,
     data: { ...winner.data, items },
   };
 }
@@ -204,7 +260,9 @@ function hasSameItems(a: MergedItem[], b: MergedItem[]): boolean {
  * - An entry with no row is a physical deletion (ADR-0010, p. 3): a tombstone at the entry's time.
  * - Device state (`localOnly.ts`) is never sent.
  *
- * Every change is this device's write: `updatedBy` is `deviceId`. The transport splits the list into batches.
+ * Every change is this device's write: `updatedBy` is `deviceId` — the third argument, because a stored row does
+ * not name its device (ADR-0010, p. 5: `updatedBy` is filled in by the sync layer) and a pure function cannot
+ * read `device.id` itself. The transport splits the list into batches.
  */
 export function buildPush(
   outbox: readonly SyncOutboxEntry[],
@@ -228,29 +286,36 @@ function localVersion(row: LocalRow | undefined, entry: SyncOutboxEntry, deviceI
 
 /**
  * What to do with changes pulled from the server (ADR-0009, sync p. 4–5). `local.rows` — the stored rows of the
- * changed keys (tombstones included), `local.outbox` — the queue.
+ * changed keys (tombstones included) and the stored rows that hold the unique keys of the changes
+ * (`uniqueKeyOf`); `local.outbox` — the queue.
  *
  * - A row without a queue entry has no local change: the server's version replaces it. A server tombstone removes
  *   a live row physically; a tombstone this device made itself (`softDelete`) is left for the engine's clean-up
  *   (ADR-0010: not before the server's tombstone has expired).
  * - A row with a queue entry is resolved by `merge`: the local version stays queued; or the server's replaces it
- *   — the entry is settled and, unless both are the same version (the echo of this device's own push), the lost
- *   local version is reported in `conflicts`; or a merged meal is written and stays queued.
+ *   — the entry is settled and the lost local version is reported in `conflicts` (not when both are the same
+ *   version — the echo of this device's own push — or both are deletions: nothing is lost then); or a new
+ *   version of a meal is written and stays queued.
+ * - **A unique key that is not the primary key** (`UNIQUE_KEYS`, e.g. one session of a program per day): the
+ *   server's row takes it, another local row that holds it gives way — it is removed first. Without a queue
+ *   entry that row has no local change: the server has moved or deleted it, and its own change, if any, writes it
+ *   again (it comes with a later `rev`, in this page or a later one). With a queue entry its local change loses
+ *   the key: the version is reported in `conflicts` and the entry stays, so the row goes to the server as a
+ *   deletion — the server never keeps two live rows of one key, and every device ends with the same rows.
  * - Device state (`localOnly.ts`) is never taken from the server.
  *
  * Changes are applied in the order of `rev`.
  */
 export function applyPull(changes: readonly PulledChange[], local: LocalState): PullPlan {
-  const rows = indexRows(local.rows);
+  const device = deviceImage(local.rows);
   const queue = new Map(local.outbox.map((entry) => [idOf(entry), entry]));
-  const writes = new Map<string, { put: LocalRow } | { remove: RowRef }>();
   const plan: PullPlan = { put: [], remove: [], settled: [], conflicts: [], cursor: 0 };
 
   for (const remote of changes.toSorted((a, b) => a.rev - b.rev)) {
     plan.cursor = Math.max(plan.cursor, remote.rev);
     if (isDeviceState(remote)) continue;
     const id = idOf(remote);
-    const stored = rows.get(id);
+    const stored = device.rows.get(id);
     const queued = queue.get(id);
     let version: SyncChange = remote;
     if (queued) {
@@ -260,28 +325,83 @@ export function applyPull(changes: readonly PulledChange[], local: LocalState): 
       if (version === remote) {
         queue.delete(id);
         plan.settled.push(queued);
-        if (!isSameVersion(mine, remote)) plan.conflicts.push({ local: mine, remote });
+        const isLost = !isSameVersion(mine, remote) && !(isDeleted(mine) && isDeleted(remote));
+        if (isLost) plan.conflicts.push({ local: mine, remote });
       }
     }
-    if (version.deletedAt === undefined) {
-      const row = toLocalRow(version);
-      rows.set(id, row);
-      writes.set(id, { put: row });
-    } else if (stored && !isTime(stored.row.deletedAt)) {
-      rows.delete(id);
-      writes.set(id, { remove: { table: remote.table, key: remote.key } });
+    if (isDeleted(version)) {
+      if (stored && isLive(stored)) device.remove(remote);
+      continue;
     }
+    const row = toLocalRow(version);
+    const holder = device.holderOfKeyOf(row);
+    if (holder) {
+      const pending = queue.get(idOf(refOf(holder)));
+      if (pending) plan.conflicts.push({ local: toChange(holder, local.deviceId, pending.updatedAt), remote });
+      device.remove(refOf(holder));
+    }
+    device.put(row);
   }
 
-  for (const write of writes.values()) {
-    if ('put' in write) plan.put.push(write.put);
-    else plan.remove.push(write.remove);
-  }
+  plan.put = device.written();
+  plan.remove = device.removed();
   return plan;
 }
 
 /**
- * What to do with the server's answer to a push. `local` — the state the push was built from.
+ * The device's rows as a plan leaves them: `applyPull` reads them and writes to them change by change, so a later
+ * change of a page sees what an earlier one did. Keeps track of which live row holds which unique key.
+ */
+function deviceImage(stored: readonly LocalRow[]) {
+  const rows = indexRows(stored);
+  const holders = new Map<string, string>();
+  const put = new Map<string, LocalRow>();
+  const remove = new Map<string, RowRef>();
+
+  const keyHeldBy = (row: LocalRow | undefined): string | undefined => {
+    const unique = row && isLive(row) ? uniqueKeyOf(row.table, row.row) : undefined;
+    return row && unique !== undefined ? idOf({ table: row.table, key: unique }) : undefined;
+  };
+  const release = (id: string): void => {
+    const held = keyHeldBy(rows.get(id));
+    if (held !== undefined && holders.get(held) === id) holders.delete(held);
+  };
+  for (const [id, row] of rows) {
+    const held = keyHeldBy(row);
+    if (held !== undefined) holders.set(held, id);
+  }
+
+  return {
+    rows: rows as ReadonlyMap<string, LocalRow>,
+    /** Another live row that holds the unique key this row is about to take. */
+    holderOfKeyOf(row: LocalRow): LocalRow | undefined {
+      const held = keyHeldBy(row);
+      const holder = held === undefined ? undefined : holders.get(held);
+      return holder === undefined || holder === idOf(refOf(row)) ? undefined : rows.get(holder);
+    },
+    put(row: LocalRow): void {
+      const id = idOf(refOf(row));
+      release(id);
+      rows.set(id, row);
+      put.set(id, row);
+      const held = keyHeldBy(row);
+      if (held !== undefined) holders.set(held, id);
+    },
+    remove(ref: RowRef): void {
+      const id = idOf(ref);
+      release(id);
+      rows.delete(id);
+      put.delete(id);
+      remove.set(id, { table: ref.table, key: ref.key });
+    },
+    written: (): LocalRow[] => [...put.values()],
+    removed: (): RowRef[] => [...remove.values()],
+  };
+}
+
+/**
+ * What to do with the server's answer to a push. `local` — the state the push was built from; its rows, as for
+ * `applyPull`, include the holders of the unique keys of the versions that came back.
  *
  * - An accepted change is settled: its queue entry goes (if the row was not changed again meanwhile — see
  *   `SyncPlan.settled`).
@@ -289,6 +409,8 @@ export function applyPull(changes: readonly PulledChange[], local: LocalState): 
  *   with the server's version, which is applied exactly like a pulled one: the local change loses and is reported
  *   in `conflicts`, or a meal is merged and stays queued. The device never waits for a pull that would not bring
  *   that version again.
+ * - A change that comes back without a version (its unique key is held by a row this device has not seen, and the
+ *   server has no version of the row) stays queued: the pull that follows brings the holder (`applyPull`).
  */
 export function applyPushResult(results: readonly PushResult[], local: LocalState): SyncPlan {
   const queue = new Map(local.outbox.map((entry) => [idOf(entry), entry]));

@@ -90,9 +90,14 @@ function toPulledChange(row: z.infer<typeof serverRow>): PulledChange {
   return typeof deletedAt === 'number' ? { ...version, deletedAt } : { ...version, data: data ?? {} };
 }
 
+/**
+ * A change that was not taken comes with the server's version of its row. A stored version always has content or
+ * `deletedAt`; neither — the server holds no version of the row (see `PushResult.applied`).
+ */
 function toPushResult(row: z.infer<typeof pushedRows>[number]): PushResult {
   const { table, key, rev, updatedAt, applied } = row;
-  return applied
+  const hasVersion = row.data != null || typeof row.deletedAt === 'number';
+  return applied || !hasVersion
     ? { table, key, rev, updatedAt, applied }
     : { table, key, rev, updatedAt, applied, current: toPulledChange(row) };
 }
