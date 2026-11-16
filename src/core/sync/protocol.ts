@@ -103,8 +103,9 @@ export interface SyncConflict {
  * 1. `remove` — delete the rows physically. The server says they are deleted, or they give up a unique key to a
  *    row of `put` (`UNIQUE_KEYS`). A row may be in `remove` and in `put`: it is deleted and then written again,
  *    so no write of `put` meets a unique key that is still taken;
- * 2. `put` — write the rows as they are (a row that gave up its key with a change still queued is written as a
- *    tombstone of `YIELDED_AT`);
+ * 2. `put` — write the rows as they are, in the order of the list: a row written in place frees its old unique key
+ *    only when it is written, and the row that takes that key comes after it (a row that gave up its key with a
+ *    change still queued is written as a tombstone of `YIELDED_AT`);
  * 3. `settled` — drop these `syncOutbox` entries, each only if it still has the same `updatedAt` (a newer local
  *    change of the row must stay queued).
  *

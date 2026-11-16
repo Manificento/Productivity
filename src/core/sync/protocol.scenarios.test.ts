@@ -216,6 +216,17 @@ beforeEach(() => {
 });
 
 const everywhere = (table: string): RowData[][] => [phone.read(table), laptop.read(table)];
+
+/** A random source that gives the same sequence for the same seed on every run (mulberry32). */
+function seededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
 /** Every device syncs until nothing is left to send or to get. */
 const syncAll = (...devices: Device[]): void => {
   const order = devices.length > 0 ? devices : [phone, laptop];
@@ -859,6 +870,62 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
       // The server has never stored the laptop's sessions: there is no version to go back to, only they are gone.
       expect(onServer().filter(([, day]) => day !== 'удалена')).toEqual(days(phone));
       expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+
+    it('300 случайных расписаний на трёх устройствах: все приходят к одному плану, день не занят дважды, сессия пропадает только если её удалил пользователь', () => {
+      const week = [MON, TUE, WED, THU, FRI];
+      for (let seed = 1; seed <= 300; seed += 1) {
+        const random = seededRandom(seed);
+        const pick = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)];
+        worldNow = START;
+        server = new FakeSyncServer(() => worldNow);
+        // One clock is right, one is a little ahead, one is far behind.
+        const devices = [0, 3 * MINUTE, -20 * MINUTE].map((skew, i) => new Device(`device-${i}`, skew));
+        const deletedByUser = new Set<unknown>();
+        const storedByServer = new Set<unknown>();
+        const liveOnServer = (): unknown[][] => onServer().filter(([, day]) => day !== 'удалена');
+        const sync = (device: Device, pullFirst = false): void => {
+          if (pullFirst) device.pullThenPush(server);
+          else device.sync(server);
+          const live = liveOnServer();
+          for (const [key] of live) storedByServer.add(key);
+          expect(new Set(live.map(([, day]) => day)).size, `расписание ${seed}: день занят дважды`).toBe(live.length);
+        };
+
+        // Forty steps: a device moves a session to a day that is free on it, marks one done, plans a new one,
+        // deletes one — or syncs, now and then pulling before it pushes.
+        for (let step = 0; step < 40; step += 1) {
+          pass(Math.floor(random() * 3 * MINUTE));
+          const device = pick(devices);
+          const sessions = device.read('plannedSessions');
+          const free = week.filter((day) => sessions.every((row) => row.date !== day));
+          const one = sessions.length > 0 ? pick(sessions) : undefined;
+          const chance = random();
+          if (chance < 0.3 && one && free.length > 0) {
+            device.save('plannedSessions', String(one.id), { ...session(pick(free)), status: one.status });
+          } else if (chance < 0.4 && one) {
+            device.save('plannedSessions', String(one.id), { ...session(String(one.date)), status: 'done' });
+          } else if (chance < 0.5 && free.length > 0) {
+            device.save('plannedSessions', `new-${step}`, session(pick(free)));
+          } else if (chance < 0.55 && one) {
+            deletedByUser.add(one.id);
+            device.softDelete('plannedSessions', String(one.id));
+          } else {
+            sync(device, chance > 0.9);
+          }
+        }
+        for (let round = 0; round < 4; round += 1) for (const device of devices) sync(device);
+
+        const plan = Object.fromEntries(liveOnServer());
+        for (const device of devices) {
+          expect(Object.fromEntries(days(device)), `расписание ${seed}: ${device.id}`).toEqual(plan);
+          expect(device.outbox.size, `расписание ${seed}: очередь ${device.id}`).toBe(0);
+        }
+        // A session the server has stored is on every device, unless a user deleted it: a lost day, a refused
+        // move or a row that gave way never deletes it.
+        const lost = [...storedByServer].filter((key) => !(String(key) in plan) && !deletedByUser.has(key));
+        expect(lost, `расписание ${seed}: пропавшие сессии`).toEqual([]);
+      }
     });
   });
 
