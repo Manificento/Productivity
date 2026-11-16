@@ -2,13 +2,12 @@
 # Infra checks of issue #277: the SQL migrations of migrations/ apply to an empty database and give every synced
 # table of the app a server table; row level security is checked with two users through the real API; the rules of
 # `sync_push` (rev, future time, last writer wins, meals, unique keys, replace) and of `changes_since` are checked the
-# same way.
+# same way. The account (profiles, consents, the age rule, account deletion — #278) is checked by account.test.sh.
 # Needs Docker and jq. Run: infra/supabase/tests/migrations.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 
 REPO_DIR=$(cd "$INFRA_DIR/../.." && pwd)
-PASSWORD=synthetic-password-1
 
 # same "<name>" <actual> <expected>: like check, and shows both values when they differ.
 same() {
@@ -59,8 +58,7 @@ change() {
   fi
 }
 signup() {
-  curl -s -m 20 -X POST "$api/auth/v1/signup" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$1\",\"password\":\"$PASSWORD\"}" > "$WORK/$1.json"
+  new_user "$1" > "$WORK/$1.json"
   jq -r '.access_token // empty' "$WORK/$1.json"
 }
 
@@ -112,7 +110,7 @@ select count(*) filter (where proname = 'sync_push') || ' из ' || count(*) || 
   || count(*) filter (where not exists (select 1 from unnest(proconfig) setting where setting like 'search_path=%'))
 from pg_proc where pronamespace = 'public'::regnamespace and prosecdef
 SQL
-)" '1 из 1, без search_path: 0'
+)" '1 из 4, без search_path: 0'
 
 mkdir "$WORK/broken"
 cp "$INFRA_DIR"/migrations/*.sql "$WORK/broken/"
@@ -130,6 +128,10 @@ anna_id=$(jq -r '.user.id' "$WORK/anna@example.com.json")
 boris_id=$(jq -r '.user.id' "$WORK/boris@example.com.json")
 # PostgREST reloads its schema cache after migrate.sh asynchronously.
 for _ in $(seq 1 30); do [[ $(pull "$anna") == 200 ]] && break; sleep 1; done
+# The server takes data only from a user whose age is confirmed (#278; the rule itself — account.test.sh).
+age='{"kind":"age","granted":true,"text_version":"test","details":{"rule":"16+"}}'
+same 'оба подтверждают возраст — без этого sync_push не принимает данные' \
+  "$(call "$anna" POST /rest/v1/consents "$age")$(call "$boris" POST /rest/v1/consents "$age")" 201201
 
 annas="[$(change tasks t1 1000 dev-anna '{"title":"задача Анны"}'),
   $(change sleepLogs sleep:2026-11-05 1000 dev-anna '{"quality":4}'),
@@ -326,6 +328,8 @@ check '…и sync_cut_item_times' grep -q 'permission denied for function sync_c
   <<< "$(as_user "$anna_id" "select public.sync_cut_item_times('{}', 0)")"
 check '…и sync_incoming' grep -q 'permission denied for function sync_incoming' \
   <<< "$(as_user "$anna_id" "select count(*) from public.sync_incoming('[]', 0)")"
+check '…и sync_apply — правила отправки без проверки возраста (#278)' grep -q 'permission denied for function sync_apply' \
+  <<< "$(as_user "$anna_id" "select count(*) from public.sync_apply('[]')")"
 
 section 'sync_push: пачка с ошибкой отклоняется целиком'
 count_before=$(sql -c "select count(*) from public.sync_rows where user_id = '$anna_id'")

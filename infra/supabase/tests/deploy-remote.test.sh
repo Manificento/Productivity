@@ -238,6 +238,69 @@ check 'обратный прокси отдаёт API по HTTPS для доме
   test "$(https_status /auth/v1/health "$ANON_KEY")" == 200
 check '…GET /rest/v1/ с ключом service_role → 200' test "$(https_status /rest/v1/ "$SERVICE_ROLE_KEY")" == 200
 
+# Auth counts its limits (code checks, token refreshes, letter requests) per client address. Behind the proxy that
+# must be the address of the CLIENT, not of the proxy: with one address for everybody, anyone could use up the limit
+# of the whole region (#278). Two clients here are two source addresses of this machine — all of 127.0.0.0/8 is local.
+# wrong_code <source address> <e-mail> [curl options…]: a wrong sign-in code for the account, sent through the proxy.
+# Prints the HTTP status.
+wrong_code() {
+  curl -s -o /dev/null -w '%{http_code}\n' -m 10 --cacert "$WORK/proxy-ca.crt" --interface "$1" "${@:3}" \
+    -X POST https://localhost:8443/auth/v1/verify -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+    -d "{\"type\":\"email\",\"email\":\"$2\",\"token\":\"000000\"}"
+}
+check 'проверка кода входа через прокси: неверный код → 403' test "$(wrong_code 127.0.0.2 nobody@example.com)" == 403
+# Every guess names another account: the limit per account (below) is not what answers here.
+flood=$(for i in $(seq 1 40); do
+  wrong_code 127.0.0.1 "nobody$i@example.com" -H "X-Real-IP: 10.0.0.$i" -H "X-Forwarded-For: 10.0.0.$i"
+done)
+check 'один клиент исчерпал свой предел проверок кода (30 за 5 минут): дальше 429, хотя каждый запрос называет в заголовке другой адрес' \
+  test "$(grep -c '^403$' <<< "$flood")" -le 30 -a "$(grep -c '^429$' <<< "$flood")" -ge 10
+check '…другого клиента это не касается: у его адреса свой предел — снова 403, а не 429' \
+  test "$(wrong_code 127.0.0.2 nobody@example.com)" == 403
+check '…Kong видит адрес клиента, который назвал прокси, а не адрес шлюза Docker' \
+  grep -q '^127\.0\.0\.2 .*"POST /auth/v1/verify' <<< "$(compose logs --no-log-prefix kong 2>&1)"
+
+# The limit per client address does not stop somebody who has many addresses: twenty clients guess the code of ONE
+# account, one guess each — nobody comes near the limit of an address. The gateway counts the attempts per account.
+distributed=$(for i in $(seq 11 30); do wrong_code "127.0.0.$i" victim@example.com; done)
+check 'двадцать клиентов подбирают код одного аккаунта, по попытке с адреса: проверены первые 10 (403), остальным — 429' \
+  test "$(paste -sd ' ' <<< "$distributed")" == "$(printf '403 %.0s' {1..10})$(printf '429 %.0s' {1..10} | sed 's/ $//')"
+check '…другой аккаунт с тех же адресов по-прежнему проверяется: 403' \
+  test "$(wrong_code 127.0.0.11 somebody-else@example.com)" == 403
+
+# Letters: 10 requests an hour per client address, counted by the gateway — again for the client's own address.
+# No letter leaves this server (its SMTP host does not exist): the gateway counts a request before Auth tries.
+# ask_letter <source address> <e-mail> [curl options…]: a request for the sign-in letter. Prints the HTTP status.
+ask_letter() {
+  curl -s -o /dev/null -w '%{http_code}\n' -m 20 --cacert "$WORK/proxy-ca.crt" --interface "$1" "${@:3}" \
+    -X POST https://localhost:8443/auth/v1/otp -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$2\",\"create_user\":true}"
+}
+# ask_letters <tag>: 15 requests of one client, each naming another client address in the headers.
+ask_letters() {
+  local i
+  for i in $(seq 1 15); do
+    ask_letter 127.0.0.1 "letter-$1-$i@example.com" -H "X-Real-IP: 10.0.1.$i" -H "X-Forwarded-For: 10.0.1.$i"
+  done
+}
+hour=$(date -u +%Y%m%d%H)
+letters=$(ask_letters a)
+# The gateway counts per clock hour: if the hour turned meanwhile, the same again within the new one.
+[[ $(date -u +%Y%m%d%H) == "$hour" ]] || letters=$(ask_letters b)
+check 'один клиент просит 15 писем: шлюз пропускает к Auth не больше 10 запросов за час, остальным — 429, какой бы адрес ни стоял в заголовке' \
+  test "$(grep -cv '^429$' <<< "$letters")" -le 10 -a "$(grep -c '^429$' <<< "$letters")" -ge 5
+check '…другого клиента это не касается: его запрос шлюз пропускает' \
+  test "$(ask_letter 127.0.0.2 letter-other@example.com)" != 429
+
+# One IPv6 client has a whole /64 of addresses — a new limit per request — so the proxy does not listen on IPv6.
+check 'прокси слушает только IPv4: все адреса в настройках Caddy — tcp4/0.0.0.0 (просто 0.0.0.0 принимает и IPv6)' \
+  test "$(compose exec -T proxy caddy adapt --config /etc/caddy/Caddyfile 2> /dev/null |
+    jq -r '[.apps.http.servers[].listen[] | startswith("tcp4/0.0.0.0:")] | all and length > 0')" == true
+check '…по IPv6 он не отвечает: соединение с [::1]:8443 не устанавливается' \
+  fails curl -s -o /dev/null -m 5 --cacert "$WORK/proxy-ca.crt" --resolve 'localhost:8443:[::1]' https://localhost:8443/auth/v1/health
+check '…а Kong опубликован только на 127.0.0.1 — мимо прокси к нему не подойти' \
+  test "$(docker inspect -f '{{range $port, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{.HostIp}} {{end}}{{end}}' "$(compose ps -q kong)")" == '127.0.0.1 '
+
 schedule=$(crontab -l 2> /dev/null)
 backup_line=$(grep -E '^0 22 \* \* \* .*\./backup\.sh' <<< "$schedule")
 health_line=$(grep -E '^\*/5 \* \* \* \* .*\./healthcheck\.sh' <<< "$schedule")
@@ -272,6 +335,8 @@ kong_before=$(compose ps -q kong)
 proxy_before=$(compose ps -q proxy)
 # The owner changed a setting on the server by hand (more copies kept); the deploy must not undo it.
 sed -i 's/^BACKUP_KEEP=.*/BACKUP_KEEP=30/' "$SERVER_ENV"
+# …except the one that would let any client name its own address to Kong (KONG_TRUSTED_IPS is set with the proxy).
+sed -i 's/^KONG_BIND=.*/KONG_BIND=0.0.0.0/' "$SERVER_ENV"
 # A rotated secret: Auth is recreated with it, the database is not.
 # shellcheck disable=SC2016 # literally
 export SMTP_PASS='новый p@ss $2'
@@ -292,6 +357,9 @@ auth_recreated_with_new_pass() {
 }
 check '…и Auth пересоздан с ним' auth_recreated_with_new_pass
 check 'настройка, изменённая на сервере вручную (BACKUP_KEEP=30), сохранена' test "${again[BACKUP_KEEP]:-}" == 30
+check '…кроме KONG_BIND: за прокси Kong слушает только 127.0.0.1, деплой возвращает это значение' \
+  test "${again[KONG_BIND]:-}|${again[KONG_TRUSTED_IPS]:-}" == '127.0.0.1|10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+check '…и говорит об этом в журнале' grep -q 'KONG_BIND в файле настроек сервера был не 127.0.0.1' "$WORK/redeploy.log"
 check 'файл настроек по-прежнему 600' test "$(stat -c %a "$SERVER_ENV")" == 600
 check 'база не пересоздана: тот же контейнер db' test "$(compose ps -q db)" == "$db_before"
 check 'код заменён, но kong.yml и Caddyfile те же: kong и proxy не пересозданы' \

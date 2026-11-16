@@ -47,3 +47,16 @@ export function backendFor(profileRegion: string, env: BackendEnv = import.meta.
   if (typeof url !== 'string' || url === '' || typeof anonKey !== 'string' || anonKey === '') return null;
   return { region: profileRegion, url: url.replace(/\/+$/, ''), anonKey };
 }
+
+/**
+ * Backend a NEW sign-in goes to — there is no profile yet, so no region to read from it: the default region when
+ * this build has it, otherwise the first region the build is configured for (a staging build knows only `eu`).
+ * `null` — the build has no cloud backend at all: the app is local-only and makes no account request.
+ */
+export function signInBackend(env: BackendEnv = import.meta.env): BackendConfig | null {
+  for (const region of [DEFAULT_REGION, ...REGIONS]) {
+    const backend = backendFor(region, env);
+    if (backend) return backend;
+  }
+  return null;
+}

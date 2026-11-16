@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Infra checks of issues #172 and #265 for backups: backup.sh to S3 (a local MinIO container), encrypted, 14 newest
 # copies kept, unencrypted copies made before #265 re-encrypted in place; restore.sh of the latest copy on an empty
-# stack brings back synthetic users and data.
+# stack brings back synthetic users and data. The app's migrations are applied before the copy is made (#278): a
+# restored database must go on creating a profile for every new account — the trigger for it sits on `auth.users`,
+# outside the schema the copy is made of.
 # Needs Docker. Run: infra/supabase/tests/backup-restore.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -9,13 +11,22 @@ set -uo pipefail
 # MinIO's own images left Docker Hub in 2025; pgsty/minio is the maintained build of the same server.
 MINIO_IMAGE=pgsty/minio:RELEASE.2026-08-04T00-00-00Z
 EMAIL=synthetic-user@example.com
-PASSWORD=synthetic-password-1
 
-section 'подготовка: стек kz с синтетическими данными, MinIO с бакетом'
+section 'подготовка: стек kz с миграциями и синтетическими данными, MinIO с бакетом'
 new_region kz 8000 ENABLE_EMAIL_AUTOCONFIRM=true
 use_region kz
 "$INFRA_DIR/deploy.sh" || exit 1
+"$INFRA_DIR/migrate.sh" || exit 1
 api=$(local_api_url)
+sql() { compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -tA -c "$1"; }
+# The app's triggers on tables of other schemas (auth.users), as the database defines them.
+outside_triggers() {
+  sql "select coalesce(string_agg(pg_get_triggerdef(t.oid), '; ' order by t.tgname), '')
+    from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_proc p on p.oid = t.tgfoid
+    where not t.tgisinternal and c.relnamespace <> 'public'::regnamespace and p.pronamespace = 'public'::regnamespace"
+}
+# profile_of <e-mail>: the region in the user's profile, or nothing.
+profile_of() { sql "select p.region from public.profiles p join auth.users u on u.id = p.user_id where u.email = '$1'"; }
 
 export S3_ENDPOINT=http://127.0.0.1:9100 S3_BUCKET=lifeos-backups S3_REGION=us-east-1
 export AWS_ACCESS_KEY_ID=ci-access-key AWS_SECRET_ACCESS_KEY=ci-secret-key-1234
@@ -41,20 +52,28 @@ notify pgrst, 'reload schema';
 SQL
 
 json_post() { curl -s -m 10 -X POST "$api$1" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' "${@:3}" -d "$2"; }
-# Prints the access token, or nothing; the last response stays in $WORK/login.json for the failure report.
+# The user's session goes on: prints a new access token for the refresh token the user got BEFORE the copy was made
+# (there are no passwords to sign in with — migration 0002), or nothing. A refresh token works once, so this is asked
+# once per database that has it; the last response stays in $WORK/login.json for the failure report.
 login() {
-  json_post '/auth/v1/token?grant_type=password' "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" > "$WORK/login.json"
+  json_post '/auth/v1/token?grant_type=refresh_token' "{\"refresh_token\":\"$refresh_token\"}" > "$WORK/login.json"
   jq -r '.access_token // empty' "$WORK/login.json" 2> /dev/null
 }
 notes() { curl -s -m 10 "$api/rest/v1/synthetic_notes?select=body&order=id" -H "apikey: $ANON_KEY" -H "Authorization: Bearer ${1:-$ANON_KEY}" | jq -r 'map(.body) | join(",")'; }
 
-json_post /auth/v1/signup "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" > /dev/null
-token=$(login)
+new_user "$EMAIL" > "$WORK/session.json"
+token=$(jq -r '.access_token // empty' "$WORK/session.json")
+refresh_token=$(jq -r '.refresh_token // empty' "$WORK/session.json")
 sleep 1
 for body in первая вторая третья; do
   json_post /rest/v1/synthetic_notes "{\"body\":\"$body\"}" -H "Authorization: Bearer $token" > /dev/null
 done
 check 'синтетический пользователь видит свои 3 заметки' test "$(notes "$token")" == 'первая,вторая,третья'
+check '…и получил профиль с регионом развёртывания (триггер миграции 0002 на auth.users)' test "$(profile_of "$EMAIL")" == kz
+triggers_before=$(outside_triggers)
+check '…триггеры приложения на таблице чужой схемы есть: lifeos_create_profile и lifeos_no_passwords на auth.users' \
+  bash -c "grep -q 'lifeos_create_profile AFTER INSERT ON auth.users' <<< \"\$1\" &&
+    grep -q 'lifeos_no_passwords BEFORE INSERT OR UPDATE ON auth.users' <<< \"\$1\"" _ "$triggers_before"
 
 section 'backup.sh: pg_dump сжат, зашифрован и загружен в S3 (MinIO), хранятся 14 последних копий'
 # 15 older encrypted copies plus 2 unencrypted ones made before #265 (newer than the rest) are already in the bucket:
@@ -92,6 +111,8 @@ decrypt "$BACKUP_ENCRYPTION_KEY" > "$WORK/plain.sql.gz"
 check 'с ключом — gzip' gzip -t "$WORK/plain.sql.gz"
 check 'внутри — pg_dump с данными auth и public' \
   bash -c "gunzip -c '$WORK/plain.sql.gz' | grep -q 'COPY auth.users' && gunzip -c '$WORK/plain.sql.gz' | grep -q 'COPY public.synthetic_notes'"
+check '…и триггеры приложения на таблицах других схем (pg_dump --schema=public их не берёт): создание профиля на auth.users' \
+  bash -c "gunzip -c '$WORK/plain.sql.gz' | grep -q '^CREATE TRIGGER lifeos_create_profile AFTER INSERT ON auth.users '"
 
 section 'backup.sh не смог сделать копию → уведомление в webhook (заглушка)'
 hooks="$WORK/hooks.log"
@@ -144,7 +165,7 @@ check '…и не трогает работающий стек: API отвеча
 check '…заметки на месте' test "$(notes "$token")" == 'первая,вторая,третья'
 compose down -v > /dev/null 2>&1
 SKIP_PULL=1 "$INFRA_DIR/deploy.sh" > /dev/null 2>&1
-check 'новый стек пуст: пользователь не входит' test -z "$(login)"
+check 'новый стек пуст: сессию пользователя он не знает' test -z "$(login)"
 # A broken copy (valid name, not SQL) must fail without leaving the stack half-restored or stopped.
 printf 'this is not a database dump;\n' | gzip | encrypt_backup > "$WORK/broken.sql.gz.enc"
 s3 "$WORK" s3 cp --only-show-errors /work/broken.sql.gz.enc "s3://$S3_BUCKET/lifeos/kz/lifeos-kz-20000101T000000Z.sql.gz.enc"
@@ -157,11 +178,25 @@ check '…API отвечает' test "$(api_status /auth/v1/health "$ANON_KEY")"
 check '…база осталась пустой' test "$(compose exec -T db psql -U supabase_admin -d postgres -tAc 'select count(*) from auth.users')" == 0
 check 'restore.sh завершается успешно' "$INFRA_DIR/restore.sh"
 token=$(login)
-check 'пользователь снова входит со старым паролем' test -n "$token"
+check 'сессия пользователя пережила восстановление: его токен обновления принят, выдан новый токен доступа' test -n "$token"
 [[ -n $token ]] || echo "    ответ: $(tr -d '\n' < "$WORK/login.json")"
 check 'его 3 заметки на месте' test "$(notes "$token")" == 'первая,вторая,третья'
 check 'RLS работает: без входа заметок не видно' test -z "$(notes)"
 status=$(json_post /rest/v1/synthetic_notes '{"body":"после восстановления"}' -H "Authorization: Bearer $token" -o /dev/null -w '%{http_code}')
 check 'новые записи после восстановления сохраняются' test "$status" == 201
+
+section 'восстановленная база ведёт себя как исходная: миграции учтены, новый аккаунт получает профиль с регионом ячейки'
+check 'migrate.sh после восстановления ничего не применяет: журнал миграций приехал с копией' \
+  bash -c "'$INFRA_DIR/migrate.sh' 2>&1 | grep -q 'применено миграций — 0'"
+check 'триггеры приложения на таблицах других схем — те же, что в исходной базе (создание профиля на auth.users)' \
+  test "$(outside_triggers)" == "$triggers_before"
+check 'профиль восстановленного пользователя на месте' test "$(profile_of "$EMAIL")" == kz
+new_user after-restore@example.com > /dev/null
+check 'новый аккаунт после восстановления получает профиль с регионом ячейки' \
+  test "$(profile_of after-restore@example.com)" == kz
+check '…и остаётся без пароля, как и восстановленный: триггер lifeos_no_passwords работает' \
+  test "$(sql 'select count(*) from auth.users where encrypted_password is not null')" == 0
+check '…пользователей без профиля нет' \
+  test "$(sql 'select count(*) from auth.users u where not exists (select 1 from public.profiles p where p.user_id = u.id)')" == 0
 
 finish

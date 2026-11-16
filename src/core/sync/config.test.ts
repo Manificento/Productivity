@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { backendFor, DEFAULT_REGION, isRegion, REGIONS } from './config';
+import { backendFor, DEFAULT_REGION, isRegion, REGIONS, signInBackend } from './config';
 
 const TWO_REGIONS = {
   VITE_SUPABASE_URL_KZ: 'https://api.kz.example',
@@ -52,5 +52,23 @@ describe('regions', () => {
     expect(isRegion('eu')).toBe(true);
     expect(isRegion('EU')).toBe(false);
     expect(isRegion(undefined)).toBe(false);
+  });
+});
+
+describe('signInBackend — куда идёт новый вход (contract #278)', () => {
+  const onlyEu = { VITE_SUPABASE_URL_EU: 'https://staging.eu.example', VITE_SUPABASE_ANON_KEY_EU: 'anon-eu' };
+
+  it('регион по умолчанию, когда сборка на него настроена — даже если настроены и другие', () => {
+    expect(signInBackend(TWO_REGIONS)).toEqual({ region: 'kz', url: 'https://api.kz.example', anonKey: 'anon-kz' });
+  });
+
+  it('сборка только с другим регионом (staging в ЕС) входит в него', () => {
+    expect(signInBackend(onlyEu)).toEqual({ region: 'eu', url: 'https://staging.eu.example', anonKey: 'anon-eu' });
+  });
+
+  it('сборка без облачного бэкенда — null: приложение остаётся локальным', () => {
+    expect(signInBackend({})).toBeNull();
+    expect(signInBackend({ VITE_SUPABASE_URL_KZ: 'https://api.kz.example' })).toBeNull();
+    expect(signInBackend()).toBeNull();
   });
 });

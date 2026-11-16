@@ -5,8 +5,10 @@
 #   ENV_FILE=.env ./backup.sh          # daily from cron, see README
 #
 # The copy is `pg_dump` compressed with gzip and encrypted with BACKUP_ENCRYPTION_KEY (lib.sh): the app schema
-# (`public`, structure and data) plus the data of `auth` (users, identities, sessions). Auth's own structure comes from GoTrue's migrations of the same image, so
-# restore.sh loads a copy into a freshly deployed, empty stack. S3_* and AWS_* come from the environment or ENV_FILE.
+# (`public`, structure and data), the data of `auth` (users, identities, sessions) and the app's triggers on tables
+# of other schemas (the one on `auth.users` that creates a profile). Auth's own structure comes from GoTrue's
+# migrations of the same image, so restore.sh loads a copy into a freshly deployed, empty stack. S3_* and AWS_* come
+# from the environment or ENV_FILE.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 load_env
@@ -30,13 +32,35 @@ keep=${BACKUP_KEEP:-14}
 name="lifeos-$REGION-$(date -u +%Y%m%dT%H%M%SZ).sql.gz.enc"
 target="s3://$S3_BUCKET/$(backup_prefix)"
 
+# A trigger belongs to its table: `pg_dump --schema=public` leaves out a trigger of the app that sits on a table of
+# another schema (migration 0002: `lifeos_create_profile` on `auth.users`), although its function is in the copy.
+# Restored without it, the database would silently stop creating profiles: restore.sh also restores the journal of
+# migrations, so migrate.sh would never run the migration again. This prints such triggers as SQL, each name
+# qualified (the copy is loaded with an empty search_path).
+outside_triggers() {
+  compose exec -T db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -qtA << 'SQL'
+set search_path = '';
+select pg_catalog.pg_get_triggerdef(t.oid) || ';'
+from pg_catalog.pg_trigger t
+join pg_catalog.pg_class c on c.oid = t.tgrelid
+join pg_catalog.pg_proc p on p.oid = t.tgfoid
+where not t.tgisinternal
+  and c.relnamespace <> 'public'::pg_catalog.regnamespace
+  and p.pronamespace = 'public'::pg_catalog.regnamespace
+order by c.relnamespace::pg_catalog.regnamespace::text, c.relname, t.tgname;
+SQL
+}
+
 log "регион $REGION: pg_dump → $name"
-# shellcheck disable=SC2016 # expanded inside the db container
-compose exec -T db bash -c 'set -euo pipefail
-  pg_dump -U supabase_admin -d postgres --schema-only --schema=public
-  echo "SET session_replication_role = replica;"
-  pg_dump -U supabase_admin -d postgres --data-only --schema=public --schema=auth \
-    --exclude-table=auth.schema_migrations' | gzip -9 | encrypt_backup > "$work/$name"
+{
+  compose exec -T db pg_dump -U supabase_admin -d postgres --schema-only --schema=public
+  # The data is loaded as it is: no trigger fires for a restored row.
+  echo 'SET session_replication_role = replica;'
+  compose exec -T db pg_dump -U supabase_admin -d postgres --data-only --schema=public --schema=auth \
+    --exclude-table=auth.schema_migrations
+  echo '-- Triggers of the app on tables of other schemas.'
+  outside_triggers
+} | gzip -9 | encrypt_backup > "$work/$name"
 # The copy must decrypt with the same key before it is uploaded.
 decrypt_backup < "$work/$name" | gzip -t
 log "размер копии: $(du -h "$work/$name" | cut -f1)"

@@ -5,7 +5,8 @@
 #
 # 1. Writes the region's settings file <deploy dir>/<region>.env (mode 600) from env.example, the values on stdin and
 #    the database secrets. The file lives outside the code directory, so a new release replaces the code, not it.
-# 2. Runs deploy.sh with the HTTPS reverse proxy (Compose profile `proxy`).
+# 2. Runs deploy.sh with the HTTPS reverse proxy (Compose profile `proxy`), which tells Kong the clients' addresses;
+#    Kong itself listens on 127.0.0.1 only (KONG_BIND), so nobody else can tell it an address.
 # 3. Installs the cron schedule: backup.sh nightly, healthcheck.sh every 5 minutes.
 # 4. Checks GET /auth/v1/health and GET /rest/v1/ through the public HTTPS address.
 # 5. Prints the public values for the app's build on stdout: SUPABASE_PUBLIC_URL=… and ANON_KEY=… (deploy-remote.sh
@@ -72,6 +73,18 @@ write_settings() {
     die "нет $ENV_FILE, а том базы lifeos-${region}_db-data уже есть: верните файл из менеджера паролей (chmod 600) и запустите деплой снова — новые секреты закрыли бы стеку доступ к его данным"
   fi
   given[COMPOSE_PROFILES]=proxy
+  # Kong is reached only through that proxy, from the gateway of the stack's Docker network — a private address,
+  # whatever address pools Docker has. Kong takes the client's address from the header the proxy sets (Caddyfile), so
+  # Auth counts its limits per client, not for all at once.
+  given[KONG_TRUSTED_IPS]=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+  # …which holds only while nobody but the proxy can reach Kong: published on any other address, Kong would take
+  # X-Real-IP from every client that comes from a private address (a neighbour in the provider's network, IPv6
+  # through Docker's proxy), and such a client would name a new address for every request. So the two go together,
+  # whatever the settings file of the server says.
+  if [[ -n ${current[KONG_BIND]:-} && ${current[KONG_BIND]} != 127.0.0.1 ]]; then
+    log "регион $region: KONG_BIND в файле настроек сервера был не 127.0.0.1 — возвращён: за обратным прокси Kong слушает только 127.0.0.1, иначе клиент назовёт в X-Real-IP любой адрес и обойдёт пределы входа"
+  fi
+  given[KONG_BIND]=127.0.0.1
 
   # env.example with fresh secrets: they are used on the first run only.
   base=$("$here/gen-env.sh" REGION="$region")

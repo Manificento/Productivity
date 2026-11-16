@@ -9,8 +9,16 @@
 	admin off
 	# A container has no system trust store to install the local CA into.
 	skip_install_trust
+	# IPv4 only. Auth and Kong count their limits per client address, and one IPv6 client owns a whole /64 of
+	# addresses — a fresh limit for every request. The domain of the API gets no AAAA record (README, «Вход по email»).
+	# The network is named on purpose: a plain 0.0.0.0 still takes IPv6 connections (a dual-stack socket).
+	default_bind tcp4/0.0.0.0
 }
 
 {$API_DOMAIN} {
-	reverse_proxy 127.0.0.1:{$KONG_HTTP_PORT}
+	reverse_proxy 127.0.0.1:{$KONG_HTTP_PORT} {
+		# The client's address for Kong and Auth, which counts its limits per address (KONG_TRUSTED_IPS in
+		# env.example). It replaces whatever the client sent in this header.
+		header_up X-Real-IP {remote_host}
+	}
 }
