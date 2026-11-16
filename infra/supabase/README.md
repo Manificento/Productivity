@@ -211,14 +211,14 @@ GitHub → **Settings → Environments → New environment** `production-kz`. **
 
    ```bash
    apt install -y caddy
-   printf '{\n  default_bind 0.0.0.0\n}\napi.example.kz {\n  reverse_proxy 127.0.0.1:8000 {\n    header_up X-Real-IP {remote_host}\n  }\n}\n' > /etc/caddy/Caddyfile
+   printf '{\n  default_bind tcp4/0.0.0.0\n}\napi.example.kz {\n  reverse_proxy 127.0.0.1:8000 {\n    header_up X-Real-IP {remote_host}\n  }\n}\n' > /etc/caddy/Caddyfile
    systemctl reload caddy
    sed -i 's|^KONG_TRUSTED_IPS=.*|KONG_TRUSTED_IPS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16|' .env && ./deploy.sh
    ```
 
    Прокси **сам ставит** `X-Real-IP` — адрес клиента, а `KONG_TRUSTED_IPS` велит Kong этому заголовку верить: без
    обеих строк Auth видит один адрес на всех и считает пределы попыток входа общими для региона (раздел «Вход по
-   email»). `default_bind 0.0.0.0` — прокси слушает только IPv4, а `KONG_BIND` при этом остаётся `127.0.0.1`
+   email»). `default_bind tcp4/0.0.0.0` — прокси слушает только IPv4, а `KONG_BIND` при этом остаётся `127.0.0.1`
    (почему — там же).
 
 5. **Расписание** (`crontab -e` от пользователя с доступом к Docker). Журналы — в системный журнал через `logger`
@@ -341,8 +341,8 @@ ENV_FILE=.env ./migrate.sh   # стек уже запущен (deploy.sh)
   (`provision.sh`) ставит `KONG_BIND=127.0.0.1` при каждом деплое, что бы ни стояло в файле настроек сервера. Без
   прокси оставьте `KONG_TRUSTED_IPS` пустым.
 - ⚠️ **Только IPv4: у домена API не должно быть записи AAAA.** У одного клиента IPv6 — целая сеть /64 адресов, то есть
-  свой предел на каждый запрос. Caddy слушает только IPv4 (`default_bind 0.0.0.0`); с записью AAAA клиенты и Let's
-  Encrypt пошли бы на адрес, где никто не отвечает.
+  свой предел на каждый запрос. Caddy слушает только IPv4 (`default_bind tcp4/0.0.0.0`; просто `0.0.0.0` принимает
+  и IPv6); с записью AAAA клиенты и Let's Encrypt пошли бы на адрес, где никто не отвечает.
 - ⚠️ **Что остаётся.** Тот, у кого много адресов IPv4 (ботнет), по-прежнему может: подбирать код — но не больше 10
   попыток на аккаунт за 15 минут (одна попытка угадывает с вероятностью один на миллион; чтобы у адреса был
   действующий код, ему каждые 15 минут должно уходить письмо); **занять все 10 попыток чужого адреса** — его

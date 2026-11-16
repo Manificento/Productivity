@@ -293,9 +293,9 @@ check '…другого клиента это не касается: его з�
   test "$(ask_letter 127.0.0.2 letter-other@example.com)" != 429
 
 # One IPv6 client has a whole /64 of addresses — a new limit per request — so the proxy does not listen on IPv6.
-check 'прокси слушает только IPv4: все адреса в настройках Caddy — 0.0.0.0' \
+check 'прокси слушает только IPv4: все адреса в настройках Caddy — tcp4/0.0.0.0 (просто 0.0.0.0 принимает и IPv6)' \
   test "$(compose exec -T proxy caddy adapt --config /etc/caddy/Caddyfile 2> /dev/null |
-    jq -r '[.apps.http.servers[].listen[] | startswith("0.0.0.0:")] | all and length > 0')" == true
+    jq -r '[.apps.http.servers[].listen[] | startswith("tcp4/0.0.0.0:")] | all and length > 0')" == true
 check '…по IPv6 он не отвечает: соединение с [::1]:8443 не устанавливается' \
   fails curl -s -o /dev/null -m 5 --cacert "$WORK/proxy-ca.crt" --resolve 'localhost:8443:[::1]' https://localhost:8443/auth/v1/health
 check '…а Kong опубликован только на 127.0.0.1 — мимо прокси к нему не подойти' \
