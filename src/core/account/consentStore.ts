@@ -17,7 +17,7 @@ import {
 } from './consents';
 import { AccountError } from './errors';
 import { commonFailure, errorField, send, type Answer } from './http';
-import { authorized } from './session';
+import { authorized, readStoredAccount } from './session';
 
 /**
  * The consent journal over the network and its copy on the device.
@@ -47,6 +47,19 @@ async function writeCache(userId: string, consents: EffectiveConsents): Promise<
   await db.settings.put({ key: ACCOUNT_CONSENTS_KEY, value });
 }
 
+/**
+ * Changes the device's copy in one transaction, and only while this device is still signed in as `userId`: an answer
+ * of the server may arrive after `signOut()` erased the copy, or after another user signed in here — then it is not
+ * written at all (`null`). The same idea as `ifUnchanged` in `session.ts`.
+ */
+function changeCache<T>(userId: string, change: (known: EffectiveConsents) => Promise<T>): Promise<T | null> {
+  return db.transaction('rw', db.settings, async () => {
+    const account = await readStoredAccount();
+    if (account?.state !== 'signedIn' || account.userId !== userId) return null;
+    return change((await readCache(userId)) ?? {});
+  });
+}
+
 async function fetchConsents(backend: BackendConfig, accessToken: string): Promise<EffectiveConsents> {
   // Newest first: the server gives at most 1000 rows, and the rows in force are among the newest.
   const answer = await send(backend, `/rest/v1/consents?${SELECT}&order=id.desc`, { method: 'GET', accessToken });
@@ -58,16 +71,18 @@ async function fetchConsents(backend: BackendConfig, accessToken: string): Promi
 
 /**
  * Asks the server for the journal and brings the device's copy up to the answer. A consent recorded while the answer
- * was on its way is kept (`consentsAfterAnswer`): the answer may be older than that row.
+ * was on its way is kept (`consentsAfterAnswer`): the answer may be older than that row. The answer of a user who
+ * is no longer signed in here is returned, but not written.
  */
 async function askServer(backend: BackendConfig, accessToken: string, userId: string): Promise<EffectiveConsents> {
   const before = (await readCache(userId)) ?? {};
   const told = await fetchConsents(backend, accessToken);
-  return db.transaction('rw', db.settings, async () => {
-    const consents = consentsAfterAnswer(before, (await readCache(userId)) ?? {}, told);
+  const written = await changeCache(userId, async (current) => {
+    const consents = consentsAfterAnswer(before, current, told);
     await writeCache(userId, consents);
     return consents;
   });
+  return written ?? told;
 }
 
 /** Reads the journal from the server and brings the device's copy of what is in force up to it. */
@@ -105,17 +120,25 @@ export async function recordConsent(
     headers: { Prefer: 'return=representation' },
     body: { kind, granted, text_version: textVersion, details: details ?? null },
   });
-  if (!answer.ok) throw refusedByApi(answer);
+  if (!answer.ok) {
+    const refused = refusedByApi(answer);
+    // The copy here said the age is confirmed and the server says it is not (taken back on another device, or the
+    // server lost rows): the journal corrects the copy, so the next try is refused here and the screens show it.
+    if (refused.kind === 'age_required') await askServer(backend, accessToken, userId).catch(() => undefined);
+    throw refused;
+  }
   const stored = z.array(journalRow).length(1).safeParse(answer.body);
   if (!stored.success) throw new AccountError('server', answer.status);
   const consent = toConsent(stored.data[0]);
-  const behind = await db.transaction('rw', db.settings, async () => {
-    const known = (await readCache(userId)) ?? {};
+  const behind = await changeCache(userId, async (known) => {
     // The row just stored is the last of its kind — unless the copy already holds a later one: another tab recorded
     // the same kind at the same moment, or the server lost rows (a restored backup). Then only the journal can tell.
-    if ((known[kind]?.id ?? 0) >= consent.id) return true;
-    await writeCache(userId, { ...known, [kind]: consent });
-    return false;
+    const later = (known[kind]?.id ?? 0) >= consent.id;
+    // …but a withdrawal the server has stored goes into the copy at once, whatever the copy held: if the journal
+    // cannot be read now, the device errs on the side of «not granted» — until #279 it is the only check of the
+    // cloud consent. A consent GIVEN waits for the journal: the row in the copy may be a later withdrawal.
+    if (!later || !consent.granted) await writeCache(userId, { ...known, [kind]: consent });
+    return later;
   });
   // The consent is stored either way; without the network the copy catches up at the next `refreshConsents()`.
   if (behind) await askServer(backend, accessToken, userId).catch(() => undefined);

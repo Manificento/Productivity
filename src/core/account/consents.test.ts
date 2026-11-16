@@ -9,6 +9,7 @@ import {
   AGE_RULES,
   completeSignIn,
   CONSENT_KINDS,
+  deleteAccount,
   effectiveConsents,
   isGranted,
   recordConsent,
@@ -248,6 +249,122 @@ describe('contract #278: согласия', () => {
     expect(await refreshConsents(NOW)).toMatchObject({ cloud: { id: 3, granted: true } });
   });
 
+  it('копия опережает журнал, а журнал прочитать не удалось: отзыв, который сервер сохранил, всё равно записан в копию — согласие не остаётся разрешённым', async () => {
+    await signIn();
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    const cached = await db.settings.get('account.consents');
+    const value = cached?.value as { userId: string; consents: Record<string, unknown> };
+    const lost = { id: 50, kind: 'cloud', granted: true, textVersion: TEXT, details: null, createdAt: '' };
+    await db.settings.put({
+      key: 'account.consents',
+      value: { ...value, consents: { ...value.consents, cloud: lost } },
+    });
+    const consents = renderHook(() => useConsents());
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(true));
+
+    // The server stores the withdrawal, but the journal cannot be read afterwards.
+    const real = server.fetch;
+    vi.mocked(globalThis.fetch).mockImplementation((input, init) =>
+      init?.method === 'GET' ? Promise.reject(new TypeError('Failed to fetch')) : real(input, init),
+    );
+    await expect(recordConsent('cloud', false, TEXT, undefined, NOW)).resolves.toMatchObject({ id: 2, granted: false });
+    expect(server.journalOf(ANNA)).toEqual([
+      ['age', true],
+      ['cloud', false],
+    ]);
+    // Until #279 the device is the only check of the cloud consent: what the user took back is not «granted» here.
+    expect((await db.settings.get('account.consents'))?.value).toMatchObject({
+      consents: { age: { id: 1, granted: true }, cloud: { id: 2, granted: false } },
+    });
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(false));
+    expect(consents.result.current.isGranted('age')).toBe(true);
+    // The network is back: the journal says the same.
+    vi.mocked(globalThis.fetch).mockImplementation(real);
+    expect(await refreshConsents(NOW)).toMatchObject({ cloud: { id: 2, granted: false } });
+  });
+
+  it('ответ сервера пришёл после выхода из аккаунта: копия согласий на устройство не возвращается', async () => {
+    await signIn();
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    const real = server.fetch;
+    const late = (method: string) => {
+      let deliver = (): void => undefined;
+      const delivered = new Promise<void>((resolve) => (deliver = resolve));
+      vi.mocked(globalThis.fetch).mockImplementationOnce(async (input, init) => {
+        const answer = await real(input, init);
+        await delivered;
+        return answer;
+      });
+      return { deliver, sent: () => waitFor(() => expect(consentRequests().at(-1)).toBe(method)) };
+    };
+
+    // The journal was asked for, the user signed out, the answer came.
+    const read = late('GET');
+    const refreshing = refreshConsents(NOW);
+    await read.sent();
+    await signOut(NOW);
+    read.deliver();
+    await expect(refreshing).resolves.toMatchObject({ age: { granted: true } });
+    expect(await db.settings.get('account.consents')).toBeUndefined();
+
+    // The same with a consent whose row the server stored while the user was signing out.
+    await signIn();
+    const written = late('POST');
+    const recording = recordConsent('cloud', true, TEXT, undefined, NOW);
+    await written.sent();
+    await signOut(NOW);
+    written.deliver();
+    await expect(recording).resolves.toMatchObject({ kind: 'cloud', granted: true });
+    expect(await db.settings.get('account.consents')).toBeUndefined();
+    expect(await db.settings.get('account.session')).toBeUndefined();
+  });
+
+  it('ответ сервера пришёл после смены аккаунта: копия согласий другого пользователя не затирается', async () => {
+    await signIn();
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    await recordConsent('cloud', true, TEXT, undefined, NOW);
+    const real = server.fetch;
+    let deliver = (): void => undefined;
+    const delivered = new Promise<void>((resolve) => (deliver = resolve));
+    vi.mocked(globalThis.fetch).mockImplementationOnce(async (input, init) => {
+      const answer = await real(input, init);
+      await delivered;
+      return answer;
+    });
+    const refreshing = refreshConsents(NOW);
+    await waitFor(() => expect(consentRequests().at(-1)).toBe('GET'));
+
+    // Boris signs in on the same device while Anna's answer is on its way.
+    await signIn('boris@example.com');
+    const boris = (await db.settings.get('account.consents'))?.value;
+    expect(boris).toEqual({ userId: 'user-2', consents: {} });
+    deliver();
+    await refreshing;
+    expect((await db.settings.get('account.consents'))?.value).toEqual(boris);
+    const consents = renderHook(() => useConsents());
+    await waitFor(() => expect(consents.result.current.status).toBe('ready'));
+    expect(consents.result.current.isGranted('cloud')).toBe(false);
+  });
+
+  it('номера строк журнала на сервере только растут: после удаления другого аккаунта отзыв получает номер больше прежнего согласия и действует', async () => {
+    await signIn('boris@example.com');
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    await signIn();
+    await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
+    await expect(recordConsent('cloud', true, TEXT, undefined, NOW)).resolves.toMatchObject({ id: 3 });
+    // Boris deletes his account: his row leaves the journal.
+    await signIn('boris@example.com');
+    await deleteAccount(NOW);
+    expect(server.journal.map((row) => row.id)).toEqual([2, 3]);
+
+    await signIn();
+    const consents = renderHook(() => useConsents());
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(true));
+    await expect(recordConsent('cloud', false, TEXT, undefined, NOW)).resolves.toMatchObject({ id: 4, granted: false });
+    await waitFor(() => expect(consents.result.current.isGranted('cloud')).toBe(false));
+    expect(server.journal.map((row) => row.id)).toEqual([2, 3, 4]);
+  });
+
   it('consentsAfterAnswer: ответ сервера заменяет копию; строка, записанная, пока ответ шёл, остаётся, если она позже ответа', () => {
     const row = (id: number, kind: Consent['kind'], granted: boolean): Consent => ({
       id,
@@ -355,7 +472,7 @@ describe('contract #278: возраст', () => {
     ]);
   });
 
-  it('возраст отозван на другом устройстве, а копия здесь отстала: отказ сервера приходит как age_required', async () => {
+  it('возраст отозван на другом устройстве, а копия здесь отстала: отказ сервера приходит как age_required, и копия исправляется по журналу', async () => {
     await signIn();
     await recordConsent('age', true, TEXT, { rule: '16+' }, NOW);
     await server.fetch('https://api.kz.example/rest/v1/consents', {
@@ -371,6 +488,14 @@ describe('contract #278: возраст', () => {
       ['age', true],
       ['age', false],
     ]);
+    // The refusal corrects the copy: it no longer says the age is confirmed, so the next try is refused here,
+    // without one more request that the server would refuse the same way.
+    expect((await db.settings.get('account.consents'))?.value).toMatchObject({
+      consents: { age: { id: 2, granted: false } },
+    });
+    const before = consentRequests().length;
+    await expect(recordConsent('cloud', true, TEXT, undefined, NOW)).rejects.toMatchObject({ kind: 'age_required' });
+    expect(consentRequests().slice(before)).toEqual(['GET']);
     // Taking a consent back never needs the age.
     await expect(recordConsent('analytics', false, TEXT, undefined, NOW)).resolves.toMatchObject({ granted: false });
   });

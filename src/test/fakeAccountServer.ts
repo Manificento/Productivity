@@ -10,8 +10,9 @@ import { AGE_RULES, CONSENT_KINDS } from '../core/account';
  * It answers like Auth (`/auth/v1`: letter, code, link, refresh, logout) and like the API of
  * `infra/supabase/migrations/0002_account_consents.sql` (`/rest/v1/consents`, `/rest/v1/rpc/delete_account`),
  * with the same rules: the journal is append-only, a row belongs to the user of the token and carries the server's
- * time, the age comes before any other consent, a deleted account leaves nothing. The real server is checked
- * against these rules by `infra/supabase/tests/account.test.sh`.
+ * time, the age comes before any other consent, a deleted account leaves nothing. The same rules are checked on the
+ * real server by `infra/supabase/tests/account.test.sh`; nothing compares this file with the migration — whoever
+ * changes a rule there changes it here by hand.
  */
 
 export interface Letter {
@@ -80,6 +81,8 @@ export class FakeAccountServer {
   private readonly users = new Map<string, { id: string; email: string }>();
   private sessions: Session[] = [];
   private issued = 0;
+  /** The number of the last journal row. It only grows, like the server's sequence: a deleted row's is not reused. */
+  private lastRowId = 0;
 
   constructor(origin = 'https://api.kz.example') {
     this.origin = origin;
@@ -248,8 +251,9 @@ export class FakeAccountServer {
     if (kind !== 'age' && granted && !ageInForce) {
       return json(403, { code: '42501', message: 'consents: confirm the age first', details: 'age_required' });
     }
+    this.lastRowId += 1;
     const row: JournalRow = {
-      id: this.journal.length + 1,
+      id: this.lastRowId,
       user_id: userId,
       kind: String(kind),
       granted,
