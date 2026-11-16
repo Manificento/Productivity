@@ -110,6 +110,14 @@ same 'вход через Google не начинается: /auth/v1/authorize?p
 same '…и через Apple' \
   "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$api/auth/v1/authorize?provider=apple")" 400
 
+# preflight <path>: the question a browser asks before the app's POST from another origin. Prints the HTTP status.
+preflight() {
+  curl -s -m 10 -o /dev/null -w '%{http_code}' -X OPTIONS "$api$1" -H "Origin: $SITE" \
+    -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: apikey,authorization,content-type'
+}
+same 'браузер приложения допущен к маршрутам входа: предварительный запрос CORS к /otp, /verify и /token → 200' \
+  "$(preflight /auth/v1/otp)$(preflight /auth/v1/verify)$(preflight '/auth/v1/token?grant_type=pkce')" 200200200
+
 section 'requestSignIn: сервер Auth шлёт одно письмо со ссылкой и шестизначным кодом'
 check 'шаблон письма Auth получает от Kong внутри сети Docker' grep -q '{{ .Token }}' \
   <<< "$(compose exec -T auth wget -q -O - http://kong:8088/mail/sign-in.html)"
@@ -159,6 +167,16 @@ same 'ссылка одноразовая: второй обмен → не 200'
   "$([[ $(exchange "$link_code" "$boris_verifier") != 200 ]] && echo отклонён)" отклонён
 
 # A returning user gets the «magic link» letter of Auth, a new one the «confirmation» letter: both are our template.
+boris_verifier2=$(new_verifier)
+sleep 1 # SMTP_MAX_FREQUENCY
+request_letter boris@example.com "$boris_verifier2" > /dev/null
+check 'повторный вход Бориса (адрес уже известен): письмо пришло' wait_letters boris@example.com 2
+last_letter boris@example.com
+redirect=$(curl -s -m 10 -o /dev/null -w '%{redirect_url}' "$(letter_link)")
+same '…ссылка из него (type=magiclink) так же возвращает в приложение с ?code=, и код меняется на сессию' \
+  "$(grep -c 'type=magiclink' <<< "$(letter_link)")$(exchange "${redirect##*code=}" "$boris_verifier2" && body '.user.email')" \
+  '1200"boris@example.com"'
+boris=$(field '.access_token')
 anna_verifier2=$(new_verifier)
 same 'повторный вход Анны (адрес уже известен): POST /auth/v1/otp → 200' \
   "$(request_letter anna@example.com "$anna_verifier2")" 200

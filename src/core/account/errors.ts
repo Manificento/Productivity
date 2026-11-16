@@ -4,7 +4,8 @@
  * - `unavailable` — this build has no cloud backend (or none for the region of the stored session), or the page
  *   is not in a secure context (no HTTPS — no Web Crypto), where the app does not sign in;
  * - `network` — no answer from the server, or none in time: the same call may work later;
- * - `rate_limited` — too many letters or attempts, try in a minute;
+ * - `rate_limited` — too many letters or attempts: the server's limits run from five minutes (requests of one client)
+ *   through fifteen (sign-in attempts of one account) to an hour (letters of one client, letters of the region);
  * - `invalid_email` — the server did not accept the address;
  * - `sign_up_closed` — the region does not register new accounts now;
  * - `invalid_code` — the code or the link is wrong, used or expired;
@@ -31,7 +32,7 @@ export type AccountErrorKind =
 const MESSAGES: Record<AccountErrorKind, string> = {
   unavailable: 'В этой сборке нет облачного аккаунта',
   network: 'Нет связи с сервером. Проверьте интернет и повторите',
-  rate_limited: 'Слишком много попыток. Подождите минуту и повторите',
+  rate_limited: 'Слишком много попыток. Подождите и повторите позже',
   invalid_email: 'Сервер не принял этот адрес почты',
   sign_up_closed: 'Регистрация новых аккаунтов сейчас закрыта',
   invalid_code: 'Код или ссылка не подошли: они неверны, уже использованы или устарели',
