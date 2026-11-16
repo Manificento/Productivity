@@ -30,10 +30,11 @@ export async function requestSignIn(email: string, options: { redirectTo?: strin
   // Auth keeps addresses in lower case; the code is later checked against the address as it was sent.
   const address = email.trim().toLowerCase();
   if (!address.includes('@')) throw new AccountError('invalid_email');
-  // Asking for a letter while signed in is «sign in as somebody else»: the current session ends first.
-  if ((await readStoredAccount())?.state === 'signedIn') await signOut(options.now);
   const pkce = await createPkcePair();
   await requestLetter(backend, address, pkce, options.redirectTo);
+  // Asking for a letter while signed in is «sign in as somebody else»: once the letter is on its way, the current
+  // session ends — on the server too. A letter that could not be sent leaves the session as it was.
+  if ((await readStoredAccount())?.state === 'signedIn') await signOut(options.now);
   await writeStoredAccount({
     state: 'pending',
     region: backend.region,

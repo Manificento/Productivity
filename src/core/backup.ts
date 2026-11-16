@@ -64,8 +64,8 @@ export function isBackup(value: unknown): value is Backup {
  *
  * Sync (ADR-0009): `clear()` removes tombstones too, so no trace of what was deleted before the import survives it. This
  * device keeps its `device.id` and its account (session, cached consents) — such keys inside the file are ignored,
- * as are rows marked `deletedAt` (a backup is live data). The core middleware queues every removed and every restored row in `syncOutbox`: with an account, a
- * restore is «replace the data in the cloud» (sync p. 9).
+ * as are rows marked `deletedAt` (a backup is live data). The core middleware queues every removed and every
+ * restored row in `syncOutbox`: with an account, a restore is «replace the data in the cloud» (sync p. 9).
  *
  * Natural ids (#275): a backup made before schema version 8 holds the «one per day» records under random ids and
  * meal items without ids. Their rows go through the same `withNaturalIds` as the Dexie migration — whatever the

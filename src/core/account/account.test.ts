@@ -45,6 +45,9 @@ async function signIn(now = NOW): Promise<void> {
 }
 
 const storedSession = async () => (await db.settings.get('account.session'))?.value as Record<string, unknown>;
+/** What the account keeps on this device (`device.id` and the like are not its business). */
+const accountKeys = async () =>
+  (await db.settings.toArray()).map((row) => row.key).filter((key) => key.startsWith('account.'));
 const paths = () => server.requests.map((request) => `${request.method} ${request.path}`);
 const addTask = () => db.tasks.add({ id: 't1', title: 'Задача', priority: 2, tags: [], createdAt: 1, updatedAt: 1 });
 
@@ -250,7 +253,7 @@ describe('contract #278: сессия', () => {
       headers: { authorization: 'Bearer access-token-3' },
     });
     expect(server.hasSession('refresh-token-3')).toBe(false);
-    expect(await db.settings.toArray()).toEqual([]);
+    expect(await accountKeys()).toEqual([]);
     await waitFor(() => expect(restarted.result.current).toEqual({ status: 'signedOut' }));
     expect(await db.tasks.get('t1')).toMatchObject({ title: 'Задача' });
     expect((await db.syncOutbox.toArray()).map((entry) => entry.key)).toEqual(['t1']);
@@ -269,7 +272,7 @@ describe('contract #278: сессия', () => {
     });
     expect(server.hasSession(refreshToken)).toBe(false);
     await expect(getAccessToken(NOW + 2 * HOUR)).rejects.toMatchObject({ kind: 'session_expired', status: 400 });
-    expect(await db.settings.toArray()).toEqual([]);
+    expect(await accountKeys()).toEqual([]);
     expect(await db.tasks.count()).toBe(1);
   });
 
@@ -286,7 +289,7 @@ describe('contract #278: сессия', () => {
     await signIn();
     server.offline = true;
     expect(await signOut(NOW)).toEqual({ revokedOnServer: false });
-    expect(await db.settings.toArray()).toEqual([]);
+    expect(await accountKeys()).toEqual([]);
     expect(server.hasSession('refresh-token-1')).toBe(true);
   });
 
@@ -301,11 +304,15 @@ describe('contract #278: сессия', () => {
     const before = server.requests.length;
     expect(await signOut(NOW)).toEqual({ revokedOnServer: false });
     expect(server.requests).toHaveLength(before);
-    expect(await db.settings.toArray()).toEqual([]);
+    expect(await accountKeys()).toEqual([]);
   });
 
-  it('новый вход при действующей сессии сначала завершает её на сервере', async () => {
+  it('новый вход при действующей сессии завершает её и на сервере; письмо не ушло — сессия остаётся', async () => {
     await signIn();
+    server.offline = true;
+    await expect(requestSignIn('boris@example.com', { now: NOW })).rejects.toMatchObject({ kind: 'network' });
+    expect(await storedSession()).toMatchObject({ state: 'signedIn', email: ANNA });
+    server.offline = false;
     await requestSignIn('boris@example.com', { now: NOW });
     expect(server.hasSession('refresh-token-1')).toBe(false);
     expect(await storedSession()).toMatchObject({ state: 'pending', email: 'boris@example.com' });
@@ -357,7 +364,7 @@ describe('contract #278: удаление аккаунта (клиент)', () =
       headers: { apikey: 'anon-kz', authorization: 'Bearer access-token-1' },
     });
     expect(server.hasUser(ANNA)).toBe(false);
-    expect(await db.settings.toArray()).toEqual([]);
+    expect(await accountKeys()).toEqual([]);
     expect(await db.tasks.get('t1')).toMatchObject({ title: 'Задача' });
     const account = renderHook(() => useAccount());
     await waitFor(() => expect(account.result.current).toEqual({ status: 'signedOut' }));

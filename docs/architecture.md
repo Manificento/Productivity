@@ -127,7 +127,9 @@ flowchart LR
 
 Ядро владеет двумя вещами, в которые не пишет ни один модуль (#274): таблицей `syncOutbox` — её пишет только
 middleware ядра (`src/core/sync/outbox.ts`), а читать будет только слой синхронизации `src/core/sync/`; и ключом
-`settings` `device.id` — его создаёт только `ensureDeviceId` в `src/core/db.ts`, а `importAll` сохраняет.
+`settings` `device.id` — его создаёт только `ensureDeviceId` в `src/core/db.ts`, а `importAll` сохраняет. С #278
+ядру принадлежат и ключи `account.*` (`account.session`, `account.consents`): их пишет только `src/core/account/`,
+модули читают аккаунт и согласия через `useAccount()` и `useConsents()`.
 
 Ключ `time.pomodoro.running` = `{ phase, startedAt, endsAt }` (мс) — идущая фаза Pomodoro; ключа нет, когда таймер
 не идёт. Пишет `time`, читают все (например, «Сегодня»); `endsAt <= now` — не идёт.
@@ -135,7 +137,7 @@ middleware ядра (`src/core/sync/outbox.ts`), а читать будет то
 Таблица `settings` делится по префиксу ключа: модуль пишет только свои ключи `<модуль>.*` (`adaptation.*` — today,
 `time.*` — time, `nutrition.*` — nutrition, `health.*` — health: `health.alarm`, `health.alarm.dismissal`,
 `health.import`, `health.import.dismissed`, `health.import.workouts`), остальные ключи — модуль `settings`, кроме
-`device.id`: он принадлежит ядру (см. выше).
+`device.id` и `account.*`: они принадлежат ядру (см. выше).
 
 Читать можно любые таблицы. Общий путь записи для таблицы, которую заполняют два модуля, живёт в `src/core/logging/`
 ([ADR-0007](adr/0007-shared-write-paths.md)): `saveSleep()` (сон: health и утренний поток today), `saveWorkout()`
