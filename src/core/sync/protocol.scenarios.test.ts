@@ -186,6 +186,16 @@ class Device {
     this.lastSyncedAt = this.now();
   }
 
+  /**
+   * The same in the other order: the pull meets changes this device has not pushed yet — what a change made while
+   * a sync is running, between its push and its pull, looks like.
+   */
+  pullThenPush(server: FakeSyncServer): void {
+    this.pull(server, this.lastPulledRev);
+    this.push(server);
+    this.lastSyncedAt = this.now();
+  }
+
   /** «Replace the data in the cloud» after `importBackup()`. */
   replaceCloud(server: FakeSyncServer): void {
     this.push(server, server.changesSince(0, Number.MAX_SAFE_INTEGER));
@@ -579,21 +589,21 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
         laptop.save('plannedSessions', 's2', session(THU));
       });
 
-      it('день остаётся за сессией, которая пришла на сервер первой; перенос второй попадает в конфликты, синхронизация не останавливается', () => {
+      it('день остаётся за сессией, которая пришла на сервер первой; вторая возвращается на прежний день, её перенос попадает в конфликты', () => {
         phone.sync(server);
         laptop.sync(server);
         syncAll();
 
-        expect(days(phone)).toEqual([['s1', THU]]);
-        expect(days(laptop)).toEqual(days(phone));
-        // The server holds what the devices hold: the session that lost the day is deleted, not left as a second
-        // live row of that day.
-        expect(onServer()).toEqual([
+        const expected = [
           ['s1', THU],
-          ['s2', 'удалена'],
-        ]);
+          ['s2', WED],
+        ];
+        expect(days(phone)).toEqual(expected);
+        expect(days(laptop)).toEqual(expected);
+        // Nobody deleted a session: the server holds what the devices hold, one live row per day.
+        expect(onServer()).toEqual(expected);
         expect(laptop.conflicts).toMatchObject([
-          { local: { key: 's2', data: { date: THU } }, remote: { key: 's1', data: { date: THU } } },
+          { local: { key: 's2', data: { date: THU } }, remote: { key: 's2', data: { date: WED } } },
         ]);
         expect(phone.conflicts).toEqual([]);
         expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
@@ -604,13 +614,34 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
         phone.sync(server);
         syncAll();
 
-        expect(days(phone)).toEqual([['s2', THU]]);
-        expect(days(laptop)).toEqual(days(phone));
-        expect(onServer()).toEqual([
-          ['s1', 'удалена'],
+        const expected = [
+          ['s1', MON],
           ['s2', THU],
+        ];
+        expect(days(phone)).toEqual(expected);
+        expect(days(laptop)).toEqual(expected);
+        expect(onServer()).toEqual(expected);
+        expect(phone.conflicts).toMatchObject([
+          { local: { key: 's1', data: { date: THU } }, remote: { key: 's1', data: { date: MON } } },
         ]);
-        expect(phone.conflicts).toMatchObject([{ local: { key: 's1', data: { date: THU } }, remote: { key: 's2' } }]);
+        expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+      });
+
+      it('тот же исход, если чужой перенос пришёл раньше отправки своего (pull до push): сессия не удаляется, сервер возвращает её версию', () => {
+        phone.sync(server);
+        laptop.pullThenPush(server);
+        syncAll();
+
+        const expected = [
+          ['s1', THU],
+          ['s2', WED],
+        ];
+        expect(days(phone)).toEqual(expected);
+        expect(days(laptop)).toEqual(expected);
+        expect(onServer()).toEqual(expected);
+        expect(laptop.conflicts).toMatchObject([
+          { local: { key: 's2', data: { date: THU } }, remote: { key: 's1', data: { date: THU } } },
+        ]);
         expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
       });
 
@@ -622,6 +653,68 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
         tablet.sync(server);
         expect(days(tablet)).toEqual(days(phone));
       });
+    });
+
+    describe('одно устройство переставило сессии, другое офлайн правило одну из них на прежнем дне', () => {
+      beforeEach(() => {
+        // The phone: s2 leaves Wednesday, s1 takes it, s2 moves once more.
+        pass(MINUTE);
+        phone.save('plannedSessions', 's2', session(FRI));
+        pass(MINUTE);
+        phone.save('plannedSessions', 's1', session(WED));
+        pass(MINUTE);
+        phone.save('plannedSessions', 's2', session(TUE));
+        phone.sync(server);
+        // The laptop has not seen any of it: s2 is still on Wednesday there, and it marks the session done.
+        pass(MINUTE);
+        laptop.save('plannedSessions', 's2', { ...session(WED), status: 'done' });
+      });
+
+      for (const order of ['сначала push', 'сначала pull'] as const) {
+        it(`сессию никто не удалял — она остаётся везде в версии сервера, а правка попадает в конфликты (${order})`, () => {
+          if (order === 'сначала pull') laptop.pullThenPush(server);
+          syncAll(laptop, phone);
+
+          const expected = [
+            ['s1', WED],
+            ['s2', TUE],
+          ];
+          expect(days(phone)).toEqual(expected);
+          expect(days(laptop)).toEqual(expected);
+          expect(onServer()).toEqual(expected);
+          expect(laptop.conflicts).toMatchObject([{ local: { key: 's2', data: { date: WED, status: 'done' } } }]);
+          expect(laptop.conflicts).toHaveLength(1);
+          expect(phone.conflicts).toEqual([]);
+          expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+        });
+      }
+    });
+
+    it('перестановка офлайн, которой помешало другое устройство, отменяется целиком: ни одна сессия не удалена и на сервере нет двух сессий одного дня', () => {
+      pass(MINUTE);
+      phone.save('plannedSessions', 's3', session(THU));
+      phone.sync(server);
+      // The laptop, offline: s2 moves from Wednesday to Thursday, s1 takes the freed Wednesday.
+      pass(MINUTE);
+      laptop.save('plannedSessions', 's2', session(THU));
+      pass(MINUTE);
+      laptop.save('plannedSessions', 's1', session(WED));
+
+      syncAll(laptop, phone);
+
+      const expected = [
+        ['s1', MON],
+        ['s2', WED],
+        ['s3', THU],
+      ];
+      expect(days(phone)).toEqual(expected);
+      expect(days(laptop)).toEqual(expected);
+      expect(onServer()).toEqual(expected);
+      expect(laptop.conflicts.map((conflict) => [conflict.local.key, conflict.local.data?.date]).toSorted()).toEqual([
+        ['s1', WED],
+        ['s2', THU],
+      ]);
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
     });
 
     for (const pages of ['в одной странице pull', 'в разных страницах pull'] as const) {
@@ -669,6 +762,8 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
       ]);
       expect(days(laptop)).toEqual(days(phone));
       expect(laptop.conflicts.map((conflict) => conflict.local.key).toSorted()).toEqual(['laptop-fri', 'laptop-thu']);
+      // The server has never stored the laptop's sessions: there is no version to go back to, only they are gone.
+      expect(onServer().filter(([, day]) => day !== 'удалена')).toEqual(days(phone));
       expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
     });
   });
