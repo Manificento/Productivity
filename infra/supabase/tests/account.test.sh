@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Infra checks of issue #278 — the account, against a real stack: sign-in by e-mail (one letter with a six-digit
 # code and a link, read from the mail trap — no real mail is sent), the session, profiles with the region, the
-# append-only consent journal with row level security on two users, the age rule on the server, delete_account().
+# append-only consent journal with row level security on two users, the age rule on the server, delete_account();
+# no passwords, sign-in attempts counted per account, letters limited per client and per region.
 # Needs Docker, jq and openssl. Run: infra/supabase/tests/account.test.sh
 set -uo pipefail
 . "$(dirname "$0")/lib.sh"
@@ -16,8 +17,9 @@ same() {
 
 section 'подготовка: пустой стек kz с почтовой ловушкой (профиль test), миграции'
 # Users are NOT confirmed automatically here: the only way in is the code or the link of the letter.
+# RATE_LIMIT_EMAIL_SENT is not the default on purpose: the region's budget of letters is a setting.
 new_region kz 8000 COMPOSE_PROFILES=test MAIL_TRAP_PORT="$MAIL_TRAP_PORT" SITE_URL="$SITE" \
-  SMTP_HOST=mail SMTP_PORT=1025 SMTP_ADMIN_EMAIL=noreply@lifeos.test SMTP_MAX_FREQUENCY=1s
+  SMTP_HOST=mail SMTP_PORT=1025 SMTP_ADMIN_EMAIL=noreply@lifeos.test SMTP_MAX_FREQUENCY=1s RATE_LIMIT_EMAIL_SENT=60
 use_region kz
 "$INFRA_DIR/deploy.sh" || exit 1
 "$INFRA_DIR/migrate.sh" || exit 1
@@ -74,6 +76,15 @@ letter_link() {
 }
 # verify_code <email> <code>: what completeSignIn({ code }) sends. Prints the HTTP status.
 verify_code() { call '' POST /auth/v1/verify "{\"type\":\"email\",\"email\":\"$1\",\"token\":\"$2\"}"; }
+# open_link <url> [curl options…]: opens a link of a letter the way a browser does, without following the redirect.
+# Prints the HTTP status.
+open_link() { curl -s -m 10 -o /dev/null -w '%{http_code}' "${@:2}" "$1"; }
+# auth_directly <path> <json>: a POST straight to Auth inside the Docker network, past Kong. Prints the response.
+auth_directly() {
+  compose exec -T auth wget -q -O - --header 'Content-Type: application/json' --post-data "$2" "http://localhost:9999$1"
+}
+# users_with_password: how many accounts hold a password.
+users_with_password() { sql -c 'select count(*) from auth.users where encrypted_password is not null'; }
 # exchange <link code> <verifier>: what completeSignIn({ linkCode }) sends. Prints the HTTP status.
 exchange() { call '' POST '/auth/v1/token?grant_type=pkce' "{\"auth_code\":\"$1\",\"code_verifier\":\"$2\"}"; }
 refresh() { call '' POST '/auth/v1/token?grant_type=refresh_token' "{\"refresh_token\":\"$1\"}"; }
@@ -113,8 +124,8 @@ same '…ровно одно' "$(letters_to anna@example.com)" 1
 last_letter anna@example.com
 anna_code=$(letter_codes)
 check '…в письме шестизначный код (один и тот же во всех местах письма)' grep -qxE '[0-9]{6}' <<< "$anna_code"
-check '…и ссылка на /auth/v1/verify этого региона, которая вернёт пользователя в приложение' \
-  grep -qE "^http://localhost:8000/auth/v1/verify\?token=pkce_[0-9a-f]+&type=signup&redirect_to=$SITE\$" <<< "$(letter_link)"
+check '…и ссылка на /auth/v1/verify этого региона, которая вернёт пользователя в приложение; ссылка называет адрес и код — попытки входа считаются на аккаунт' \
+  grep -qE "^http://localhost:8000/auth/v1/verify\?token=pkce_[0-9a-f]+&type=signup&redirect_to=$SITE&email=anna%40example\.com&otp=$anna_code\$" <<< "$(letter_link)"
 check '…письмо из нашего шаблона, на русском' grep -q 'Код для входа' "$WORK/letter.html"
 same 'до ввода кода пользователь не вошёл: сессий нет' "$(sql -c 'select count(*) from auth.sessions')" 0
 
@@ -170,6 +181,41 @@ same '…сессия отозвана: её токен обновления б�
 same '…другая сессия того же пользователя жива' "$(refresh "$anna_refresh")" 200
 anna=$(field '.access_token')
 anna_refresh=$(field '.refresh_token')
+
+section 'паролей нет: вход только по письму'
+# Auth keeps its password routes whatever the settings. The gateway closes them for the app's key…
+same 'регистрация с паролем: POST /auth/v1/signup → 404' \
+  "$(call '' POST /auth/v1/signup '{"email":"mallory@example.com","password":"correct horse 1"}')" 404
+same '…аккаунт не создан' "$(sql -c "select count(*) from auth.users where email = 'mallory@example.com'")" 0
+anna_letters=$(letters_to anna@example.com)
+same 'письмо «сброс пароля»: POST /auth/v1/recover → 404' "$(call '' POST /auth/v1/recover '{"email":"anna@example.com"}')" 404
+same 'смена пароля в сессии: PUT /auth/v1/user → 404' "$(call "$anna" PUT /auth/v1/user '{"password":"correct horse 1"}')" 404
+same '…смена адреса тем же запросом — тоже (письмо мимо предела писем)' \
+  "$(call "$anna" PUT /auth/v1/user '{"email":"anna-new@example.com"}')" 404
+same 'остальные маршруты Auth, которые шлют письма мимо предела: /magiclink, /resend, /reauthenticate → 404' \
+  "$(call '' POST /auth/v1/magiclink '{"email":"anna@example.com"}')$(call '' POST /auth/v1/resend '{"email":"anna@example.com","type":"signup"}')$(call "$anna" GET /auth/v1/reauthenticate)" 404404404
+sleep 1
+same '…ни одного письма Анне они не отправили' "$(letters_to anna@example.com)" "$anna_letters"
+same 'GET /auth/v1/user по-прежнему открыт: это сессия, а не пароль' "$(call "$anna" GET /auth/v1/user && body '.email')" '200"anna@example.com"'
+# …and the database keeps no password at all, whoever writes it. A stranger plants a password on an address before its
+# owner has an account (straight to Auth, as if the gateway were not there); the owner then signs in by the letter.
+check 'мимо шлюза: посторонний регистрирует чужой адрес со своим паролем — Auth отвечает как обычно' \
+  grep -q '"email":"victim@example.com"' <<< "$(auth_directly /signup '{"email":"victim@example.com","password":"correct horse 1"}')"
+same '…но пароль в базе не сохранён' "$(users_with_password)" 0
+sleep 2 # SMTP_MAX_FREQUENCY: the stranger's sign-up has just sent a letter to this address
+victim_verifier=$(new_verifier)
+same 'владелец адреса входит как обычно: письмо…' "$(request_letter victim@example.com "$victim_verifier")" 200
+check '…приходит' wait_letters victim@example.com 2
+last_letter victim@example.com
+same '…и код подходит' "$(verify_code victim@example.com "$(letter_codes)")" 200
+same 'после этого посторонний со «своим» паролем не входит: POST /auth/v1/token?grant_type=password → 400 invalid_credentials' \
+  "$(call '' POST '/auth/v1/token?grant_type=password' '{"email":"victim@example.com","password":"correct horse 1"}' && body '.error_code')" \
+  '400"invalid_credentials"'
+sql -q -c "update auth.users set encrypted_password = extensions.crypt('correct horse 1', extensions.gen_salt('bf'))"
+same 'пароль не записать и прямо в базу (служебный ключ, админ-API Auth): ни у одной учётной записи нет пароля' \
+  "$(users_with_password)" 0
+same '…вход с этим паролем по-прежнему закрыт' \
+  "$(call '' POST '/auth/v1/token?grant_type=password' '{"email":"anna@example.com","password":"correct horse 1"}')" 400
 
 section 'profiles: user_id и region — назначается при создании аккаунта, пользователь изменить не может'
 # PostgREST reloads its schema cache after migrate.sh asynchronously.
@@ -328,15 +374,102 @@ same '…новый аккаунт — новый пользователь с п
   "$(verify_code anna@example.com "$(letter_codes)" > /dev/null && left "$(field '.user.id')")" '0 / 1 / 0 / 1 / 1'
 check '…id нового аккаунта другой' test "$(field '.user.id')" != "$anna_id"
 
-section 'перебор кода: Auth ограничивает число попыток с одного адреса, подделать адрес заголовком нельзя'
-# Last on purpose: it uses up the attempts of this address for the next five minutes.
+section 'перебор кода одного аккаунта: 10 попыток входа на адрес за 15 минут, от кого бы они ни шли'
+# Auth counts code checks per client address only, and a wrong code changes nothing: with many addresses the whole
+# six-digit space could be tried. The gateway counts the attempts per account (plugin otp-attempts in kong.yml).
+target_verifier=$(new_verifier)
+request_letter target@example.com "$target_verifier" > /dev/null
+check 'письмо для адреса-цели пришло' wait_letters target@example.com 1
+last_letter target@example.com
+target_code=$(letter_codes)
+target_link=$(letter_link)
+# wrong_guess <n>: a six-digit code that is not the one of the letter.
+wrong_guess() { printf '%06d' $(((10#$target_code + $1) % 1000000)); }
+link_token=${target_link#*token=}
+link_token=${link_token%%&*}
+# Requests that do not name their account never reach Auth — and are not attempts.
+same 'код без адреса (token_hash — тот же хеш, что в ссылке) → 400' \
+  "$(call '' POST /auth/v1/verify "{\"type\":\"email\",\"token_hash\":\"$link_token\"}")" 400
+same 'адрес в поле с другим регистром букв (Auth прочёл бы его как email) → 400' \
+  "$(call '' POST /auth/v1/verify "{\"type\":\"email\",\"email\":\"decoy@example.com\",\"Email\":\"target@example.com\",\"token\":\"$(wrong_guess 1)\"}")" 400
+same 'код не из шести цифр → 400' "$(verify_code target@example.com 12345)$(verify_code target@example.com 1234567)" 400400
+same 'ссылка без адреса и кода (как её собрал бы подбирающий) → 400' \
+  "$(open_link "$api/auth/v1/verify?token=$link_token&type=signup&redirect_to=$SITE")" 400
+same 'ссылка, записанная на другой адрес, → 400: попытку нельзя списать на чужой счётчик' \
+  "$(open_link "$api/auth/v1/verify?token=$link_token&type=signup&redirect_to=$SITE&email=decoy%40example.com&otp=$target_code")" 400
+same '…и с адресом, «удлинённым» за счёт кода, — тоже' \
+  "$(open_link "$api/auth/v1/verify?token=$link_token&type=signup&redirect_to=$SITE&email=target%40example.com${target_code:0:1}&otp=${target_code:1}")" 400
+same '…код цели при этом цел: сессий у неё нет' \
+  "$(sql -c "select count(*) from auth.sessions s join auth.users u on u.id = s.user_id where u.email = 'target@example.com'")" 0
+# Twelve wrong codes for one address, written in different case: ten are checked, the rest are not.
+guesses=$(for i in $(seq 1 12); do
+  if ((i % 2)); then verify_code target@example.com "$(wrong_guess "$i")"; else verify_code Target@Example.COM "$(wrong_guess "$i")"; fi
+  echo
+done)
+same 'двенадцать неверных кодов для одного адреса: десять проверены (403), дальше 429' \
+  "$(paste -sd ' ' <<< "$guesses")" '403 403 403 403 403 403 403 403 403 403 429 429'
+same '…после этого не проходит и верный код' "$(verify_code target@example.com "$target_code")" 429
+same '…и ссылка из письма' "$(open_link "$target_link")" 429
+bypass=$(for path in /auth/v1//verify /auth/v1/./verify /auth/v1/%76erify /auth/v1/x/../verify /auth/v1/verify/ \
+  /auth/v1/%2Fverify /auth/v1/verify%2F /auth/v1/x/..%2Fverify /auth/v1/VERIFY //auth/v1/verify; do
+  curl -s -m 10 -o /dev/null -w '%{http_code}\n' --path-as-is -X POST "$api$path" -H "apikey: $ANON_KEY" \
+    -H 'Content-Type: application/json' -d "{\"type\":\"email\",\"email\":\"target@example.com\",\"token\":\"$target_code\"}"
+done)
+same '…и другой записью того же пути счётчик не обойти: каждая — 429 или 404, ни одна не дошла до проверки кода' \
+  "$(grep -cvE '^(429|404)$' <<< "$bypass")" 0
+same '…сессий у цели по-прежнему нет' \
+  "$(sql -c "select count(*) from auth.sessions s join auth.users u on u.id = s.user_id where u.email = 'target@example.com'")" 0
+same 'другого адреса это не касается: его попытка проверена → 403' "$(verify_code boris@example.com 000000)" 403
+
+section 'письма: один клиент не оставляет регион без писем входа'
+# Auth sends RATE_LIMIT_EMAIL_SENT letters an hour for the whole region and lets one client address ask for 30 at
+# once — on each of several routes. The gateway gives a client address 10 letter requests per clock hour and closes
+# the other routes (checked above). Every request of this test comes from one address.
+same 'бюджет писем региона — настройка RATE_LIMIT_EMAIL_SENT' \
+  "$(compose exec -T auth printenv GOTRUE_RATE_LIMIT_EMAIL_SENT | tr -d '\r')" 60
+# ask_letters <tag>: 15 requests for letters to 15 new addresses. Prints the HTTP statuses, one per line.
+ask_letters() {
+  local i
+  for i in $(seq 1 15); do
+    request_letter "flood-$1-$i@example.com" "$(new_verifier)"
+    echo
+  done
+}
+hour=$(date -u +%Y%m%d%H)
+flood=$(ask_letters a)
+# The gateway counts per clock hour: if the hour turned meanwhile, the same again within the new one.
+[[ $(date -u +%Y%m%d%H) == "$hour" ]] || flood=$(ask_letters b)
+check 'один клиент просит 15 писем на разные адреса: за час принято не больше 10 запросов, остальным — 429' \
+  test "$(grep -c '^200$' <<< "$flood")" -le 10 -a "$(grep -c '^429$' <<< "$flood")" -ge 5
+same '…отказ приходит от шлюза, до Auth: «API rate limit exceeded»' "$(body '.message')" '"API rate limit exceeded"'
+sleep 1
+flood_letters=$(curl -s -m 10 "$trap_api/messages?limit=200" |
+  jq '[.messages[] | select(.To[0].Address | startswith("flood-"))] | length')
+check "…писем на эти адреса ушло не больше 10 за час ($flood_letters за время теста), и аккаунтов создано столько же" \
+  test "$flood_letters" -le 20 -a \
+  "$(sql -c "select count(*) from auth.users where email like 'flood-%@example.com'")" == "$flood_letters"
+same '…записать запрос другим путём — тот же предел или 404' \
+  "$(for path in /auth/v1//otp /auth/v1/otp/ /auth/v1/%6ftp /auth/v1/%2Fotp /auth/v1/x/../otp; do
+    curl -s -m 10 -o /dev/null -w '%{http_code}\n' --path-as-is -X POST "$api$path" -H "apikey: $ANON_KEY" \
+      -H 'Content-Type: application/json' -d '{"email":"flood-path@example.com","create_user":true}'
+  done | grep -cvE '^(429|404)$')" 0
+# «Another client» is a request that reaches Auth from another address — here from inside the Docker network.
+same 'письма региона при этом не кончились: запрос другого клиента Auth принимает' \
+  "$(auth_directly /otp '{"email":"other-client@example.com"}')" '{}'
+check '…и его письмо приходит' wait_letters other-client@example.com 1
+
+section 'перебор кода с одного адреса клиента: Auth ограничивает число проверок, подделать адрес заголовком нельзя'
+# Last on purpose: it uses up the attempts of this address for the next five minutes. Every guess names another
+# account, so the limit per account (above) is not what answers here.
 guesses=$(for i in $(seq 1 45); do
   curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST "$api/auth/v1/verify" -H "apikey: $ANON_KEY" \
     -H 'Content-Type: application/json' -H "X-Real-IP: 10.0.0.$i" -H "X-Forwarded-For: 10.0.0.$i" \
-    -d "{\"type\":\"email\",\"email\":\"boris@example.com\",\"token\":\"$(printf '%06d' "$i")\"}"
+    -d "{\"type\":\"email\",\"email\":\"nobody$i@example.com\",\"token\":\"$(printf '%06d' "$i")\"}"
 done)
-check 'после 30 попыток за 5 минут сервер отвечает 429, хотя каждая попытка называет другой адрес' \
+check 'после 30 попыток за 5 минут сервер отвечает 429, хотя каждая попытка называет другой адрес клиента и другой аккаунт' \
   test "$(grep -c '^403$' <<< "$guesses")" -le 30 -a "$(grep -c '^429$' <<< "$guesses")" -ge 15
 same '…и ни одна попытка не угадала' "$(grep -c '^200$' <<< "$guesses")" 0
+
+same 'после всех входов этого теста ни у одной учётной записи нет пароля' "$(users_with_password)" 0
 
 finish

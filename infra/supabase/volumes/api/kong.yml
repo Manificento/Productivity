@@ -1,4 +1,6 @@
-# Kong declarative config (DB-less). `$SUPABASE_*` are substituted by the entrypoint in docker-compose.yml.
+# Kong declarative config (DB-less). The entrypoint in docker-compose.yml substitutes the SUPABASE_... variables: the
+# whole file passes through the shell inside double quotes, so it must hold no double quote, no backtick and no
+# backslash — not in a comment either — and a dollar sign only in front of a variable name.
 # Only Auth and PostgREST are routed; Realtime, Storage, Edge Functions and the dashboard are not part of the stack.
 _format_version: '3.0'
 _transform: true
@@ -18,7 +20,10 @@ acls:
     group: admin
 
 services:
-  ## Open Auth routes: links from e-mails and OAuth redirects come without an API key.
+  ## The code and the link of the sign-in letter. No API key: a link opened from a letter has none.
+  ## The plugin otp-attempts (plugins/kong/plugins/otp-attempts/) counts the attempts per ACCOUNT — Auth counts them
+  ## only per client address — and lets through only requests that name their account: limit attempts per address
+  ## in window seconds (the lifetime of a code, OTP_EXPIRY); otp_length is GOTRUE_MAILER_OTP_LENGTH.
   - name: auth-v1-open
     url: http://auth:9999/verify
     routes:
@@ -27,6 +32,11 @@ services:
         paths: [/auth/v1/verify]
     plugins:
       - name: cors
+      - name: otp-attempts
+        config:
+          limit: 10
+          window: 900
+          otp_length: 6
   - name: auth-v1-open-callback
     url: http://auth:9999/callback
     routes:
@@ -43,6 +53,55 @@ services:
         paths: [/auth/v1/authorize]
     plugins:
       - name: cors
+
+  ## The request for the sign-in letter: 10 an hour per client address. Auth's own limit per address cannot go below
+  ## a burst of 30 — the whole default budget of letters of the region (RATE_LIMIT_EMAIL_SENT) — so without this one
+  ## client could leave everybody without sign-in letters for the hour. The hour is a clock hour: across its edge a
+  ## client gets up to 20, still far below the budget.
+  - name: auth-v1-otp
+    url: http://auth:9999/otp
+    routes:
+      - name: auth-v1-otp
+        strip_path: true
+        paths: [/auth/v1/otp]
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow: [admin, anon]
+      - name: rate-limiting
+        config:
+          hour: 10
+          policy: local
+          limit_by: ip
+          hide_client_headers: true
+
+  ## Closed: routes of Auth the app does not use. They send letters past the limit above (/signup, /magiclink,
+  ## /recover, /resend, /reauthenticate, a change of address by PUT /user) or set a password (/signup, /recover,
+  ## PUT /user) — the sign-in is by letter only. GET /auth/v1/user stays open (the route below).
+  - name: auth-v1-closed
+    url: http://auth:9999/
+    routes:
+      - name: auth-v1-closed
+        paths:
+          - /auth/v1/signup
+          - /auth/v1/magiclink
+          - /auth/v1/recover
+          - /auth/v1/resend
+          - /auth/v1/reauthenticate
+      - name: auth-v1-closed-user-update
+        methods: [PUT, PATCH, POST, DELETE]
+        paths: [/auth/v1/user]
+    plugins:
+      - name: cors
+      - name: request-termination
+        config:
+          status_code: 404
+          message: Not found
 
   ## Auth: /auth/v1/* -> http://auth:9999/*
   - name: auth-v1

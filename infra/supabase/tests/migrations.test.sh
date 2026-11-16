@@ -8,7 +8,6 @@ set -uo pipefail
 . "$(dirname "$0")/lib.sh"
 
 REPO_DIR=$(cd "$INFRA_DIR/../.." && pwd)
-PASSWORD=synthetic-password-1
 
 # same "<name>" <actual> <expected>: like check, and shows both values when they differ.
 same() {
@@ -59,8 +58,7 @@ change() {
   fi
 }
 signup() {
-  curl -s -m 20 -X POST "$api/auth/v1/signup" -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"$1\",\"password\":\"$PASSWORD\"}" > "$WORK/$1.json"
+  new_user "$1" > "$WORK/$1.json"
   jq -r '.access_token // empty' "$WORK/$1.json"
 }
 

@@ -64,6 +64,38 @@ create trigger lifeos_create_profile
   for each row execute function public.create_profile();
 
 -- ---------------------------------------------------------------------------------------------------------------
+-- No passwords. The sign-in is by letter only (ADR-0013, p. 1), but Auth (GoTrue) keeps its password routes
+-- whatever the settings: `POST /signup {email, password}`, `PUT /user {password}`, the recovery letter and
+-- `POST /token?grant_type=password`. With them a stranger could put a password of their own on an address that has
+-- no confirmed account yet and sign in with it after the owner confirmed the address by letter; and whoever held a
+-- session for a minute could keep the account for good. Kong closes those routes for the app's key
+-- (volumes/api/kong.yml); this trigger closes them for everybody, the service key and Auth's admin API included:
+-- no row of `auth.users` ever holds a password, so the password grant has nothing to compare with.
+--
+-- It clears the column SILENTLY instead of refusing the row: Auth itself gives every account created by a letter
+-- a random password and would fail on an error.
+-- ---------------------------------------------------------------------------------------------------------------
+create function public.no_passwords()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.encrypted_password := null;
+  return new;
+end
+$$;
+
+revoke all on function public.no_passwords() from public, anon, authenticated, service_role;
+
+create trigger lifeos_no_passwords
+  before insert or update on auth.users
+  for each row execute function public.no_passwords();
+
+-- Accounts that exist already (a test stack; no server has users yet) lose theirs now.
+update auth.users set encrypted_password = null where encrypted_password is not null;
+
+-- ---------------------------------------------------------------------------------------------------------------
 -- The consent journal (ADR-0009, design p. 2): append-only. Giving a consent and taking it back are both NEW rows;
 -- no row is ever changed or removed (only together with the whole account, `delete_account`). The consent in
 -- force is the last row of its kind (the greatest `id`).

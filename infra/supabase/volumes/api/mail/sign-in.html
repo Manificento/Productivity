@@ -2,6 +2,8 @@
 <!--
   The sign-in letter of LifeOS (issue #278, ADR-0009 design p. 9): ONE letter with a six-digit code and a link.
   Auth (GoTrue) fills in the Go template fields below: Token — the code, ConfirmationURL — the link.
+  The link also names the address and the code: the gateway counts sign-in attempts per account and lets a link
+  through only when its token matches them (volumes/api/plugins/kong/plugins/otp-attempts/handler.lua).
   The same file serves a new address (template "confirmation") and a returning one (template "magic link").
   Kong serves it to Auth inside the Docker network (mail.conf); a change is picked up within ten minutes.
 -->
@@ -29,7 +31,7 @@
     <p style="margin: 0 0 8px">Или откройте ссылку на том же устройстве, где запросили вход:</p>
     <p style="margin: 0 0 24px">
       <a
-        href="{{ .ConfirmationURL }}"
+        href="{{ .ConfirmationURL }}&amp;email={{ .Email | urlquery }}&amp;otp={{ .Token }}"
         style="
           display: inline-block;
           padding: 12px 20px;

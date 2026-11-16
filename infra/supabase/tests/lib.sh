@@ -51,6 +51,15 @@ use_region() {
   load_env
 }
 
+# new_user <e-mail>: creates an account on a stack with ENABLE_EMAIL_AUTOCONFIRM=true and prints Auth's answer — a
+# session: access_token, refresh_token, user. The request goes straight to Auth inside the Docker network: the
+# gateway has no route that creates an account without a letter (kong.yml). Auth's sign-up insists on a password;
+# the database does not keep it (migration 0002).
+new_user() {
+  compose exec -T auth wget -q -O - --header 'Content-Type: application/json' \
+    --post-data "{\"email\":\"$1\",\"password\":\"$(openssl rand -hex 16)\"}" http://localhost:9999/signup
+}
+
 finish() {
   echo
   if ((failures > 0)); then

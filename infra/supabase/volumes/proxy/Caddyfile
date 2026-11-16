@@ -9,6 +9,9 @@
 	admin off
 	# A container has no system trust store to install the local CA into.
 	skip_install_trust
+	# IPv4 only. Auth and Kong count their limits per client address, and one IPv6 client owns a whole /64 of
+	# addresses — a fresh limit for every request. The domain of the API gets no AAAA record (README, «Вход по email»).
+	default_bind 0.0.0.0
 }
 
 {$API_DOMAIN} {

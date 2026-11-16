@@ -26,6 +26,8 @@ services:
       # The e-mail templates of Auth and the nginx include that serves them to it inside the Docker network.
       - ./volumes/api/mail.conf:/home/kong/mail.conf:ro
       - ./volumes/api/mail:/home/kong/mail:ro
+      # Our own plugin `otp-attempts`: sign-in attempts per account (kong.yml, route /auth/v1/verify).
+      - ./volumes/api/plugins:/home/kong/plugins:ro
     labels:
       # sha256 of the files of volumes/api/ (lib.sh, `compose`): a changed file recreates the container, which reads
       # kong.yml and mail.conf only at start and keeps the mounts of the previous revision's files.
@@ -36,7 +38,10 @@ services:
       KONG_DNS_ORDER: LAST,A,CNAME
       # Docker's DNS answers with a 600 s TTL; re-resolve often so a restarted service is found at its new address.
       KONG_DNS_VALID_TTL: 5
-      KONG_PLUGINS: cors,key-auth,acl
+      KONG_PLUGINS: cors,key-auth,acl,rate-limiting,request-termination,otp-attempts
+      KONG_LUA_PACKAGE_PATH: /home/kong/plugins/?.lua;;
+      # The counters of `otp-attempts`: an address and a number each, about a hundred thousand of them.
+      KONG_NGINX_HTTP_LUA_SHARED_DICT: lifeos_otp_attempts 10m
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       # One more nginx server inside Kong, on a port that is not published: http://kong:8088/mail/<template>.
@@ -84,13 +89,19 @@ services:
       GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?}
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL:?}
-      # Auth limits attempts (codes, letters, token refreshes) per client address — the one Kong reports in X-Real-IP,
-      # which a client cannot set: Kong overwrites the header with the address it sees, or with the one a trusted
-      # reverse proxy named (KONG_TRUSTED_IPS above). Without this header Auth applies no such limit at all, and the
-      # six-digit code of the sign-in letter could simply be guessed.
+      # Auth limits requests (code checks, token refreshes, letter requests) per client address — the one Kong reports
+      # in X-Real-IP, which a client cannot set: Kong overwrites the header with the address it sees, or with the one
+      # a trusted reverse proxy named (KONG_TRUSTED_IPS above). Without this header Auth applies no such limit at all.
+      # These limits are a token bucket of 30 per address and route, refilled at 30 per 5 minutes (150 for token
+      # refreshes). What they do not give is added in Kong (volumes/api/kong.yml): sign-in attempts per ACCOUNT and
+      # letter requests per client per hour.
       GOTRUE_RATE_LIMIT_HEADER: X-Real-IP
+      # Letters per hour for the whole region — one counter for everybody, in fixed hours from the start of Auth.
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: ${RATE_LIMIT_EMAIL_SENT:-100}
       # Sign-in by e-mail only (ADR-0009, design p. 9): no Google or other outside provider is configured — with
-      # one, the App Store would require Sign in with Apple.
+      # one, the App Store would require Sign in with Apple. And no passwords: Auth has no setting that turns them
+      # off, so the database keeps none (trigger lifeos_no_passwords, migration 0002) and Kong closes the routes that
+      # set one. ENABLE_EMAIL_AUTOCONFIRM stays false on a server: with it an account needs no letter at all.
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
       GOTRUE_EXTERNAL_PHONE_ENABLED: 'false'
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: 'false'
