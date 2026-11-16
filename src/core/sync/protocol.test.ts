@@ -466,8 +466,8 @@ describe('applyPull(changes, local)', () => {
         const own = moved(6, 's2', '2026-11-10', 120);
         const plan = applyPull([remote, own], local([mine], [queued]));
         expect(plan.put).toEqual([
-          session('s2', '2026-11-10', { updatedAt: 120 }),
           session('s1', THU, { updatedAt: 200 }),
+          session('s2', '2026-11-10', { updatedAt: 120 }),
         ]);
         expect(plan.settled).toEqual([queued]);
         expect(plan.conflicts).toEqual([{ local: lost, remote }]);
@@ -616,14 +616,31 @@ describe('applyPushResult(results, local) — ответ сервера на о�
       // s1 is removed before anything is written: s2 never meets a Wednesday that is still taken.
       expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's1' }]);
       expect(plan.put.map(({ row }) => [row.id, row.date, row.deletedAt])).toEqual([
-        ['s1', '2026-11-09', undefined],
         ['s2', WED, undefined],
+        ['s1', '2026-11-09', undefined],
       ]);
       expect(plan.settled.toSorted((a, b) => a.updatedAt - b.updatedAt)).toEqual(entries);
       expect(plan.conflicts.map((conflict) => [conflict.local.key, conflict.local.data?.date])).toEqual([
         ['s2', THU],
         ['s1', WED],
       ]);
+    });
+
+    it('две сессии поменялись днями, сервер не принял ни одну: план пишет строки в порядке, в котором дни освобождаются', () => {
+      // Offline s1 and s2 swapped Wednesday and Thursday. The engine removes, then writes in the order of `put`:
+      // s2 is removed first, s1 goes back to Wednesday, and only then s2 takes the Thursday s1 has left.
+      const entries = [entry('plannedSessions', 's1', 300), entry('plannedSessions', 's2', 310)];
+      const plan = applyPushResult([refused(onServer(2, 's1', WED, 100)), refused(onServer(3, 's2', THU, 100))], {
+        rows: [session('s1', THU, 300), session('s2', WED, 310)],
+        outbox: entries,
+        deviceId: A,
+      });
+      expect(plan.remove).toEqual([{ table: 'plannedSessions', key: 's2' }]);
+      expect(plan.put.map(({ row }) => [row.id, row.date])).toEqual([
+        ['s1', WED],
+        ['s2', THU],
+      ]);
+      expect(plan.settled).toEqual(entries);
     });
 
     it('принятое изменение — уже не локальная правка: строка, которую сервер принял, уступает день без конфликта и без tombstone', () => {

@@ -759,6 +759,31 @@ describe('таблица сценариев ADR-0009, п. 10', () => {
       expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
     });
 
+    it('две сессии поменялись днями офлайн, а сервер не принял ни один перенос: обе возвращаются на свои дни, запись плана не упирается в занятый день', () => {
+      // The laptop, offline: s1 and s2 swap Monday and Wednesday (through a free Friday).
+      pass(MINUTE);
+      laptop.save('plannedSessions', 's2', session(FRI));
+      laptop.save('plannedSessions', 's1', session(WED));
+      laptop.save('plannedSessions', 's2', session(MON));
+      // Later the phone marks both done where they were: by time these are the versions that win.
+      pass(MINUTE);
+      phone.save('plannedSessions', 's1', { ...session(MON), status: 'done' });
+      phone.save('plannedSessions', 's2', { ...session(WED), status: 'done' });
+      phone.sync(server);
+
+      syncAll(laptop, phone);
+
+      const expected = [
+        ['s1', MON],
+        ['s2', WED],
+      ];
+      expect(days(laptop)).toEqual(expected);
+      expect(days(phone)).toEqual(expected);
+      expect(onServer()).toEqual(expected);
+      expect(laptop.read('plannedSessions')).toMatchObject([{ status: 'done' }, { status: 'done' }]);
+      expect([phone.outbox.size, laptop.outbox.size]).toEqual([0, 0]);
+    });
+
     it('перенос проиграл более поздней правке той же сессии: день, который он освобождал, не занимается второй сессией', () => {
       // The laptop, offline: s2 moves from Wednesday to Thursday, s1 takes the freed Wednesday.
       pass(MINUTE);

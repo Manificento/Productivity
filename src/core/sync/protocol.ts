@@ -398,6 +398,10 @@ function isLostTo(mine: SyncChange, remote: SyncChange): boolean {
 /**
  * The device's rows as a plan leaves them: `applyPull` reads them and writes to them change by change, so a later
  * change of a page sees what an earlier one did. Keeps track of which live row holds which unique key.
+ *
+ * `written()` lists the rows in the order of their LAST write: a row written again (it gave up its key and then
+ * got its own version) moves to the end. A row written in place frees its old key only when it is written, so
+ * the row that takes that key must be written after it — and it was resolved after it.
  */
 function deviceImage(stored: readonly LocalRow[]) {
   const rows = indexRows(stored);
@@ -430,6 +434,7 @@ function deviceImage(stored: readonly LocalRow[]) {
       const id = idOf(refOf(row));
       release(id);
       rows.set(id, row);
+      put.delete(id);
       put.set(id, row);
       const held = keyHeldBy(row);
       if (held !== undefined) holders.set(held, id);
