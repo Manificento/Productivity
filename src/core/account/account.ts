@@ -60,7 +60,8 @@ export function signInCodeFromUrl(url: string): string | null {
  * `{ code }` — the six digits of the letter typed in the app (the only way in the native shell, where the link
  * opens a browser); `{ linkCode }` — the `?code=` of the link (`signInCodeFromUrl(location.href)`), which works
  * only on the device that asked for the letter.
- * After it `useAccount()` is `signedIn` and the consents in force are on the device.
+ * After it `useAccount()` is `signedIn` and the consents in force are on the device. A screen that signed in by the
+ * link takes `?code=` out of the address afterwards (`history.replaceState`), so a reload does not try it again.
  */
 export async function completeSignIn(
   proof: { code: string } | { linkCode: string },

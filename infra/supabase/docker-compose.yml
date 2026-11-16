@@ -77,6 +77,10 @@ services:
       GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?}
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL:?}
+      # Auth limits attempts (codes, letters, token refreshes) per client address — the one Kong reports in X-Real-IP,
+      # which a client cannot set. Without this header Auth applies no such limit at all, and the six-digit code of
+      # the sign-in letter could simply be guessed.
+      GOTRUE_RATE_LIMIT_HEADER: X-Real-IP
       # Sign-in by e-mail only (ADR-0009, design p. 9): no Google or other outside provider is configured — with
       # one, the App Store would require Sign in with Apple.
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'

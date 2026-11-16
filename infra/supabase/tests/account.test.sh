@@ -315,4 +315,15 @@ same '…новый аккаунт — новый пользователь с п
   "$(verify_code anna@example.com "$(letter_codes)" > /dev/null && left "$(field '.user.id')")" '0 / 1 / 0 / 1 / 1'
 check '…id нового аккаунта другой' test "$(field '.user.id')" != "$anna_id"
 
+section 'перебор кода: Auth ограничивает число попыток с одного адреса, подделать адрес заголовком нельзя'
+# Last on purpose: it uses up the attempts of this address for the next five minutes.
+guesses=$(for i in $(seq 1 45); do
+  curl -s -m 10 -o /dev/null -w '%{http_code}\n' -X POST "$api/auth/v1/verify" -H "apikey: $ANON_KEY" \
+    -H 'Content-Type: application/json' -H "X-Real-IP: 10.0.0.$i" -H "X-Forwarded-For: 10.0.0.$i" \
+    -d "{\"type\":\"email\",\"email\":\"boris@example.com\",\"token\":\"$(printf '%06d' "$i")\"}"
+done)
+check 'после 30 попыток за 5 минут сервер отвечает 429, хотя каждая попытка называет другой адрес' \
+  test "$(grep -c '^403$' <<< "$guesses")" -le 30 -a "$(grep -c '^429$' <<< "$guesses")" -ge 15
+same '…и ни одна попытка не угадала' "$(grep -c '^200$' <<< "$guesses")" 0
+
 finish

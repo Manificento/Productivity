@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useMemo } from 'react';
 import { db } from '../db';
 import { signInBackend } from '../sync/config';
 import { ACCOUNT_SESSION_KEY } from '../sync/localOnly';
@@ -15,5 +16,6 @@ export function useAccount(): AccountState {
     async () => (available ? ((await db.settings.get(ACCOUNT_SESSION_KEY)) ?? null) : null),
     [available],
   );
-  return accountStateOf(row);
+  // `available` is part of the answer: the same row means another state in a build without a backend.
+  return useMemo(() => (available ? accountStateOf(row) : accountStateOf(null)), [available, row]);
 }
